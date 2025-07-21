@@ -1,0 +1,67 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  background-color: #000;
+  color: #fff;
+}
+
+.app {
+  text-align: center;
+  padding: 20px;
+}
+
+.header {
+  font-size: 24px;
+  color: #1db954;
+  margin-bottom: 20px;
+}
+
+.top-picks {
+  background-color: #111;
+  border: 1px solid #1db954;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 20px;
+}
+
+.pick {
+  padding: 8px;
+  margin: 5px 0;
+  border-radius: 4px;
+}
+
+.pick.safe {
+  background-color: #1db954;
+  color: #fff;
+}
+
+.pick.risky {
+  background-color: #f5a623;
+  color: #000;
+}
+
+.pick.avoid {
+  background-color: #e74c3c;
+  color: #fff;
+}
+
+.prediction {
+  padding: 8px;
+  margin: 5px 0;
+  border-radius: 4px;
+}
+
+.prediction.safe {
+  background-color: #1db954;
+  color: #fff;
+}
+
+.prediction.risky {
+  background-color: #f5a623;
+  color: #000;
+}
+
+.prediction.avoid {
+  background-color: #e74c3c;
+  color: #fff;
+}
