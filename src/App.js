@@ -5,13 +5,13 @@ function App() {
   return (
     <div className="App">
       <header className="App-header">
+        <h1>LiveBet IQ</h1>
         <img
-          src={`${process.env.PUBLIC_URL}/logo192.png`}
+          src="/logo192.jpg"
           alt="LiveBet IQ Logo"
-          style={{ width: "120px", marginBottom: "20px" }}
+          width="150"
+          height="150"
         />
-        <h1>Welcome to LiveBet IQ 3.0</h1>
-        <p>AI Betting Predictions running live.</p>
       </header>
     </div>
   );
