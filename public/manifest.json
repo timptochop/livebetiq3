@@ -1,6 +1,6 @@
 {
   "short_name": "LiveBet IQ",
-  "name": "LiveBet IQ",
+  "name": "LiveBet IQ Predictions",
   "icons": [
     {
       "src": "/logo512.png",
@@ -15,6 +15,6 @@
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#000000"
+  "background_color": "#000000",
+  "theme_color": "#00FF00"
 }
