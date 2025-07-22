@@ -4,38 +4,56 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LiveBet IQ</title>
-
-  <!-- Manifest & iOS support -->
-  <link rel="manifest" href="/manifest.json" />
-  <link rel="apple-touch-icon" href="/logo512.png" />
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-
-  <style>
-    body {
-      background-color: black;
-      color: white;
-      font-family: Arial, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      margin: 0;
-    }
-    img {
-      width: 200px;
-      height: auto;
-    }
-    h1 {
-      color: #00FF00;
-      font-size: 2rem;
-      margin-top: 20px;
-    }
-  </style>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="logo512.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
 </head>
 <body>
-  <img src="/logo512.png" alt="LiveBet IQ Logo" />
-  <h1>LiveBet IQ</h1>
+  <div class="container">
+    <img src="logo512.png" alt="LiveBet IQ Logo" class="logo" />
+    <div class="match-list">
+      <div class="match-card">
+        <div class="match-info">
+          <span class="sport-icon">🎾</span>
+          <div>
+            <p class="players">Alexander Zverev vs Roberto Bautista Agut</p>
+            <span class="status live">LIVE</span>
+          </div>
+        </div>
+        <span class="label safe">SAFE</span>
+      </div>
+      <div class="match-card">
+        <div class="match-info">
+          <span class="sport-icon">🎾</span>
+          <div>
+            <p class="players">Taro Daniel vs Luca Nardi</p>
+            <span class="status live">LIVE</span>
+          </div>
+        </div>
+        <span class="label risky">RISKY</span>
+      </div>
+      <div class="match-card">
+        <div class="match-info">
+          <span class="sport-icon">🎾</span>
+          <div>
+            <p class="players">Denis Shapovalov vs Taro Daniel</p>
+            <span class="status live">LIVE</span>
+          </div>
+        </div>
+        <span class="label avoid">AVOID</span>
+      </div>
+      <div class="match-card">
+        <div class="match-info">
+          <span class="sport-icon">🎾</span>
+          <div>
+            <p class="players">Linda Noskova vs Katie Boulter</p>
+            <span class="status soon">STARTS SOON</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
