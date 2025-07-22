@@ -1,52 +1,87 @@
 body {
   background-color: #000;
-  color: #fff;
   font-family: Arial, sans-serif;
-  margin: 0;
-  padding: 0;
+  color: #fff;
   display: flex;
   flex-direction: column;
   align-items: center;
-}
-
-.logo {
-  margin: 20px 0;
-  width: 120px;
+  justify-content: flex-start;
+  min-height: 100vh;
+  margin: 0;
 }
 
 .container {
-  width: 90%;
-  max-width: 500px;
+  margin-top: 20px;
 }
 
-.match-list {
-  width: 100%;
+img {
+  width: 200px;
+  height: auto;
+  margin-bottom: 20px;
 }
 
-.match {
-  background-color: #1a1a1a;
+.card {
+  background-color: #222;
   border-radius: 10px;
-  margin-bottom: 10px;
-  padding: 10px;
+  padding: 15px 20px;
+  margin: 10px 0;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.card p {
+  margin: 0;
+  font-size: 16px;
+}
+
+.labels {
+  margin-top: 10px;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  gap: 8px;
 }
 
-.match-name {
-  font-size: 14px;
-}
-
-.badge {
-  padding: 5px 8px;
+.live {
+  background-color: #00cfff;
+  color: #000;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 2px 8px;
   border-radius: 5px;
+}
+
+.safe {
+  background-color: #28a745;
   color: #fff;
   font-size: 12px;
   font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 5px;
 }
 
-.badge.live { background-color: #00c3ff; }
-.badge.safe { background-color: #28a745; }
-.badge.risky { background-color: #ffc107; color: #000; }
-.badge.avoid { background-color: #dc3545; }
-.badge.upcoming { background-color: #6c757d; }
+.risky {
+  background-color: #ffc107;
+  color: #000;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 5px;
+}
+
+.avoid {
+  background-color: #dc3545;
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 5px;
+}
+
+.soon {
+  background-color: #6c757d;
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 5px;
+}
