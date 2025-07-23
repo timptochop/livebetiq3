@@ -1,32 +1,60 @@
-import React from 'react';
-import './styles.css';
+import React from "react";
+import logo from "../public/logo192.png";
+
+const matches = [
+  {
+    name: "Alexander Zverev vs Roberto Bautista Agut",
+    status: "LIVE",
+    label: "SAFE",
+    labelClass: "safe",
+  },
+  {
+    name: "Taro Daniel vs Luca Nardi",
+    status: "LIVE",
+    label: "RISKY",
+    labelClass: "risky",
+  },
+  {
+    name: "Denis Shapovalov vs Taro Daniel",
+    status: "LIVE",
+    label: "AVOID",
+    labelClass: "avoid",
+  },
+  {
+    name: "Linda Noskova vs Katie Boulter",
+    status: "SOON",
+    label: "STARTS SOON",
+    labelClass: "soon",
+  },
+];
 
 function LiveTennis() {
-  const matches = [
-    { players: 'Alexander Zverev vs Roberto Bautista Agut', status: 'SAFE', live: true },
-    { players: 'Taro Daniel vs Luca Nardi', status: 'RISKY', live: true },
-    { players: 'Denis Shapovalov vs Taro Daniel', status: 'AVOID', live: true },
-    { players: 'Linda Noskova vs Katie Boulter', status: 'STARTS SOON', live: false },
-  ];
-
   return (
-    <div className="app-container">
-      {/* Fixed Header */}
-      <div className="fixed-header">
-        <img src="/logo512.png" alt="LiveBet IQ Logo" className="main-logo" />
-        <div className="separator-line"></div>
-      </div>
+    <div>
+      <header className="header">
+        <div className="header-left">
+          <img src={logo} alt="Logo" className="logo" />
+          <span className="app-name">LIVE BET IQ</span>
+        </div>
+        <div className="header-icons">
+          <i className="fas fa-cog"></i>
+          <i className="fas fa-lock"></i>
+        </div>
+      </header>
 
-      {/* Match List */}
-      <div className="match-list">
+      <div className="container">
         {matches.map((match, index) => (
-          <div key={index} className="match-card">
-            <div className="left-section">
-              <span className={`status-dot ${match.live ? 'live' : 'not-live'}`}></span>
+          <div className="match-card" key={index}>
+            <div className="match-left">
+              <div
+                className={`status-dot ${
+                  match.status === "LIVE" ? "status-live" : "status-soon"
+                }`}
+              ></div>
+              <span className="match-name">{match.name}</span>
             </div>
-            <div className="players">{match.players}</div>
-            <div className={`status-badge ${match.status.replace(' ', '-').toLowerCase()}`}>
-              {match.status}
+            <div className={`match-badge ${match.labelClass}`}>
+              {match.label}
             </div>
           </div>
         ))}
