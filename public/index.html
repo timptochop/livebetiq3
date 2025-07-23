@@ -1,17 +1,52 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LiveBet IQ</title>
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/logo192.png" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <script src="/src/index.js" type="module"></script>
-  </body>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <img src="logo192.png" alt="LiveBet IQ Logo">
+        <div class="header-icons">
+            <img src="settings-icon.png" alt="Settings">
+            <img src="login-icon.png" alt="Login">
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="card">
+            <div class="status-dot live"></div>
+            <img src="logo192.png" alt="Logo" style="height:30px;">
+            <div class="divider"></div>
+            <div class="match-info">Alexander Zverev vs Roberto Bautista Agut</div>
+            <div class="label safe">SAFE</div>
+        </div>
+
+        <div class="card">
+            <div class="status-dot live"></div>
+            <img src="logo192.png" alt="Logo" style="height:30px;">
+            <div class="divider"></div>
+            <div class="match-info">Taro Daniel vs Luca Nardi</div>
+            <div class="label risky">RISKY</div>
+        </div>
+
+        <div class="card">
+            <div class="status-dot offline"></div>
+            <img src="logo192.png" alt="Logo" style="height:30px;">
+            <div class="divider"></div>
+            <div class="match-info">Denis Shapovalov vs Taro Daniel</div>
+            <div class="label avoid">AVOID</div>
+        </div>
+
+        <div class="card">
+            <div class="status-dot offline"></div>
+            <img src="logo192.png" alt="Logo" style="height:30px;">
+            <div class="divider"></div>
+            <div class="match-info">Linda Noskova vs Katie Boulter</div>
+            <div class="label soon">STARTS SOON</div>
+        </div>
+    </div>
+</body>
 </html>
