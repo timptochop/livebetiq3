@@ -1,129 +1,119 @@
 body {
-  background-color: #0f0f0f;
-  color: #ffffff;
-  font-family: "Arial", sans-serif;
   margin: 0;
   padding: 0;
+  background-color: #121212;
+  font-family: Arial, sans-serif;
+  color: #fff;
 }
 
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background-color: #1a1a1a;
-  padding: 10px 15px;
-  position: fixed;
-  width: 100%;
+  padding: 15px;
+  background-color: #1e1e1e;
+  position: sticky;
   top: 0;
   z-index: 1000;
 }
 
-.header-left {
+.logo-container {
   display: flex;
   align-items: center;
 }
 
 .logo {
-  width: 35px;
-  height: 35px;
-  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  margin-right: 10px;
 }
 
-.app-title {
-  margin-left: 10px;
-  font-size: 20px;
-  font-weight: bold;
+.header h1 {
+  font-size: 1.2em;
   color: #ffffff;
 }
 
-.header-right {
+.header-icons {
   display: flex;
   gap: 10px;
 }
 
-.icon-button {
-  background: none;
-  border: none;
+.icon {
+  font-size: 1.4em;
   cursor: pointer;
-}
-
-.icon-button img {
-  width: 22px;
-  height: 22px;
 }
 
 .divider {
   height: 2px;
-  background-color: #ffffff;
-  margin-top: 65px; /* pushes down content below fixed header */
+  background-color: #ffffff22;
 }
 
-.card-container {
-  padding: 20px;
+.predictions {
+  padding: 15px;
 }
 
-.card {
-  background-color: #1f1f1f;
+.prediction {
+  background-color: #2c2c2c;
   border-radius: 12px;
-  margin-bottom: 12px;
+  padding: 12px;
+  margin: 10px 0;
   display: flex;
   align-items: center;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
-  padding: 10px;
+  justify-content: space-between;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.3);
 }
 
-.card .status-dot {
-  width: 12px;
-  height: 12px;
+.status-dot {
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
+  display: inline-block;
   margin-right: 10px;
 }
 
-.status-dot.live {
+.live-dot {
   background-color: #00ff00;
   animation: blink 1s infinite;
 }
 
-.status-dot.not-live {
+.not-live-dot {
   background-color: #ff0000;
 }
 
-.card .match-name {
+.match {
   flex: 1;
-  color: #ffffff;
-  font-size: 16px;
+  font-size: 0.95em;
 }
 
-.card .tag {
-  padding: 4px 10px;
+.label {
+  padding: 5px 10px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 0.8em;
   font-weight: bold;
+}
+
+.safe {
+  background-color: #28a745;
   color: #fff;
 }
 
-.tag.safe {
-  background-color: #28a745;
-}
-
-.tag.risky {
+.risky {
   background-color: #ffc107;
   color: #000;
 }
 
-.tag.avoid {
+.avoid {
   background-color: #dc3545;
+  color: #fff;
 }
 
-.tag.starts-soon {
+.soon {
   background-color: #6c757d;
+  color: #fff;
 }
 
 @keyframes blink {
-  0%, 50%, 100% {
-    opacity: 1;
-  }
-  25%, 75% {
-    opacity: 0;
-  }
+  0% { opacity: 1; }
+  50% { opacity: 0.3; }
+  100% { opacity: 1; }
 }
