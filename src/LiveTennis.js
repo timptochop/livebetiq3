@@ -26,12 +26,11 @@ function LiveTennis() {
 
   return (
     <div className="container">
-      <img src="/logo192.png" alt="LiveBet IQ Logo" className="logo" />
       {matches.map((match) => (
         <div key={match.id} className="match-card">
           <div className="left-section">
             <div className={`status-dot ${match.isLive ? 'live' : 'not-live'}`}></div>
-            <img src="/logo192.png" alt="Logo" style={{ width: '28px', height: '28px', borderRadius: '6px' }} />
+            <img src="/logo192.png" alt="Logo" className="left-logo" />
             <div className="vertical-line"></div>
           </div>
           <div className="match-info">
