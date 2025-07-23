@@ -1,52 +1,30 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LiveBet IQ</title>
-    <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-    <header>
-        <img src="logo192.png" alt="LiveBet IQ Logo">
-        <div class="header-icons">
-            <img src="settings-icon.png" alt="Settings">
-            <img src="login-icon.png" alt="Login">
-        </div>
-    </header>
-
-    <div class="container">
-        <div class="card">
-            <div class="status-dot live"></div>
-            <img src="logo192.png" alt="Logo" style="height:30px;">
-            <div class="divider"></div>
-            <div class="match-info">Alexander Zverev vs Roberto Bautista Agut</div>
-            <div class="label safe">SAFE</div>
-        </div>
-
-        <div class="card">
-            <div class="status-dot live"></div>
-            <img src="logo192.png" alt="Logo" style="height:30px;">
-            <div class="divider"></div>
-            <div class="match-info">Taro Daniel vs Luca Nardi</div>
-            <div class="label risky">RISKY</div>
-        </div>
-
-        <div class="card">
-            <div class="status-dot offline"></div>
-            <img src="logo192.png" alt="Logo" style="height:30px;">
-            <div class="divider"></div>
-            <div class="match-info">Denis Shapovalov vs Taro Daniel</div>
-            <div class="label avoid">AVOID</div>
-        </div>
-
-        <div class="card">
-            <div class="status-dot offline"></div>
-            <img src="logo192.png" alt="Logo" style="height:30px;">
-            <div class="divider"></div>
-            <div class="match-info">Linda Noskova vs Katie Boulter</div>
-            <div class="label soon">STARTS SOON</div>
-        </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LIVE BET IQ</title>
+    <link rel="manifest" href="manifest.json" />
+    <link rel="apple-touch-icon" href="logo192.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="header">
+      <div class="header-left">
+        <img src="logo192.png" alt="LiveBet IQ Logo" class="logo" />
+        <span class="app-title">LIVE BET IQ</span>
+      </div>
+      <div class="header-right">
+        <button class="icon-button">
+          <img src="settings-icon.svg" alt="Settings" />
+        </button>
+        <button class="icon-button">
+          <img src="login-icon.svg" alt="Login" />
+        </button>
+      </div>
     </div>
-</body>
+    <div class="divider"></div>
+    <div id="root"></div>
+    <script src="../src/index.js" type="module"></script>
+  </body>
 </html>

@@ -1,107 +1,48 @@
-body {
-    background-color: #000;
-    color: #fff;
-    font-family: Arial, sans-serif;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    margin: 0;
-    padding-top: 80px; /* χώρο για το fixed header */
-}
+import React from "react";
 
-header {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    background-color: #000;
-    border-bottom: 1px solid #fff;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 20px;
-    z-index: 1000;
-}
+const LiveTennis = () => {
+  const matches = [
+    {
+      name: "Alexander Zverev vs Roberto Bautista Agut",
+      status: "live",
+      label: "SAFE",
+      labelClass: "safe",
+    },
+    {
+      name: "Taro Daniel vs Luca Nardi",
+      status: "live",
+      label: "RISKY",
+      labelClass: "risky",
+    },
+    {
+      name: "Denis Shapovalov vs Taro Daniel",
+      status: "not-live",
+      label: "AVOID",
+      labelClass: "avoid",
+    },
+    {
+      name: "Linda Noskova vs Katie Boulter",
+      status: "not-live",
+      label: "STARTS SOON",
+      labelClass: "starts-soon",
+    },
+  ];
 
-header img {
-    height: 35px;
-}
+  return (
+    <div className="card-container">
+      {matches.map((match, index) => (
+        <div className="card" key={index}>
+          <div
+            className={`status-dot ${
+              match.status === "live" ? "live" : "not-live"
+            }`}
+          ></div>
+          <div className="match-name">{match.name}</div>
+          <div className={`tag ${match.labelClass}`}>{match.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+};
 
-.header-icons {
-    display: flex;
-    gap: 15px;
-}
-
-.header-icons img {
-    height: 24px;
-    cursor: pointer;
-}
-
-.container {
-    background-color: #1c1c1c;
-    border-radius: 20px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
-    padding: 20px;
-    width: 90%;
-    max-width: 500px;
-}
-
-.card {
-    display: flex;
-    align-items: center;
-    background-color: #2c2c2c;
-    border-radius: 15px;
-    padding: 10px;
-    margin-bottom: 15px;
-    box-shadow: inset 0 0 5px rgba(0,0,0,0.3);
-}
-
-.status-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    margin-right: 10px;
-}
-
-.status-dot.live {
-    background-color: #00ff00;
-    animation: blink 1s infinite;
-}
-
-.status-dot.offline {
-    background-color: #ff0000;
-}
-
-.divider {
-    width: 1px;
-    height: 30px;
-    background-color: #999;
-    margin: 0 10px;
-}
-
-.match-info {
-    flex-grow: 1;
-    color: #fff;
-    font-size: 16px;
-}
-
-.label {
-    font-size: 14px;
-    font-weight: bold;
-    border-radius: 8px;
-    padding: 3px 8px;
-    color: #fff;
-}
-
-.label.safe { background-color: #28a745; }
-.label.risky { background-color: #ffc107; color: #000; }
-.label.avoid { background-color: #dc3545; }
-.label.soon  { background-color: #6c757d; }
-}
-
-@keyframes blink {
-    0% { opacity: 1; }
-    50% { opacity: 0.3; }
-    100% { opacity: 1; }
-}
+export default LiveTennis;
