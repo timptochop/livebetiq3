@@ -1,48 +1,129 @@
-import React from "react";
+body {
+  background-color: #0f0f0f;
+  color: #ffffff;
+  font-family: "Arial", sans-serif;
+  margin: 0;
+  padding: 0;
+}
 
-const LiveTennis = () => {
-  const matches = [
-    {
-      name: "Alexander Zverev vs Roberto Bautista Agut",
-      status: "live",
-      label: "SAFE",
-      labelClass: "safe",
-    },
-    {
-      name: "Taro Daniel vs Luca Nardi",
-      status: "live",
-      label: "RISKY",
-      labelClass: "risky",
-    },
-    {
-      name: "Denis Shapovalov vs Taro Daniel",
-      status: "not-live",
-      label: "AVOID",
-      labelClass: "avoid",
-    },
-    {
-      name: "Linda Noskova vs Katie Boulter",
-      status: "not-live",
-      label: "STARTS SOON",
-      labelClass: "starts-soon",
-    },
-  ];
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #1a1a1a;
+  padding: 10px 15px;
+  position: fixed;
+  width: 100%;
+  top: 0;
+  z-index: 1000;
+}
 
-  return (
-    <div className="card-container">
-      {matches.map((match, index) => (
-        <div className="card" key={index}>
-          <div
-            className={`status-dot ${
-              match.status === "live" ? "live" : "not-live"
-            }`}
-          ></div>
-          <div className="match-name">{match.name}</div>
-          <div className={`tag ${match.labelClass}`}>{match.label}</div>
-        </div>
-      ))}
-    </div>
-  );
-};
+.header-left {
+  display: flex;
+  align-items: center;
+}
 
-export default LiveTennis;
+.logo {
+  width: 35px;
+  height: 35px;
+  border-radius: 8px;
+}
+
+.app-title {
+  margin-left: 10px;
+  font-size: 20px;
+  font-weight: bold;
+  color: #ffffff;
+}
+
+.header-right {
+  display: flex;
+  gap: 10px;
+}
+
+.icon-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.icon-button img {
+  width: 22px;
+  height: 22px;
+}
+
+.divider {
+  height: 2px;
+  background-color: #ffffff;
+  margin-top: 65px; /* pushes down content below fixed header */
+}
+
+.card-container {
+  padding: 20px;
+}
+
+.card {
+  background-color: #1f1f1f;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+  padding: 10px;
+}
+
+.card .status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 10px;
+}
+
+.status-dot.live {
+  background-color: #00ff00;
+  animation: blink 1s infinite;
+}
+
+.status-dot.not-live {
+  background-color: #ff0000;
+}
+
+.card .match-name {
+  flex: 1;
+  color: #ffffff;
+  font-size: 16px;
+}
+
+.card .tag {
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: bold;
+  color: #fff;
+}
+
+.tag.safe {
+  background-color: #28a745;
+}
+
+.tag.risky {
+  background-color: #ffc107;
+  color: #000;
+}
+
+.tag.avoid {
+  background-color: #dc3545;
+}
+
+.tag.starts-soon {
+  background-color: #6c757d;
+}
+
+@keyframes blink {
+  0%, 50%, 100% {
+    opacity: 1;
+  }
+  25%, 75% {
+    opacity: 0;
+  }
+}
