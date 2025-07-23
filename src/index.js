@@ -1,20 +1,11 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import LiveTennis from "./LiveTennis";
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import './index.css';
 
-const App = () => {
-  return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<LiveTennis />} />
-        {/* Για μελλοντικές σελίδες */}
-        {/* <Route path="/settings" element={<Settings />} /> */}
-        {/* <Route path="/login" element={<Login />} /> */}
-      </Routes>
-    </Router>
-  );
-};
-
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<App />);
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
