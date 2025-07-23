@@ -1,121 +1,116 @@
 body {
-  background-color: #121212;
-  color: #fff;
-  font-family: 'Arial', sans-serif;
   margin: 0;
-  padding: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  background-color: #121212;
+  color: #ffffff;
 }
 
 .header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  background-color: #1f1f1f;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background-color: #1e1e1e;
-  padding: 10px 15px;
-  border-bottom: 2px solid #ffffff20;
-  position: fixed;
-  width: 100%;
-  top: 0;
+  padding: 10px 20px;
+  border-bottom: 1px solid #ffffff30;
   z-index: 1000;
 }
 
-.header-left {
+.header-logo {
   display: flex;
   align-items: center;
 }
 
-.logo {
-  width: 40px;
+.header-logo img {
   height: 40px;
-  border-radius: 8px;
   margin-right: 10px;
-}
-
-.app-name {
-  font-size: 20px;
-  font-weight: bold;
-  color: #e0e0e0;
 }
 
 .header-icons {
   display: flex;
-  gap: 12px;
+  gap: 15px;
 }
 
 .header-icons i {
-  color: #fff;
-  font-size: 18px;
+  font-size: 22px;
   cursor: pointer;
+  color: #ffffffcc;
 }
 
-.container {
-  margin-top: 70px;
-  padding: 15px;
+.prediction-container {
+  margin-top: 80px; /* space for fixed header */
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  padding: 10px;
 }
 
-.match-card {
-  background-color: #1e1e1e;
+.prediction-card {
+  background-color: #1f1f1f;
   border-radius: 15px;
-  padding: 12px;
-  margin-bottom: 12px;
+  padding: 15px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
 }
 
-.match-left {
+.prediction-left {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.status-dot {
-  width: 12px;
+.dot-live {
   height: 12px;
-  border-radius: 50%;
-}
-
-.status-live {
+  width: 12px;
   background-color: #00ff00;
+  border-radius: 50%;
   animation: blink 1s infinite;
 }
 
-.status-soon {
+.dot-offline {
+  height: 12px;
+  width: 12px;
   background-color: #ff0000;
+  border-radius: 50%;
 }
 
-.match-name {
+.prediction-text {
   font-size: 16px;
-  color: #f1f1f1;
-}
-
-.match-badge {
-  padding: 3px 10px;
-  border-radius: 8px;
-  font-size: 13px;
   font-weight: bold;
+}
+
+.status-label {
+  padding: 5px 10px;
+  border-radius: 10px;
   color: #fff;
+  font-size: 14px;
+  font-weight: bold;
 }
 
-.safe {
-  background-color: #0f9d58;
+.status-safe {
+  background-color: #28a745;
 }
 
-.risky {
-  background-color: #f4b400;
+.status-risky {
+  background-color: #ffc107;
   color: #000;
 }
 
-.avoid {
-  background-color: #db4437;
+.status-avoid {
+  background-color: #dc3545;
 }
 
-.soon {
-  background-color: #5f6368;
+.status-soon {
+  background-color: #6c757d;
 }
 
 @keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  0% { opacity: 1; }
+  50% { opacity: 0.2; }
+  100% { opacity: 1; }
 }

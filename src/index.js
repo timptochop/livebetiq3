@@ -1,19 +1,20 @@
 import React from "react";
-import { createRoot } from "react-dom/client";
-import "./index.css";
-import App from "./App";
-import reportWebVitals from "./reportWebVitals";
+import ReactDOM from "react-dom/client";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import LiveTennis from "./LiveTennis";
 
-// Βρίσκει το div με id="root" από το index.html
-const container = document.getElementById("root");
-const root = createRoot(container);
+const App = () => {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<LiveTennis />} />
+        {/* Για μελλοντικές σελίδες */}
+        {/* <Route path="/settings" element={<Settings />} /> */}
+        {/* <Route path="/login" element={<Login />} /> */}
+      </Routes>
+    </Router>
+  );
+};
 
-// Κάνει render το App component
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
-
-// Optional: καταγράφει performance metrics
-reportWebVitals();
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
