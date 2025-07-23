@@ -13,7 +13,7 @@ body {
   background-color: #1c1c1e;
   border-radius: 16px;
   padding: 20px;
-  max-width: 400px;
+  max-width: 420px;
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
 }
 
@@ -32,6 +32,41 @@ body {
   margin: 10px 0;
   padding: 12px;
   display: flex;
+  align-items: center;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.left-section {
+  display: flex;
+  align-items: center;
+  margin-right: 12px;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.status-dot.live {
+  background-color: #28a745;
+}
+
+.status-dot.not-live {
+  background-color: #dc3545;
+}
+
+.vertical-line {
+  width: 1px;
+  background-color: #ffffff;
+  height: 30px;
+  margin-left: 8px;
+}
+
+.match-info {
+  flex: 1;
+  display: flex;
   justify-content: space-between;
   align-items: center;
 }
@@ -39,6 +74,7 @@ body {
 .match-title {
   color: #fff;
   font-weight: 500;
+  margin-left: 12px;
 }
 
 .tag {
