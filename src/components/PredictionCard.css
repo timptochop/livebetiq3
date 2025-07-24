@@ -1,64 +1,40 @@
-.card {
-  background-color: #1a1a1a;
-  color: white;
-  border-radius: 12px;
-  padding: 12px 16px;
-  margin: 10px 0;
+.prediction-card {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
+  background-color: #1e1e1e;
+  padding: 12px 16px;
+  border-radius: 10px;
+  margin-bottom: 12px;
 }
 
-.indicator-and-text {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.blinking-dot {
+.dot {
   height: 10px;
   width: 10px;
-  background-color: #00ff00;
   border-radius: 50%;
-  display: inline-block;
+  margin-right: 12px;
+}
+
+.blinking {
   animation: blink 1s infinite;
 }
 
 @keyframes blink {
-  0%   { opacity: 1; }
-  50%  { opacity: 0; }
+  0% { opacity: 1; }
+  50% { opacity: 0.2; }
   100% { opacity: 1; }
 }
 
 .match-name {
-  font-size: 16px;
-  font-weight: 500;
+  color: white;
+  flex: 1;
+  font-size: 15px;
 }
 
 .label {
   padding: 4px 10px;
   border-radius: 8px;
-  font-size: 13px;
   font-weight: bold;
-  text-transform: uppercase;
-}
-
-.label.green {
-  background-color: #00cc44;
-  color: white;
-}
-
-.label.yellow {
-  background-color: #ffcc00;
   color: black;
-}
-
-.label.red {
-  background-color: #ff3333;
-  color: white;
-}
-
-.label.gray {
-  background-color: #888;
-  color: white;
+  font-size: 13px;
 }

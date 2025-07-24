@@ -1,19 +1,54 @@
-import React from 'react';
-import PredictionCard from './components/PredictionCard';
+import React, { useEffect, useState } from 'react';
+import './components/PredictionCard.css';
 
 function LiveTennis() {
-  const demoPredictions = [
-    { match: "Alexander Zverev vs Roberto Bautista Agut", label: "SAFE" },
-    { match: "Taro Daniel vs Luca Nardi", label: "RISKY" },
-    { match: "Denis Shapovalov vs Taro Daniel", label: "AVOID" },
-    { match: "Linda Noskova vs Katie Boulter", label: "STARTS SOON" }
-  ];
+  const [matches, setMatches] = useState([]);
+
+  useEffect(() => {
+    fetch('/api/tennis/live')
+      .then((res) => res.json())
+      .then((data) => setMatches(data));
+  }, []);
+
+  const getLabelColor = (label) => {
+    switch (label) {
+      case 'SAFE':
+        return '#00C853';
+      case 'RISKY':
+        return '#FFD600';
+      case 'AVOID':
+        return '#D50000';
+      case 'STARTS SOON':
+        return '#B0BEC5';
+      default:
+        return '#FFFFFF';
+    }
+  };
+
+  const getDotColor = (label) => {
+    return label === 'STARTS SOON' ? '#D50000' : '#00C853'; // Κόκκινο αν δεν έχει ξεκινήσει
+  };
+
+  const isBlinking = (label) => {
+    return label !== 'STARTS SOON';
+  };
 
   return (
     <div>
-      <h2 style={{ color: 'white' }}>Live Tennis Matches</h2>
-      {demoPredictions.map((pred, index) => (
-        <PredictionCard key={index} match={pred.match} label={pred.label} />
+      {matches.map((match) => (
+        <div key={match.id} className="prediction-card">
+          <span
+            className={`dot ${isBlinking(match.aiLabel) ? 'blinking' : ''}`}
+            style={{ backgroundColor: getDotColor(match.aiLabel) }}
+          ></span>
+          <span className="match-name">{match.player1} vs {match.player2}</span>
+          <span
+            className="label"
+            style={{ backgroundColor: getLabelColor(match.aiLabel) }}
+          >
+            {match.aiLabel}
+          </span>
+        </div>
       ))}
     </div>
   );
