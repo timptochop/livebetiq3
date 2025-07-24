@@ -6,8 +6,8 @@ function App() {
   return (
     <div className="App">
       <div className="container">
-        {/* Logo updated for redeploy */}
-        <img src="/logo192.png" alt="LiveBetIQ v1" className="logo" />
+        {/* Logo από public, σωστή χρήση */}
+        <img src="/logo192.png" alt="LiveBet IQ" className="logo" />
         <LiveTennis />
       </div>
     </div>
