@@ -3,6 +3,7 @@ import './components/PredictionCard.css';
 
 function LiveTennis() {
   const [matches, setMatches] = useState([]);
+  const [currentDateTime, setCurrentDateTime] = useState('24/07/2025 15:45');
 
   useEffect(() => {
     fetch('/api/tennis/live')
@@ -26,7 +27,7 @@ function LiveTennis() {
   };
 
   const getDotColor = (label) => {
-    return label === 'STARTS SOON' ? '#D50000' : '#00C853'; // Κόκκινο αν δεν έχει ξεκινήσει
+    return label === 'STARTS SOON' ? '#D50000' : '#00C853';
   };
 
   const isBlinking = (label) => {
@@ -34,7 +35,21 @@ function LiveTennis() {
   };
 
   return (
-    <div>
+    <div style={{ backgroundColor: '#121212', minHeight: '100vh', padding: '0px 20px' }}>
+      {/* Top Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '20px' }}>
+        <img src="/logo192.png" alt="Logo" style={{ width: '40px', height: '40px' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ color: 'white', fontSize: '13px' }}>{currentDateTime}</span>
+          <span className="settings-icon" style={{ fontSize: '22px', color: '#ffffff' }}>⚙️</span>
+          <span className="lock-icon" style={{ fontSize: '22px', color: '#ffffff' }}>🔒</span>
+        </div>
+      </div>
+
+      {/* White Line */}
+      <hr style={{ borderTop: '1px solid white', marginTop: '12px', marginBottom: '25px' }} />
+
+      {/* Match Cards */}
       {matches.map((match) => (
         <div key={match.id} className="prediction-card">
           <span
