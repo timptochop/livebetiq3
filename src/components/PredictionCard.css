@@ -1,18 +1,23 @@
 .prediction-card {
+  background-color: #1e1e1e;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 15px;
+  color: white;
+  font-family: Arial, sans-serif;
+}
+
+.top-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background-color: #1e1e1e;
-  padding: 12px 16px;
-  border-radius: 10px;
-  margin-bottom: 12px;
 }
 
 .dot {
-  height: 10px;
   width: 10px;
+  height: 10px;
   border-radius: 50%;
-  margin-right: 12px;
+  margin-right: 8px;
 }
 
 .blinking {
@@ -21,20 +26,38 @@
 
 @keyframes blink {
   0% { opacity: 1; }
-  50% { opacity: 0.2; }
+  50% { opacity: 0; }
   100% { opacity: 1; }
 }
 
 .match-name {
-  color: white;
-  flex: 1;
+  flex-grow: 1;
+  font-weight: bold;
   font-size: 15px;
+  margin-left: 8px;
 }
 
 .label {
-  padding: 4px 10px;
-  border-radius: 8px;
-  font-weight: bold;
   color: black;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-weight: bold;
+  font-size: 12px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
   font-size: 13px;
+}
+
+.info-item {
+  color: #cccccc;
+}
+
+.note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #999999;
 }
