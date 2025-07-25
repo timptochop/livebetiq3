@@ -40,9 +40,9 @@ function LiveTennis() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '20px' }}>
         <img src="/logo192.png" alt="Logo" style={{ width: '40px', height: '40px' }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ color: 'white', fontSize: '13px' }}>{currentDateTime}</span>
-          <span className="settings-icon" style={{ fontSize: '22px', color: '#ffffff' }}>⚙️</span>
-          <span className="lock-icon" style={{ fontSize: '22px', color: '#ffffff' }}>🔒</span>
+          <span style={{ color: 'white', fontSize: '13px' }}>Server Time: {currentDateTime}</span>
+          <span style={{ fontSize: '20px', color: '#ffffff' }}>⚙️</span>
+          <span style={{ fontSize: '20px', color: '#ffffff' }}>🔐</span>
         </div>
       </div>
 
