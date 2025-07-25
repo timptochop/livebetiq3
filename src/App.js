@@ -1,12 +1,9 @@
 import React from 'react';
-import './App.css';
-import LiveTennis from './components/LiveTennis';
-import TopBar from './components/TopBar';
+import LiveTennis from './LiveTennis'; // ✅ Σωστό path (όχι ./components)
 
 function App() {
   return (
     <div className="App">
-      <TopBar />
       <LiveTennis />
     </div>
   );
