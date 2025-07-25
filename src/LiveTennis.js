@@ -1,26 +1,45 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './components/PredictionCard.css';
 
 function LiveTennis() {
-  const [matches, setMatches] = useState([]);
-  const [time, setTime] = useState('');
+  const [matches, setMatches] = useState([
+    {
+      id: 1,
+      player1: 'Nadal',
+      player2: 'Federer',
+      aiLabel: 'SAFE'
+    },
+    {
+      id: 2,
+      player1: 'Djokovic',
+      player2: 'Zverev',
+      aiLabel: 'RISKY'
+    },
+    {
+      id: 3,
+      player1: 'Tsitsipas',
+      player2: 'Alcaraz',
+      aiLabel: 'AVOID'
+    },
+    {
+      id: 4,
+      player1: 'Sinner',
+      player2: 'Medvedev',
+      aiLabel: 'STARTS SOON'
+    }
+  ]);
 
-  useEffect(() => {
-    fetch('/api/tennis/live')
-      .then((res) => res.json())
-      .then((data) => setMatches(data));
-  }, []);
+  const [currentTime, setCurrentTime] = useState('');
 
   useEffect(() => {
     const updateClock = () => {
       const now = new Date();
-      const hours = now.getHours().toString().padStart(2, '0');
-      const minutes = now.getMinutes().toString().padStart(2, '0');
-      setTime(`${hours}:${minutes}`);
+      const hh = now.getHours().toString().padStart(2, '0');
+      const mm = now.getMinutes().toString().padStart(2, '0');
+      setCurrentTime(`${hh}:${mm}`);
     };
-
     updateClock();
-    const interval = setInterval(updateClock, 60000);
+    const interval = setInterval(updateClock, 10000); // κάθε 10s
     return () => clearInterval(interval);
   }, []);
 
@@ -43,19 +62,17 @@ function LiveTennis() {
     return label === 'STARTS SOON' ? '#D50000' : '#00C853';
   };
 
-  const isBlinking = (label) => {
-    return label !== 'STARTS SOON';
-  };
+  const isBlinking = (label) => label !== 'STARTS SOON';
 
   return (
-    <div style={{ backgroundColor: '#121212', minHeight: '100vh', padding: '0px 20px' }}>
+    <div style={{ backgroundColor: '#121212', minHeight: '100vh', padding: '0 20px' }}>
       {/* Top Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '20px' }}>
         <img src="/logo192.png" alt="Logo" style={{ width: '40px', height: '40px' }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ color: 'white', fontSize: '13px' }}>{time}</span>
-          <span className="settings-icon" style={{ fontSize: '20px', color: '#ffffff' }}>⚙️</span>
-          <span className="login-icon" style={{ fontSize: '20px', color: '#ffffff' }}>👤</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ color: 'white', fontSize: '13px' }}>{currentTime}</span>
+          <span style={{ fontSize: '22px', color: '#ffffff' }}>⚙️</span>
+          <span style={{ fontSize: '22px', color: '#ffffff' }}>👤</span>
         </div>
       </div>
 
