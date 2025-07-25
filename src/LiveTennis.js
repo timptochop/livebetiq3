@@ -3,12 +3,25 @@ import './components/PredictionCard.css';
 
 function LiveTennis() {
   const [matches, setMatches] = useState([]);
-  const [currentDateTime, setCurrentDateTime] = useState('24/07/2025 15:45');
+  const [time, setTime] = useState('');
 
   useEffect(() => {
     fetch('/api/tennis/live')
       .then((res) => res.json())
       .then((data) => setMatches(data));
+  }, []);
+
+  useEffect(() => {
+    const updateClock = () => {
+      const now = new Date();
+      const hours = now.getHours().toString().padStart(2, '0');
+      const minutes = now.getMinutes().toString().padStart(2, '0');
+      setTime(`${hours}:${minutes}`);
+    };
+
+    updateClock();
+    const interval = setInterval(updateClock, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   const getLabelColor = (label) => {
@@ -39,10 +52,10 @@ function LiveTennis() {
       {/* Top Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '20px' }}>
         <img src="/logo192.png" alt="Logo" style={{ width: '40px', height: '40px' }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ color: 'white', fontSize: '13px' }}>Server Time: {currentDateTime}</span>
-          <span style={{ fontSize: '20px', color: '#ffffff' }}>⚙️</span>
-          <span style={{ fontSize: '20px', color: '#ffffff' }}>🔐</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ color: 'white', fontSize: '13px' }}>{time}</span>
+          <span className="settings-icon" style={{ fontSize: '20px', color: '#ffffff' }}>⚙️</span>
+          <span className="login-icon" style={{ fontSize: '20px', color: '#ffffff' }}>👤</span>
         </div>
       </div>
 
