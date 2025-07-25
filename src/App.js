@@ -1,5 +1,5 @@
 import React from 'react';
-import LiveTennis from './LiveTennis'; // ✅ Σωστό path (όχι ./components)
+import LiveTennis from './LiveTennis'; // ✅ Σωστό import
 
 function App() {
   return (
