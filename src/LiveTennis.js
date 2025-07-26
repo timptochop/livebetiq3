@@ -6,22 +6,17 @@ function LiveTennis() {
 
   useEffect(() => {
     fetch('/api/tennis/live')
-      .then((res) => res.json())
-      .then((data) => setMatches(data));
+      .then(res => res.json())
+      .then(data => setMatches(data));
   }, []);
 
   const getLabelColor = (label) => {
     switch (label) {
-      case 'SAFE':
-        return '#00C853';
-      case 'RISKY':
-        return '#FFD600';
-      case 'AVOID':
-        return '#D50000';
-      case 'STARTS SOON':
-        return '#B0BEC5';
-      default:
-        return '#FFFFFF';
+      case 'SAFE': return '#00C853';
+      case 'RISKY': return '#FFD600';
+      case 'AVOID': return '#D50000';
+      case 'STARTS SOON': return '#B0BEC5';
+      default: return '#FFFFFF';
     }
   };
 
@@ -38,15 +33,10 @@ function LiveTennis() {
       {matches.map((match) => (
         <div key={match.id} className="prediction-card">
           <div className="top-row">
-            <span
-              className={`dot ${isBlinking(match.aiLabel) ? 'blinking' : ''}`}
-              style={{ backgroundColor: getDotColor(match.aiLabel) }}
-            ></span>
+            <span className={`dot ${isBlinking(match.aiLabel) ? 'blinking' : ''}`}
+                  style={{ backgroundColor: getDotColor(match.aiLabel) }}></span>
             <span className="match-name">{match.player1} vs {match.player2}</span>
-            <span
-              className="label"
-              style={{ backgroundColor: getLabelColor(match.aiLabel) }}
-            >
+            <span className="label" style={{ backgroundColor: getLabelColor(match.aiLabel) }}>
               {match.aiLabel}
             </span>
           </div>

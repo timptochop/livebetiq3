@@ -1,30 +1,33 @@
 .top-bar {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  background-color: #111;
-  padding: 10px 15px;
+  align-items: center;
+  padding: 12px 20px 8px 20px;
   border-bottom: 1px solid white;
+  background-color: #121212;
+  position: sticky;
+  top: 0;
+  z-index: 999;
 }
 
-.top-bar-logo {
-  height: 30px;
+.logo {
+  width: 38px;
+  height: 38px;
 }
 
-.top-bar-right {
+.right-section {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 14px;
+  gap: 10px;
+}
+
+.time {
+  font-size: 13px;
+  font-weight: 500;
   color: white;
 }
 
-.server-time {
-  font-size: 13px;
-  opacity: 0.8;
-}
-
-.top-bar-icon {
-  font-size: 18px;
-  cursor: pointer;
+.icon {
+  font-size: 20px;
+  color: white;
 }
