@@ -1,3 +1,4 @@
+// src/components/TopBar.js
 import React, { useEffect, useState } from 'react';
 import './TopBar.css';
 import logo from '../../public/logo192.png';
@@ -22,11 +23,13 @@ const TopBar = () => {
     <div className="top-bar">
       <div className="left-section">
         <img src={logo} alt="Live Bet IQ Logo" className="logo" />
-        <div className="center-section">{serverTime}</div>
+      </div>
+      <div className="center-section">
+        <span className="server-time">{serverTime}</span>
       </div>
       <div className="right-section">
-        <span className="icon">⚙️</span>
-        <span className="icon">🔐</span>
+        <span className="icon">&#9881;</span> {/* ⚙ */}
+        <span className="icon">&#128100;</span> {/* 👤 */}
       </div>
     </div>
   );

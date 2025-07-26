@@ -1,7 +1,15 @@
+/* src/components/TopBar.css */
 .top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 999;
+
   display: flex;
   justify-content: space-between;
   align-items: center;
+
   padding: 8px 12px;
   background-color: #1a1a1a;
   border-bottom: 1px solid white;
@@ -10,7 +18,7 @@
 .left-section {
   display: flex;
   align-items: center;
-  gap: 10px; /* spacing ανάμεσα στο logo και την ώρα */
+  gap: 10px;
 }
 
 .logo {
@@ -30,7 +38,7 @@
 .right-section {
   display: flex;
   align-items: center;
-  gap: 10px; /* spacing ανάμεσα στα icons */
+  gap: 16px;
   font-size: 18px;
   color: white;
 }
