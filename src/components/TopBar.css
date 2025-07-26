@@ -10,6 +10,7 @@
 .left-section {
   display: flex;
   align-items: center;
+  gap: 10px; /* spacing ανάμεσα στο logo και την ώρα */
 }
 
 .logo {
@@ -28,8 +29,8 @@
 
 .right-section {
   display: flex;
-  gap: 10px;
   align-items: center;
+  gap: 10px; /* spacing ανάμεσα στα icons */
   font-size: 18px;
   color: white;
 }

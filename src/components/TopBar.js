@@ -22,9 +22,7 @@ const TopBar = () => {
     <div className="top-bar">
       <div className="left-section">
         <img src={logo} alt="Live Bet IQ Logo" className="logo" />
-      </div>
-      <div className="center-section">
-        <div className="time">{serverTime}</div>
+        <div className="center-section">{serverTime}</div>
       </div>
       <div className="right-section">
         <span className="icon">⚙️</span>
