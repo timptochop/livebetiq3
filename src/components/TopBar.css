@@ -6,7 +6,7 @@
   align-items: center;
   padding: 6px 12px;
   border-bottom: 1px solid white;
-  height: 40px;
+  height: 42px;
 }
 
 .logo {
@@ -14,10 +14,16 @@
   width: auto;
 }
 
+.left-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .right-section {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .time {

@@ -8,9 +8,11 @@ function TopBar() {
 
   return (
     <div className="top-bar">
-      <img src="/logo192.png" alt="Logo" className="logo" />
-      <div className="right-section">
+      <div className="left-section">
+        <img src="/logo192.png" alt="Logo" className="logo" />
         <span className="time">{hours}:{minutes}</span>
+      </div>
+      <div className="right-section">
         <span className="icon">⚙️</span>
         <span className="icon">👤</span>
       </div>
