@@ -1,34 +1,39 @@
 .top-bar {
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
   padding: 8px 12px;
-  background-color: #111;
-  color: white;
+  background-color: #1a1a1a;
   border-bottom: 1px solid white;
 }
 
+.left-section {
+  display: flex;
+  align-items: center;
+}
+
 .logo {
-  height: 30px;
+  height: 24px;
+  width: auto;
 }
 
-.center-elements {
+.center-section {
   flex-grow: 1;
-  text-align: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   font-size: 16px;
+  color: white;
 }
 
-.time {
-  font-weight: bold;
-}
-
-.icons {
+.right-section {
   display: flex;
   gap: 10px;
+  align-items: center;
+  font-size: 18px;
+  color: white;
 }
 
 .icon {
-  font-size: 20px;
-  color: white;
   cursor: pointer;
 }

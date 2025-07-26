@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import './TopBar.css';
 import logo from '../../public/logo192.png';
-import { FiSettings } from 'react-icons/fi';
-import { FaUserLock } from 'react-icons/fa';
 
 const TopBar = () => {
   const [serverTime, setServerTime] = useState('');
@@ -22,13 +20,15 @@ const TopBar = () => {
 
   return (
     <div className="top-bar">
-      <img src={logo} alt="Live Bet IQ Logo" className="logo" />
-      <div className="center-elements">
+      <div className="left-section">
+        <img src={logo} alt="Live Bet IQ Logo" className="logo" />
+      </div>
+      <div className="center-section">
         <div className="time">{serverTime}</div>
       </div>
-      <div className="icons">
-        <FiSettings className="icon" />
-        <FaUserLock className="icon" />
+      <div className="right-section">
+        <span className="icon">⚙️</span>
+        <span className="icon">🔐</span>
       </div>
     </div>
   );
