@@ -10,7 +10,7 @@ function TopBar() {
     <div className="top-bar">
       <img src="/logo192.png" alt="Logo" className="logo" />
       <div className="right-section">
-        <span className="time">Server Time: {hours}:{minutes}</span>
+        <span className="time">{hours}:{minutes}</span>
         <span className="icon">⚙️</span>
         <span className="icon">👤</span>
       </div>
