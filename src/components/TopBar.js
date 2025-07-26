@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import './TopBar.css';
-import logo from '../../public/logo192.png'; // Ενδέχεται να αλλάξει αν το έχεις αλλού
+import logo from '../../public/logo192.png'; // Προσαρμόστε εάν χρειάζεται
 
 const TopBar = () => {
   const [serverTime, setServerTime] = useState('');
@@ -13,18 +13,20 @@ const TopBar = () => {
       setServerTime(`${hours}:${minutes}`);
     };
 
-    updateTime(); // αρχικό set
-    const interval = setInterval(updateTime, 60000); // ανανέωση ανά λεπτό
+    updateTime();
+    const interval = setInterval(updateTime, 60000);
     return () => clearInterval(interval);
   }, []);
 
   return (
     <div className="top-bar">
       <img src={logo} alt="Live Bet IQ Logo" className="logo" />
-      <div className="time">{serverTime}</div>
+      <div className="center-elements">
+        <div className="time">{serverTime}</div>
+      </div>
       <div className="icons">
-        <span role="img" aria-label="settings" className="icon">⚙️</span>
-        <span role="img" aria-label="login" className="icon">🔐</span>
+        <span className="icon">⚙️</span>
+        <span className="icon">🔐</span>
       </div>
     </div>
   );
