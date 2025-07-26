@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import './TopBar.css';
-import logo from '../../public/logo192.png'; // Προσαρμόστε εάν χρειάζεται
+import logo from '../../public/logo192.png';
+import { FiSettings } from 'react-icons/fi';
+import { FaUserLock } from 'react-icons/fa';
 
 const TopBar = () => {
   const [serverTime, setServerTime] = useState('');
@@ -25,8 +27,8 @@ const TopBar = () => {
         <div className="time">{serverTime}</div>
       </div>
       <div className="icons">
-        <span className="icon">⚙️</span>
-        <span className="icon">🔐</span>
+        <FiSettings className="icon" />
+        <FaUserLock className="icon" />
       </div>
     </div>
   );

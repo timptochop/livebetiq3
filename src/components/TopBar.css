@@ -2,39 +2,33 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 8px 12px;
   background-color: #111;
-  padding: 6px 14px;
+  color: white;
   border-bottom: 1px solid white;
-  width: 100%;
-  height: 44px;
-  box-sizing: border-box;
 }
 
 .logo {
-  height: 28px;
-  width: auto;
+  height: 30px;
 }
 
 .center-elements {
-  display: flex;
-  flex: 1;
-  justify-content: center;
+  flex-grow: 1;
+  text-align: center;
+  font-size: 16px;
 }
 
 .time {
-  color: white;
-  font-size: 16px;
-  font-weight: 500;
+  font-weight: bold;
 }
 
 .icons {
   display: flex;
-  align-items: center;
-  margin-left: auto;
+  gap: 10px;
 }
 
 .icon {
-  font-size: 18px;
+  font-size: 20px;
+  color: white;
   cursor: pointer;
-  padding-left: 14px; /* ✅ Εγγυημένο spacing */
 }
