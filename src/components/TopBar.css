@@ -30,11 +30,11 @@
 .icons {
   display: flex;
   align-items: center;
-  gap: 16px;
   margin-left: auto;
 }
 
 .icon {
   font-size: 18px;
   cursor: pointer;
+  padding-left: 14px; /* ✅ Εγγυημένο spacing */
 }
