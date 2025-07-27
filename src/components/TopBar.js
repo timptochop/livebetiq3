@@ -1,7 +1,7 @@
 // src/components/TopBar.js
 import React, { useEffect, useState } from 'react';
 import './TopBar.css';
-import logo from '../../public/logo192.png';
+import logo from '../../public/logo192.png'; // ή /logo192.png αν έχεις πρόβλημα path
 
 const TopBar = () => {
   const [serverTime, setServerTime] = useState('');

@@ -1,18 +1,14 @@
 /* src/App.css */
 .App {
-  text-align: center;
   background-color: #000000;
   color: #00ff00;
-
   min-height: 100vh;
-  padding-top: 40px; /* ύψος TopBar */
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-}
 
-.App-header img {
-  margin-top: 20px;
+  /* Σωστή ροή layout – όχι κεντράρισμα */
+  display: block;
+
+  /* Ώστε το περιεχόμενο να ξεκινά κάτω από το fixed TopBar */
+  padding-top: 50px;
 }
 
 body {
