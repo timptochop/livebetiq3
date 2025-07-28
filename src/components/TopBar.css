@@ -19,11 +19,11 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-left: 12px;
+  padding-left: 4px; /* 🔽 Πιο κοντά στην άκρη */
 }
 
 .logo {
-  height: 34px; /* 🔼 Αυξήθηκε (ήταν 28px) */
+  height: 38px; /* 🔼 Τελικό μέγεθος logo */
   width: auto;
 }
 
@@ -42,7 +42,7 @@
   gap: 16px;
   font-size: 18px;
   color: white;
-  padding-right: 18px; /* 🔼 Από 12px σε 18px */
+  padding-right: 18px;
 }
 
 .icon {
