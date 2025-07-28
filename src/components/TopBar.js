@@ -1,7 +1,5 @@
-// src/components/TopBar.js
 import React, { useEffect, useState } from 'react';
 import './TopBar.css';
-import logo from '../../public/logo192.png'; // ή /logo192.png αν έχεις πρόβλημα path
 
 const TopBar = () => {
   const [serverTime, setServerTime] = useState('');
@@ -22,7 +20,7 @@ const TopBar = () => {
   return (
     <div className="top-bar">
       <div className="left-section">
-        <img src={logo} alt="Live Bet IQ Logo" className="logo" />
+        <img src="/logo192.png" alt="Live Bet IQ Logo" className="logo" />
       </div>
       <div className="center-section">
         <span className="server-time">{serverTime}</span>

@@ -1,14 +1,8 @@
-/* src/App.css */
-
 .App {
   background-color: #000000;
   color: #00ff00;
   min-height: 100vh;
-
-  /* ✅ Κανένα flex layout — σταθερή top-down ροή */
   display: block;
-
-  /* ✅ Για να μην καλύπτεται το περιεχόμενο από το TopBar */
   padding-top: 50px;
 }
 
