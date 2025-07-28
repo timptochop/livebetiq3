@@ -5,13 +5,9 @@ import './TopBar.css';
 function TopBar() {
   const [currentTime, setCurrentTime] = useState('');
   const [showLogin, setShowLogin] = useState(false);
-  const [user, setUser] = useState('');
-  const [welcome, setWelcome] = useState(false);
+  const [user, setUser] = useState(localStorage.getItem('loggedInUser') || '');
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('loggedInUser');
-    if (savedUser) setUser(savedUser);
-
     const interval = setInterval(() => {
       const now = new Date();
       const hh = now.getHours().toString().padStart(2, '0');
@@ -22,12 +18,10 @@ function TopBar() {
   }, []);
 
   const handleLoginClick = () => setShowLogin(true);
-
   const handleLogin = (username) => {
-    setUser(username);
-    setWelcome(true);
     localStorage.setItem('loggedInUser', username);
-    setTimeout(() => setWelcome(false), 5000);
+    setUser(username);
+    setShowLogin(false);
   };
 
   const handleLogout = () => {
@@ -36,26 +30,24 @@ function TopBar() {
   };
 
   return (
-    <div className="top-bar-container">
-      <div className="top-bar">
-        <img src="/logo192.png" alt="Logo" className="top-bar-logo" />
-        <span className="top-bar-time">{currentTime}</span>
-        <div className="top-bar-icons">
-          <span className="top-bar-icon">&#9881;</span>
+    <div className="topbar">
+      <div className="topbar-inner">
+        <img src="/logo192.png" alt="Logo" className="topbar-logo" />
+        <span className="topbar-time">{currentTime}</span>
+        <div className="topbar-icons">
+          <i className="fas fa-cog"></i>
           {user ? (
             <>
-              <span className="top-bar-username">
-                {welcome ? `Welcome ${user}!` : `User: ${user}`}
-              </span>
-              <button className="logout-button" onClick={handleLogout}>Logout</button>
+              <span className="topbar-user">User: <span className="green">{user}</span></span>
+              <button className="logout-btn" onClick={handleLogout}>Logout</button>
             </>
           ) : (
-            <span className="top-bar-icon" onClick={handleLoginClick}>Login</span>
+            <i className="fas fa-user" onClick={handleLoginClick}></i>
           )}
         </div>
       </div>
       {showLogin && <LoginModal onClose={() => setShowLogin(false)} onLogin={handleLogin} />}
-      <hr className="top-bar-divider" />
+      <hr className="topbar-divider" />
     </div>
   );
 }

@@ -4,36 +4,38 @@ import './LoginModal.css';
 function LoginModal({ onClose, onLogin }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
 
-  const handleSubmit = () => {
+  const handleSubmit = (e) => {
+    e.preventDefault();
     if (username === 'user' && password === '1234') {
       onLogin(username);
-      onClose();
     } else {
-      setError('Invalid credentials');
+      alert('Invalid credentials');
     }
   };
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content">
-        <h3>Login</h3>
-        <input
-          type="text"
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        {error && <div className="error">{error}</div>}
-        <button onClick={handleSubmit}>Login</button>
-        <button className="cancel" onClick={onClose}>Cancel</button>
+      <div className="login-modal">
+        <div className="modal-header">
+          <h2>Login</h2>
+          <span className="close-btn" onClick={onClose}>×</span>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <input
+            type="text"
+            placeholder="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button type="submit">Login</button>
+        </form>
       </div>
     </div>
   );

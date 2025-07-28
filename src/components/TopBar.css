@@ -1,57 +1,62 @@
-.top-bar-container {
-  position: sticky;
-  top: 0;
-  z-index: 1000;
+.topbar {
   background-color: #1a1a1a;
+  padding: 10px 20px;
+  position: fixed;
+  top: 0;
+  width: 100%;
+  z-index: 1000;
 }
 
-.top-bar {
+.topbar-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 20px;
 }
 
-.top-bar-logo {
-  height: 36px;
-  margin-bottom: 2px;
+.topbar-logo {
+  width: 44px;
+  height: 44px;
+  margin-left: -6px;
 }
 
-.top-bar-time {
-  font-size: 14px;
+.topbar-time {
   color: white;
+  font-size: 16px;
 }
 
-.top-bar-icons {
+.topbar-icons {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  color: #ccc;
+  font-size: 18px;
 }
 
-.top-bar-icon {
-  font-size: 18px;
-  color: #ccc;
+.topbar-icons i {
   cursor: pointer;
 }
 
-.top-bar-username {
-  font-size: 14px;
-  color: #00ff00;
-  margin-left: 6px;
+.topbar-user {
+  color: #ccc;
+  font-size: 15px;
 }
 
-.logout-button {
-  background: #333;
+.green {
+  color: limegreen;
+  font-weight: bold;
+}
+
+.logout-btn {
+  background-color: #333;
   color: white;
   border: none;
-  padding: 4px 8px;
-  font-size: 13px;
-  border-radius: 4px;
+  padding: 4px 10px;
+  border-radius: 5px;
   cursor: pointer;
+  font-size: 14px;
 }
 
-.top-bar-divider {
+.topbar-divider {
   border-top: 1px solid white;
-  margin-top: 12px;
-  margin-bottom: 20px;
+  margin-top: 10px;
 }
