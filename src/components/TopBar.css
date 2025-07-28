@@ -19,11 +19,11 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-left: 4px; /* 🔽 Πιο κοντά στην άκρη */
+  padding-left: 0px; /* ⬅️ Πιο αριστερά δεν πάει */
 }
 
 .logo {
-  height: 38px; /* 🔼 Τελικό μέγεθος logo */
+  height: 42px; /* 🔼 Τελικό μέγεθος */
   width: auto;
 }
 
