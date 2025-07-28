@@ -1,4 +1,3 @@
-// src/components/TopBar.js
 import React, { useEffect, useState } from 'react';
 import LoginModal from './LoginModal';
 import './TopBar.css';
@@ -7,6 +6,7 @@ function TopBar() {
   const [currentTime, setCurrentTime] = useState('');
   const [showLogin, setShowLogin] = useState(false);
   const [user, setUser] = useState('');
+  const [welcome, setWelcome] = useState(false);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('loggedInUser');
@@ -22,25 +22,34 @@ function TopBar() {
   }, []);
 
   const handleLoginClick = () => setShowLogin(true);
-  const handleLogin = (username) => setUser(username);
+
+  const handleLogin = (username) => {
+    setUser(username);
+    setWelcome(true);
+    localStorage.setItem('loggedInUser', username);
+    setTimeout(() => {
+      setWelcome(false);
+    }, 5000);
+  };
 
   return (
-    <div style={{ backgroundColor: '#1a1a1a', padding: '10px 20px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <img src="/logo192.png" alt="Logo" style={{ width: '36px', height: '36px' }} />
-        <span style={{ color: 'white' }}>{currentTime}</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '22px', color: '#ccc' }}>⚙️</span>
-          <span
-            style={{ fontSize: '22px', color: '#ccc', cursor: 'pointer' }}
-            onClick={handleLoginClick}
-          >
-            👤 {user}
+    <div className="top-bar-container">
+      <div className="top-bar">
+        <img src="/logo192.png" alt="Logo" className="top-bar-logo" />
+        <span className="top-bar-time">{currentTime}</span>
+        <div className="top-bar-icons">
+          <span className="top-bar-icon">⚙️</span>
+          <span className="top-bar-icon" onClick={handleLoginClick}>
+            {user
+              ? welcome
+                ? `Welcome ${user}!`
+                : `User: ${user}`
+              : 'Login'}
           </span>
         </div>
       </div>
       {showLogin && <LoginModal onClose={() => setShowLogin(false)} onLogin={handleLogin} />}
-      <hr style={{ borderTop: '1px solid white', marginTop: '12px', marginBottom: '20px' }} />
+      <hr className="top-bar-divider" />
     </div>
   );
 }
