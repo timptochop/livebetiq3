@@ -1,62 +1,55 @@
-.topbar {
-  background-color: #1a1a1a;
-  padding: 10px 20px;
+.top-bar {
   position: fixed;
   top: 0;
-  width: 100%;
-  z-index: 1000;
-}
-
-.topbar-inner {
+  left: 0;
+  right: 0;
+  height: 50px;
   display: flex;
-  align-items: center;
   justify-content: space-between;
-}
-
-.topbar-logo {
-  width: 44px;
-  height: 44px;
-  margin-left: -6px;
-}
-
-.topbar-time {
-  color: white;
-  font-size: 16px;
-}
-
-.topbar-icons {
-  display: flex;
   align-items: center;
+  background-color: #1a1a1a;
+  border-bottom: 1px solid white;
+  padding: 0 16px;
+  z-index: 1000;
+  color: white;
+}
+
+.logo {
+  height: 30px;
+  width: auto;
+}
+
+.center {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.right {
+  display: flex;
   gap: 12px;
-  color: #ccc;
   font-size: 18px;
 }
 
-.topbar-icons i {
+.icon {
   cursor: pointer;
 }
 
-.topbar-user {
-  color: #ccc;
-  font-size: 15px;
-}
+/* ✅ Mobile adjustments */
+@media (max-width: 430px) {
+  .top-bar {
+    padding: 0 12px;
+  }
 
-.green {
-  color: limegreen;
-  font-weight: bold;
-}
+  .logo {
+    height: 28px;
+  }
 
-.logout-btn {
-  background-color: #333;
-  color: white;
-  border: none;
-  padding: 4px 10px;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 14px;
-}
+  .center {
+    font-size: 14px;
+  }
 
-.topbar-divider {
-  border-top: 1px solid white;
-  margin-top: 10px;
+  .right {
+    gap: 10px;
+    font-size: 17px;
+  }
 }

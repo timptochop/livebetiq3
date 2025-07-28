@@ -1,59 +1,42 @@
+// server/mockGoalServeAPI.js
 const express = require('express');
-const app = express();
-const PORT = 5000;
+const router = express.Router();
+const { analyzeMatch } = require('./aiEngine');
 
-const mockTennisData = [
+const rawMatches = [
   {
     id: 1,
-    player1: "Djokovic",
-    player2: "Alcaraz",
-    ev: 0.042,
-    confidence: 68,
-    aiLabel: "SAFE",
-    aiNote: "Strong form and high win probability"
+    player1: "Novak Djokovic",
+    player2: "Carlos Alcaraz",
+    oddsPlayer1: 1.50,
+    oddsPlayer2: 2.60
   },
   {
     id: 2,
-    player1: "Tsitsipas",
-    player2: "Zverev",
-    ev: 0.027,
-    confidence: 60,
-    aiLabel: "RISKY",
-    aiNote: "Tight matchup, watch live momentum"
+    player1: "Rafael Nadal",
+    player2: "Daniil Medvedev",
+    oddsPlayer1: 1.90,
+    oddsPlayer2: 1.90
   },
   {
     id: 3,
-    player1: "Nadal",
-    player2: "Medvedev",
-    ev: 0.008,
-    confidence: 48,
-    aiLabel: "AVOID",
-    aiNote: "Low value, high uncertainty"
+    player1: "Tsitsipas",
+    player2: "Zverev",
+    oddsPlayer1: 2.10,
+    oddsPlayer2: 1.75
   },
   {
     id: 4,
-    player1: "Rublev",
-    player2: "Sinner",
-    ev: 0.015,
-    confidence: 54,
-    aiLabel: "STARTS SOON",
-    aiNote: "Match not started yet"
-  },
-  {
-    id: 5,
-    player1: "Rune",
-    player2: "Thiem",
-    ev: 0.030,
-    confidence: 61,
-    aiLabel: "RISKY",
-    aiNote: "Moderate edge based on odds"
+    player1: "Jannik Sinner",
+    player2: "Holger Rune",
+    oddsPlayer1: null,
+    oddsPlayer2: null // simulates "STARTS SOON"
   }
 ];
 
-app.get('/api/tennis/live', (req, res) => {
-  res.json(mockTennisData);
+router.get('/live', (req, res) => {
+  const processedMatches = rawMatches.map(analyzeMatch);
+  res.json(processedMatches);
 });
 
-app.listen(PORT, () => {
-  console.log(`🎾 Mock GoalServe API running at http://localhost:${PORT}/api/tennis/live`);
-});
+module.exports = router;

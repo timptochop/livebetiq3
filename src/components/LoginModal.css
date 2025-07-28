@@ -1,58 +1,63 @@
-.modal-overlay {
+.modal-backdrop {
   position: fixed;
   top: 0;
   left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0,0,0,0.9);
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.75);
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 999;
+  z-index: 2000;
 }
 
-.login-modal {
-  background-color: #222;
-  padding: 20px;
+.modal-content {
+  background-color: #1e1e1e;
+  padding: 24px 20px;
   border-radius: 10px;
-  width: 300px;
-  box-shadow: 0 0 20px limegreen;
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.modal-header h2 {
-  margin: 0;
-  color: limegreen;
-}
-
-.close-btn {
+  box-shadow: 0 0 10px #00ff00;
+  width: 90%;
+  max-width: 320px;
+  text-align: center;
   color: white;
-  cursor: pointer;
-  font-size: 20px;
 }
 
-.login-modal input {
+.modal-content h3 {
+  margin-bottom: 16px;
+}
+
+.modal-content input {
   width: 100%;
   padding: 10px;
   margin-bottom: 12px;
-  border-radius: 5px;
   border: 1px solid #444;
-  background-color: #333;
+  border-radius: 6px;
+  background-color: #2b2b2b;
   color: white;
+  font-size: 14px;
 }
 
-.login-modal button {
+.modal-content button {
   width: 100%;
   padding: 10px;
-  background-color: limegreen;
+  margin-top: 8px;
   border: none;
-  border-radius: 5px;
+  border-radius: 6px;
+  background-color: #00c853;
+  color: black;
   font-weight: bold;
   cursor: pointer;
+  font-size: 14px;
+}
+
+.modal-content button.cancel {
+  background-color: #555;
+  color: white;
+  margin-top: 6px;
+}
+
+.error-msg {
+  color: red;
+  font-size: 13px;
+  margin-bottom: 6px;
 }
