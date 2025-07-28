@@ -1,7 +1,8 @@
+// src/components/TopBar.js
 import React, { useEffect, useState } from 'react';
 import './TopBar.css';
 
-const TopBar = () => {
+const TopBar = ({ onLoginClick }) => {
   const [serverTime, setServerTime] = useState('');
 
   useEffect(() => {
@@ -26,8 +27,8 @@ const TopBar = () => {
         <span className="server-time">{serverTime}</span>
       </div>
       <div className="right-section">
-        <span className="icon">&#9881;</span> {/* ⚙ */}
-        <span className="icon">&#128100;</span> {/* 👤 */}
+        <span className="icon">&#9881;</span>
+        <span className="icon" onClick={onLoginClick}>&#128100;</span>
       </div>
     </div>
   );
