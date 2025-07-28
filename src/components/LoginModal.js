@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import './LoginModal.css';
 
-function LoginModal({ onClose, onLogin }) {
+const LoginModal = ({ onClose, onLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
@@ -12,15 +12,15 @@ function LoginModal({ onClose, onLogin }) {
       onLogin(username);
       onClose();
     } else {
-      alert('Invalid credentials');
+      alert('Invalid username or password');
     }
   };
 
   return (
     <div className="modal-overlay">
-      <div className="modal">
+      <div className="modal-content">
+        <button className="close-btn" onClick={onClose}>✖</button>
         <h2>Login</h2>
-        <button className="close" onClick={onClose}>✖</button>
         <input
           type="text"
           placeholder="Username"
@@ -37,6 +37,6 @@ function LoginModal({ onClose, onLogin }) {
       </div>
     </div>
   );
-}
+};
 
 export default LoginModal;
