@@ -27,9 +27,12 @@ function TopBar() {
     setUser(username);
     setWelcome(true);
     localStorage.setItem('loggedInUser', username);
-    setTimeout(() => {
-      setWelcome(false);
-    }, 5000);
+    setTimeout(() => setWelcome(false), 5000);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('loggedInUser');
+    setUser('');
   };
 
   return (
@@ -38,14 +41,17 @@ function TopBar() {
         <img src="/logo192.png" alt="Logo" className="top-bar-logo" />
         <span className="top-bar-time">{currentTime}</span>
         <div className="top-bar-icons">
-          <span className="top-bar-icon">⚙️</span>
-          <span className="top-bar-icon" onClick={handleLoginClick}>
-            {user
-              ? welcome
-                ? `Welcome ${user}!`
-                : `User: ${user}`
-              : 'Login'}
-          </span>
+          <span className="top-bar-icon">&#9881;</span>
+          {user ? (
+            <>
+              <span className="top-bar-username">
+                {welcome ? `Welcome ${user}!` : `User: ${user}`}
+              </span>
+              <button className="logout-button" onClick={handleLogout}>Logout</button>
+            </>
+          ) : (
+            <span className="top-bar-icon" onClick={handleLoginClick}>Login</span>
+          )}
         </div>
       </div>
       {showLogin && <LoginModal onClose={() => setShowLogin(false)} onLogin={handleLogin} />}

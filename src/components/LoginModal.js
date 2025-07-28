@@ -1,26 +1,24 @@
-// src/components/LoginModal.js
 import React, { useState } from 'react';
 import './LoginModal.css';
 
-const LoginModal = ({ onClose, onLogin }) => {
+function LoginModal({ onClose, onLogin }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
 
-  const handleLogin = () => {
+  const handleSubmit = () => {
     if (username === 'user' && password === '1234') {
-      localStorage.setItem('loggedInUser', username);
       onLogin(username);
       onClose();
     } else {
-      alert('Invalid username or password');
+      setError('Invalid credentials');
     }
   };
 
   return (
     <div className="modal-overlay">
       <div className="modal-content">
-        <button className="close-btn" onClick={onClose}>✖</button>
-        <h2>Login</h2>
+        <h3>Login</h3>
         <input
           type="text"
           placeholder="Username"
@@ -33,10 +31,12 @@ const LoginModal = ({ onClose, onLogin }) => {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
-        <button className="login-btn" onClick={handleLogin}>Login</button>
+        {error && <div className="error">{error}</div>}
+        <button onClick={handleSubmit}>Login</button>
+        <button className="cancel" onClick={onClose}>Cancel</button>
       </div>
     </div>
   );
-};
+}
 
 export default LoginModal;
