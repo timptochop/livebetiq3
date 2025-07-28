@@ -1,4 +1,3 @@
-/* src/components/TopBar.css */
 .top-bar {
   position: fixed;
   top: 0;
@@ -22,7 +21,7 @@
 }
 
 .logo {
-  height: 24px;
+  height: 30px; /* 🔼 Αυξήθηκε από 24px */
   width: auto;
 }
 
@@ -39,8 +38,11 @@
   display: flex;
   align-items: center;
   gap: 16px;
-  font-size: 18px;
+  font-size: 20px;
   color: white;
+
+  /* 🔽 Μαζεύει λίγο δεξιά για να μην κόβεται */
+  padding-right: 8px;
 }
 
 .icon {
