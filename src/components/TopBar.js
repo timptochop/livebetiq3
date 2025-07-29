@@ -1,50 +1,40 @@
+// src/components/TopBar.js
 import React, { useEffect, useState } from 'react';
-import LoginModal from './LoginModal';
-import './TopBar.css';
+import { FaCog, FaUser } from 'react-icons/fa'; // ✅ ΧΡΕΙΑΖΕΤΑΙ για να μη βλέπεις τετραγωνάκια
 
-function TopBar() {
-  const [currentTime, setCurrentTime] = useState('');
-  const [showLogin, setShowLogin] = useState(false);
-  const [user, setUser] = useState('');
+function TopBar({ onLoginClick }) {
+  const [currentTime, setCurrentTime] = useState('');
+  const [user, setUser] = useState(localStorage.getItem('loggedInUser') || '');
 
-  useEffect(() => {
-    const savedUser = localStorage.getItem('loggedInUser');
-    if (savedUser) setUser(savedUser);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      setCurrentTime(`${hh}:${mm}`);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
-    const interval = setInterval(() => {
-      const now = new Date();
-      const hh = now.getHours().toString().padStart(2, '0');
-      const mm = now.getMinutes().toString().padStart(2, '0');
-      setCurrentTime(`${hh}:${mm}`);
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleLoginClick = () => setShowLogin(true);
-  const handleLogin = (username) => {
-    setUser(username);
-    localStorage.setItem('loggedInUser', username);
-    setShowLogin(false);
-  };
-
-  return (
-    <>
-      <div className="top-bar">
-        <div className="left">
-          <img src="/logo192.png" alt="Logo" className="logo" />
-        </div>
-        <div className="center">{currentTime}</div>
-        <div className="right">
-          <span className="icon">&#9881;</span> {/* settings */}
-          <span className="icon" onClick={handleLoginClick}>
-            &#128100; {user}
-          </span>
-        </div>
-      </div>
-      {showLogin && <LoginModal onClose={() => setShowLogin(false)} onLogin={handleLogin} />}
-    </>
-  );
+  return (
+    <div style={{ backgroundColor: '#1a1a1a', padding: '10px 20px', position: 'fixed', top: 0, width: '100%', zIndex: 1000 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <img src="/logo192.png" alt="Logo" style={{ width: '42px', height: '42px' }} />
+        <span style={{ color: 'white', fontSize: '14px' }}>{currentTime}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <FaCog color="#ccc" size={20} />
+          <div
+            style={{ color: '#ccc', fontSize: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+            onClick={onLoginClick}
+          >
+            <FaUser />
+            {user}
+          </div>
+        </div>
+      </div>
+      <hr style={{ borderTop: '1px solid white', marginTop: '12px', marginBottom: '20px' }} />
+    </div>
+  );
 }
 
 export default TopBar;
