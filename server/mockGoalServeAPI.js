@@ -1,22 +1,21 @@
 // server/mockGoalServeAPI.js
 const express = require('express');
 const router = express.Router();
-const { analyzeMatch } = require('./aiEngine');
 
-const rawMatches = [
+const mockTennisData = [
   {
     id: 1,
     player1: "Novak Djokovic",
     player2: "Carlos Alcaraz",
-    oddsPlayer1: 1.50,
-    oddsPlayer2: 2.60
+    oddsPlayer1: 1.45,
+    oddsPlayer2: 2.80
   },
   {
     id: 2,
     player1: "Rafael Nadal",
     player2: "Daniil Medvedev",
-    oddsPlayer1: 1.90,
-    oddsPlayer2: 1.90
+    oddsPlayer1: 1.85,
+    oddsPlayer2: 1.95
   },
   {
     id: 3,
@@ -29,14 +28,20 @@ const rawMatches = [
     id: 4,
     player1: "Jannik Sinner",
     player2: "Holger Rune",
-    oddsPlayer1: null,
-    oddsPlayer2: null // simulates "STARTS SOON"
+    oddsPlayer1: 1.60,
+    oddsPlayer2: 2.30
+  },
+  {
+    id: 5,
+    player1: "Andy Murray",
+    player2: "Taylor Fritz",
+    oddsPlayer1: 2.50,
+    oddsPlayer2: 1.55
   }
 ];
 
 router.get('/live', (req, res) => {
-  const processedMatches = rawMatches.map(analyzeMatch);
-  res.json(processedMatches);
+  res.json(mockTennisData);
 });
 
 module.exports = router;
