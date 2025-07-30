@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { FaCog, FaSignInAlt } from 'react-icons/fa'; // άλλαξε FaUser σε FaSignInAlt
+import { FaCog } from 'react-icons/fa';
 
 function TopBar({ onLoginClick }) {
   const [currentTime, setCurrentTime] = useState('');
@@ -42,16 +42,22 @@ function TopBar({ onLoginClick }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <FaCog color="#ccc" size={20} />
           <div
+            onClick={onLoginClick}
             style={{
-              color: isLoggedIn ? '#00C853' : '#ccc',
-              fontSize: '18px',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center'
             }}
-            onClick={onLoginClick}
           >
-            <FaSignInAlt />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              fill={isLoggedIn ? '#00C853' : '#ccc'}
+              viewBox="0 0 24 24"
+            >
+              <path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z" />
+            </svg>
           </div>
         </div>
       </div>
