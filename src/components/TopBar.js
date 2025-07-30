@@ -26,34 +26,32 @@ function TopBar({ onLoginClick }) {
   return (
     <div style={{
       backgroundColor: '#1a1a1a',
-      padding: '10px 16px',
+      padding: '10px 16px 0',
       position: 'fixed',
       top: 0,
       width: '100%',
-      zIndex: 1000,
-      borderBottom: '1px solid #333'
+      zIndex: 1000
     }}>
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between'
       }}>
-        {/* Left Side - Logo & Time */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <img src="/logo192.png" alt="Logo" style={{ width: '38px', height: '38px' }} />
-          <span style={{
-            fontSize: '13px',
-            color: '#ccc',
-            backgroundColor: '#2a2a2a',
-            padding: '4px 10px',
-            borderRadius: '12px',
-            fontWeight: '500'
-          }}>{currentTime}</span>
+        {/* Left: Logo */}
+        <div>
+          <img
+            src="/logo192.png"
+            alt="Logo"
+            style={{ width: '40px', height: '40px', marginLeft: '-6px' }}
+          />
         </div>
 
-        {/* Right Side - Icons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <FaCog color="#ccc" size={20} style={{ marginRight: '6px' }} />
+        {/* Right: Settings + Time + Login */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FaCog color="#ccc" size={20} />
+            <span style={{ color: '#ccc', fontSize: '13px' }}>{currentTime}</span>
+          </div>
           <div
             onClick={onLoginClick}
             style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
@@ -69,6 +67,15 @@ function TopBar({ onLoginClick }) {
             </svg>
           </div>
         </div>
+      </div>
+
+      {/* Line */}
+      <div style={{ marginTop: '12px', marginBottom: '20px', width: '100%' }}>
+        <div style={{
+          height: '2px',
+          background: 'linear-gradient(to right, transparent, white, transparent)',
+          width: '100%'
+        }} />
       </div>
     </div>
   );
