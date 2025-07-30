@@ -6,12 +6,14 @@ function TopBar({ onLoginClick }) {
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('loggedInUser'));
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    const updateClock = () => {
       const now = new Date();
       const hh = String(now.getHours()).padStart(2, '0');
       const mm = String(now.getMinutes()).padStart(2, '0');
       setCurrentTime(`${hh}:${mm}`);
-    }, 10000);
+    };
+    updateClock();
+    const interval = setInterval(updateClock, 10000);
     return () => clearInterval(interval);
   }, []);
 
@@ -24,21 +26,26 @@ function TopBar({ onLoginClick }) {
   }, []);
 
   return (
-    <div style={{
-      backgroundColor: '#1a1a1a',
-      padding: '10px 16px 0',
-      position: 'fixed',
-      top: 0,
-      width: '100%',
-      zIndex: 1000
-    }}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between'
-      }}>
+    <div
+      style={{
+        backgroundColor: '#1a1a1a',
+        padding: '10px 16px 0',
+        position: 'fixed',
+        top: 0,
+        width: '100%',
+        zIndex: 1000,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+        }}
+      >
         {/* Left: Logo */}
-        <div style={{ display: 'flex', alignItems: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
           <img
             src="/logo192.png"
             alt="Logo"
@@ -47,15 +54,15 @@ function TopBar({ onLoginClick }) {
         </div>
 
         {/* Right: Settings, Time, Login */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <FaCog color="#ccc" size={20} />
-          <span style={{ color: 'white', fontSize: '13px' }}>{currentTime}</span>
+          <span style={{ color: 'white', fontSize: '12px', marginTop: '1px' }}>{currentTime}</span>
           <div
             onClick={onLoginClick}
             style={{
               cursor: 'pointer',
               display: 'flex',
-              alignItems: 'center'
+              alignItems: 'center',
             }}
           >
             <svg
@@ -71,13 +78,15 @@ function TopBar({ onLoginClick }) {
         </div>
       </div>
 
-      {/* Full-width gradient line */}
+      {/* Blend line below */}
       <div style={{ marginTop: '12px', marginBottom: '20px', width: '100%' }}>
-        <div style={{
-          height: '2px',
-          background: 'linear-gradient(to right, transparent, white, transparent)',
-          width: '100%'
-        }} />
+        <div
+          style={{
+            height: '2px',
+            background: 'linear-gradient(to right, transparent, white, transparent)',
+            width: '100%',
+          }}
+        />
       </div>
     </div>
   );
