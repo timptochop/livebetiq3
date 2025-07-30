@@ -46,8 +46,14 @@ function TopBar({ onLoginClick }) {
           />
         </div>
 
-        {/* Login + Time + Settings */}
+        {/* Settings + Time + Login */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {/* Settings icon */}
+          <FaCog color="#ccc" size={20} />
+
+          {/* Current time */}
+          <span style={{ color: '#ccc', fontSize: '13px' }}>{currentTime}</span>
+
           {/* Login icon */}
           <div
             onClick={onLoginClick}
@@ -63,12 +69,6 @@ function TopBar({ onLoginClick }) {
               <path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z" />
             </svg>
           </div>
-
-          {/* Current time */}
-          <span style={{ color: '#ccc', fontSize: '13px' }}>{currentTime}</span>
-
-          {/* Settings icon */}
-          <FaCog color="#ccc" size={20} />
         </div>
       </div>
 
