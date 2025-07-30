@@ -50,10 +50,8 @@ function TopBar({ onLoginClick }) {
               justifyContent: 'center',
               width: '28px',
               height: '28px',
-              border: '1px solid red',           // DEBUG RED BORDER
-              backgroundColor: '#333',            // DEBUG BACKGROUND
               borderRadius: '4px',
-              transform: 'translateX(-5px)'       // ✅ MOVE LEFT
+              transform: 'translateX(-12px)' // ✅ Μετακινήθηκε περισσότερο αριστερά
             }}
           >
             <svg
