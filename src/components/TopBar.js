@@ -46,7 +46,13 @@ function TopBar({ onLoginClick }) {
             style={{
               cursor: 'pointer',
               display: 'flex',
-              alignItems: 'center'
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '28px',
+              height: '28px',
+              border: '1px solid red',           // DEBUG RED BORDER
+              backgroundColor: '#333',            // DEBUG BACKGROUND
+              borderRadius: '4px'
             }}
           >
             <svg
