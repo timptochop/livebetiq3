@@ -1,4 +1,3 @@
-// src/App.js
 import React, { useState } from 'react';
 import './App.css';
 import './index.css';
@@ -8,17 +7,17 @@ import LoginModal from './components/LoginModal';
 
 function App() {
   const [showLogin, setShowLogin] = useState(false);
-  const [user, setUser] = useState(localStorage.getItem('loggedInUser') || '');
+  const [loggedInUser, setLoggedInUser] = useState(localStorage.getItem('loggedInUser') || '');
 
   const handleLogin = (username) => {
-    setUser(username);
+    setLoggedInUser(username);
     localStorage.setItem('loggedInUser', username);
     setShowLogin(false);
   };
 
   return (
     <div className="App">
-      <TopBar onLoginClick={() => setShowLogin(true)} user={user} />
+      <TopBar user={loggedInUser} onLoginClick={() => setShowLogin(true)} />
       <LiveTennis />
       {showLogin && <LoginModal onClose={() => setShowLogin(false)} onLogin={handleLogin} />}
     </div>

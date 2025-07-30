@@ -1,4 +1,3 @@
-// src/components/LoginModal.js
 import React, { useState } from 'react';
 
 function LoginModal({ onClose, onLogin }) {
@@ -11,73 +10,58 @@ function LoginModal({ onClose, onLogin }) {
     if (username === 'user' && password === '1234') {
       onLogin(username);
     } else {
-      setError('Invalid username or password');
+      setError('Invalid credentials');
     }
   };
 
   return (
     <div style={{
       position: 'fixed',
-      top: 0, left: 0, right: 0, bottom: 0,
+      top: 0, left: 0,
+      width: '100vw',
+      height: '100vh',
       backgroundColor: 'rgba(0,0,0,0.7)',
       display: 'flex',
-      alignItems: 'center',
       justifyContent: 'center',
+      alignItems: 'center',
       zIndex: 2000
     }}>
-      <div style={{
+      <form onSubmit={handleSubmit} style={{
         backgroundColor: '#1e1e1e',
-        padding: '24px',
+        padding: '20px',
         borderRadius: '8px',
-        width: '300px',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-        color: 'white'
+        color: 'white',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        width: '80%',
+        maxWidth: '320px'
       }}>
-        <h3 style={{ marginBottom: '16px' }}>Login</h3>
-        <form onSubmit={handleSubmit}>
-          <input
-            type="text"
-            placeholder="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            style={inputStyle}
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={inputStyle}
-          />
-          {error && <p style={{ color: 'red', fontSize: '14px' }}>{error}</p>}
-          <button type="submit" style={buttonStyle}>Login</button>
-        </form>
-        <button onClick={onClose} style={{ ...buttonStyle, backgroundColor: '#444', marginTop: '10px' }}>
+        <h3 style={{ margin: 0 }}>Login</h3>
+        <input
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          style={{ padding: '10px', borderRadius: '4px', border: 'none' }}
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          style={{ padding: '10px', borderRadius: '4px', border: 'none' }}
+        />
+        {error && <div style={{ color: 'red' }}>{error}</div>}
+        <button type="submit" style={{ padding: '10px', backgroundColor: '#00C853', color: 'white', border: 'none', borderRadius: '4px' }}>
+          Login
+        </button>
+        <button type="button" onClick={onClose} style={{ padding: '8px', backgroundColor: '#555', color: 'white', border: 'none', borderRadius: '4px' }}>
           Cancel
         </button>
-      </div>
+      </form>
     </div>
   );
 }
-
-const inputStyle = {
-  width: '100%',
-  padding: '10px',
-  marginBottom: '10px',
-  borderRadius: '4px',
-  border: '1px solid #555',
-  backgroundColor: '#2a2a2a',
-  color: 'white'
-};
-
-const buttonStyle = {
-  width: '100%',
-  padding: '10px',
-  backgroundColor: '#00C853',
-  color: 'white',
-  border: 'none',
-  borderRadius: '4px',
-  cursor: 'pointer'
-};
 
 export default LoginModal;
