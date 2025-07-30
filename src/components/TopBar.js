@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { FaCog, FaUser } from 'react-icons/fa';
+import { FaCog, FaSignInAlt } from 'react-icons/fa'; // άλλαξε FaUser σε FaSignInAlt
 
 function TopBar({ onLoginClick }) {
   const [currentTime, setCurrentTime] = useState('');
@@ -51,7 +51,7 @@ function TopBar({ onLoginClick }) {
             }}
             onClick={onLoginClick}
           >
-            <FaUser />
+            <FaSignInAlt />
           </div>
         </div>
       </div>
