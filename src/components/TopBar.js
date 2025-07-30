@@ -40,7 +40,12 @@ function TopBar({ onLoginClick }) {
         <img src="/logo192.png" alt="Logo" style={{ width: '42px', height: '42px' }} />
         <span style={{ color: 'white', fontSize: '14px' }}>{currentTime}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <FaCog color="#ccc" size={20} />
+          {/* Settings icon with 3x shift */}
+          <div style={{ transform: 'translateX(-36px)' }}>
+            <FaCog color="#ccc" size={20} />
+          </div>
+
+          {/* Login icon with 1x shift */}
           <div
             onClick={onLoginClick}
             style={{
@@ -51,7 +56,7 @@ function TopBar({ onLoginClick }) {
               width: '28px',
               height: '28px',
               borderRadius: '4px',
-              transform: 'translateX(-24px)' // ✅ Πιο έντονη μετατόπιση αριστερά
+              transform: 'translateX(-12px)'
             }}
           >
             <svg
