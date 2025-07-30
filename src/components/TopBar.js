@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { FaCog, FaUser } from 'react-icons/fa';
 
-function TopBar({ onLoginClick }) {
+function TopBar({ onLoginClick, user }) {
   const [currentTime, setCurrentTime] = useState('');
-  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('loggedInUser'));
+  const isLoggedIn = !!user;
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -16,20 +16,37 @@ function TopBar({ onLoginClick }) {
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    const handleStorage = () => {
-      setIsLoggedIn(!!localStorage.getItem('loggedInUser'));
-    };
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
-  }, []);
-
   return (
-    <div style={{ backgroundColor: '#1a1a1a', padding: '10px 20px', position: 'fixed', top: 0, width: '100%', zIndex: 1000 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <img src="/logo192.png" alt="Logo" style={{ width: '42px', height: '42px' }} />
+    <div
+      style={{
+        backgroundColor: '#1a1a1a',
+        padding: '10px 20px',
+        position: 'fixed',
+        top: 0,
+        width: '100%',
+        zIndex: 1000
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}
+      >
+        <img
+          src="/logo192.png"
+          alt="Logo"
+          style={{ width: '42px', height: '42px' }}
+        />
         <span style={{ color: 'white', fontSize: '14px' }}>{currentTime}</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px'
+          }}
+        >
           <FaCog color="#ccc" size={20} />
           <div
             style={{
@@ -46,7 +63,13 @@ function TopBar({ onLoginClick }) {
           </div>
         </div>
       </div>
-      <hr style={{ borderTop: '1px solid white', marginTop: '12px', marginBottom: '20px' }} />
+      <hr
+        style={{
+          borderTop: '1px solid white',
+          marginTop: '12px',
+          marginBottom: '20px'
+        }}
+      />
     </div>
   );
 }
