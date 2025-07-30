@@ -37,8 +37,8 @@ function TopBar({ onLoginClick }) {
         alignItems: 'center',
         justifyContent: 'space-between'
       }}>
-        {/* Logo */}
-        <div>
+        {/* Left: Logo */}
+        <div style={{ display: 'flex', alignItems: 'center' }}>
           <img
             src="/logo192.png"
             alt="Logo"
@@ -46,18 +46,17 @@ function TopBar({ onLoginClick }) {
           />
         </div>
 
-        {/* Settings + Time + Login */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          {/* Settings icon */}
+        {/* Right: Settings, Time, Login */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <FaCog color="#ccc" size={20} />
-
-          {/* Current time */}
-          <span style={{ color: '#ccc', fontSize: '13px' }}>{currentTime}</span>
-
-          {/* Login icon */}
+          <span style={{ color: 'white', fontSize: '13px' }}>{currentTime}</span>
           <div
             onClick={onLoginClick}
-            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+            style={{
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center'
+            }}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -72,7 +71,7 @@ function TopBar({ onLoginClick }) {
         </div>
       </div>
 
-      {/* Line */}
+      {/* Full-width gradient line */}
       <div style={{ marginTop: '12px', marginBottom: '20px', width: '100%' }}>
         <div style={{
           height: '2px',
