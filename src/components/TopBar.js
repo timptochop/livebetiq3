@@ -40,12 +40,12 @@ function TopBar({ onLoginClick }) {
         <img src="/logo192.png" alt="Logo" style={{ width: '42px', height: '42px' }} />
         <span style={{ color: 'white', fontSize: '14px' }}>{currentTime}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {/* Settings icon stays 3x shift */}
+          {/* Settings icon stays at -36px */}
           <div style={{ transform: 'translateX(-36px)' }}>
             <FaCog color="#ccc" size={20} />
           </div>
 
-          {/* Login icon now shifted 2x */}
+          {/* Login icon now also -36px for 3x shift */}
           <div
             onClick={onLoginClick}
             style={{
@@ -56,7 +56,7 @@ function TopBar({ onLoginClick }) {
               width: '28px',
               height: '28px',
               borderRadius: '4px',
-              transform: 'translateX(-24px)'
+              transform: 'translateX(-36px)'
             }}
           >
             <svg
