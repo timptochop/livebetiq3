@@ -51,7 +51,7 @@ function TopBar({ onLoginClick }) {
               width: '28px',
               height: '28px',
               borderRadius: '4px',
-              transform: 'translateX(-12px)' // ✅ Μετακινήθηκε περισσότερο αριστερά
+              transform: 'translateX(-24px)' // ✅ Πιο έντονη μετατόπιση αριστερά
             }}
           >
             <svg
