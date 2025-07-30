@@ -26,7 +26,7 @@ function TopBar({ onLoginClick }) {
   return (
     <div style={{
       backgroundColor: '#1a1a1a',
-      padding: '10px 20px',
+      padding: '10px 16px 0',
       position: 'fixed',
       top: 0,
       width: '100%',
@@ -34,29 +34,31 @@ function TopBar({ onLoginClick }) {
     }}>
       <div style={{
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between'
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap'
       }}>
-        <img src="/logo192.png" alt="Logo" style={{ width: '42px', height: '42px' }} />
-        <span style={{ color: 'white', fontSize: '14px' }}>{currentTime}</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {/* Settings icon stays at -36px */}
-          <div style={{ transform: 'translateX(-36px)' }}>
-            <FaCog color="#ccc" size={20} />
-          </div>
+        {/* Logo and time on the left */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+          <img
+            src="/logo192.png"
+            alt="Logo"
+            style={{ width: '40px', height: '40px', marginLeft: '-6px' }}
+          />
+          <span style={{ color: 'white', fontSize: '13px', marginTop: '4px', marginLeft: '2px' }}>
+            {currentTime}
+          </span>
+        </div>
 
-          {/* Login icon now also -36px for 3x shift */}
+        {/* Settings + Login on the right */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+          <FaCog color="#ccc" size={20} />
           <div
             onClick={onLoginClick}
             style={{
               cursor: 'pointer',
               display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '28px',
-              height: '28px',
-              borderRadius: '4px',
-              transform: 'translateX(-36px)'
+              alignItems: 'center'
             }}
           >
             <svg
@@ -71,7 +73,15 @@ function TopBar({ onLoginClick }) {
           </div>
         </div>
       </div>
-      <hr style={{ borderTop: '1px solid white', marginTop: '12px', marginBottom: '20px' }} />
+
+      {/* Elegant Full-Width Line */}
+      <div style={{ marginTop: '12px', marginBottom: '20px', width: '100%' }}>
+        <div style={{
+          height: '2px',
+          background: 'linear-gradient(to right, transparent, white, transparent)',
+          width: '100%'
+        }} />
+      </div>
     </div>
   );
 }
