@@ -39,7 +39,7 @@ function TopBar({ onLoginClick }) {
       }}>
         <img src="/logo192.png" alt="Logo" style={{ width: '42px', height: '42px' }} />
         <span style={{ color: 'white', fontSize: '14px' }}>{currentTime}</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <FaCog color="#ccc" size={20} />
           <div
             onClick={onLoginClick}
@@ -52,7 +52,8 @@ function TopBar({ onLoginClick }) {
               height: '28px',
               border: '1px solid red',           // DEBUG RED BORDER
               backgroundColor: '#333',            // DEBUG BACKGROUND
-              borderRadius: '4px'
+              borderRadius: '4px',
+              transform: 'translateX(-5px)'       // ✅ MOVE LEFT
             }}
           >
             <svg
