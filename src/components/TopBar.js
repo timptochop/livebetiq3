@@ -1,7 +1,6 @@
 // src/components/TopBar.js
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FaCog, FaUser } from 'react-icons/fa';
-import './TopBar.css';
 
 function TopBar({ onLoginClick }) {
   const [currentTime, setCurrentTime] = useState('');
@@ -18,19 +17,33 @@ function TopBar({ onLoginClick }) {
   }, []);
 
   return (
-    <div className="topbar-container">
-      <div className="topbar-inner">
-        <img src="/logo192.png" alt="Logo" className="topbar-logo" />
-        <span className="topbar-time">{currentTime}</span>
-        <div className="topbar-icons">
-          <FaCog className="topbar-icon" />
-          <div className="topbar-user" onClick={onLoginClick}>
+    <div style={{
+      backgroundColor: '#1a1a1a',
+      padding: '10px 20px',
+      position: 'fixed',
+      top: 0,
+      width: '100%',
+      zIndex: 1000
+    }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between'
+      }}>
+        <img src="/logo192.png" alt="Logo" style={{ width: '42px', height: '42px' }} />
+        <span style={{ color: 'white', fontSize: '14px' }}>{currentTime}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <FaCog color="#ccc" size={20} />
+          <div
+            style={{ color: '#ccc', fontSize: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+            onClick={onLoginClick}
+          >
             <FaUser />
-            <span className="username">{user}</span>
+            {user}
           </div>
         </div>
       </div>
-      <hr className="topbar-divider" />
+      <hr style={{ borderTop: '1px solid white', marginTop: '12px', marginBottom: '20px' }} />
     </div>
   );
 }
