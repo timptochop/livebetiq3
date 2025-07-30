@@ -26,40 +26,37 @@ function TopBar({ onLoginClick }) {
   return (
     <div style={{
       backgroundColor: '#1a1a1a',
-      padding: '10px 16px 0',
+      padding: '10px 16px',
       position: 'fixed',
       top: 0,
       width: '100%',
-      zIndex: 1000
+      zIndex: 1000,
+      borderBottom: '1px solid #333'
     }}>
       <div style={{
         display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap'
+        alignItems: 'center',
+        justifyContent: 'space-between'
       }}>
-        {/* Logo and time on the left */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-          <img
-            src="/logo192.png"
-            alt="Logo"
-            style={{ width: '40px', height: '40px', marginLeft: '-6px' }}
-          />
-          <span style={{ color: 'white', fontSize: '13px', marginTop: '4px', marginLeft: '2px' }}>
-            {currentTime}
-          </span>
+        {/* Left Side - Logo & Time */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <img src="/logo192.png" alt="Logo" style={{ width: '38px', height: '38px' }} />
+          <span style={{
+            fontSize: '13px',
+            color: '#ccc',
+            backgroundColor: '#2a2a2a',
+            padding: '4px 10px',
+            borderRadius: '12px',
+            fontWeight: '500'
+          }}>{currentTime}</span>
         </div>
 
-        {/* Settings + Login on the right */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
-          <FaCog color="#ccc" size={20} />
+        {/* Right Side - Icons */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <FaCog color="#ccc" size={20} style={{ marginRight: '6px' }} />
           <div
             onClick={onLoginClick}
-            style={{
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center'
-            }}
+            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -72,15 +69,6 @@ function TopBar({ onLoginClick }) {
             </svg>
           </div>
         </div>
-      </div>
-
-      {/* Elegant Full-Width Line */}
-      <div style={{ marginTop: '12px', marginBottom: '20px', width: '100%' }}>
-        <div style={{
-          height: '2px',
-          background: 'linear-gradient(to right, transparent, white, transparent)',
-          width: '100%'
-        }} />
       </div>
     </div>
   );
