@@ -8,12 +8,19 @@ import LoginModal from './components/LoginModal';
 
 function App() {
   const [showLogin, setShowLogin] = useState(false);
+  const [user, setUser] = useState(localStorage.getItem('loggedInUser') || '');
+
+  const handleLogin = (username) => {
+    setUser(username);
+    localStorage.setItem('loggedInUser', username);
+    setShowLogin(false);
+  };
 
   return (
     <div className="App">
-      <TopBar onLoginClick={() => setShowLogin(true)} />
+      <TopBar onLoginClick={() => setShowLogin(true)} user={user} />
       <LiveTennis />
-      {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
+      {showLogin && <LoginModal onClose={() => setShowLogin(false)} onLogin={handleLogin} />}
     </div>
   );
 }

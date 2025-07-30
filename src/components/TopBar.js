@@ -1,10 +1,9 @@
 // src/components/TopBar.js
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FaCog, FaUser } from 'react-icons/fa';
 
-function TopBar({ onLoginClick }) {
+function TopBar({ onLoginClick, user }) {
   const [currentTime, setCurrentTime] = useState('');
-  const [user, setUser] = useState(localStorage.getItem('loggedInUser') || '');
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -25,21 +24,24 @@ function TopBar({ onLoginClick }) {
       width: '100%',
       zIndex: 1000
     }}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between'
-      }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <img src="/logo192.png" alt="Logo" style={{ width: '42px', height: '42px' }} />
         <span style={{ color: 'white', fontSize: '14px' }}>{currentTime}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <FaCog color="#ccc" size={20} />
           <div
-            style={{ color: '#ccc', fontSize: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+            style={{
+              color: user ? '#00C853' : '#ccc',
+              fontSize: '18px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6
+            }}
             onClick={onLoginClick}
           >
             <FaUser />
-            {user}
+            {!user && "Login"}
           </div>
         </div>
       </div>
