@@ -51,7 +51,7 @@ function TopBar({ onLoginClick }) {
           display: 'flex',
           alignItems: 'center',
           gap: '16px',
-          transform: 'translateX(-18px)'  // Move slightly left for balance
+          transform: 'translateX(-12px) translateY(6px)'  // Move left & down
         }}>
           {/* Time */}
           <span style={{ color: 'white', fontSize: '13px' }}>
