@@ -18,13 +18,13 @@ const AIControlPanel = ({ filters, setFilters }) => {
       style={{
         backgroundColor: '#1e1e1e',
         borderRadius: '12px',
-        padding: '16px 16px 20px 12px',
+        padding: '16px 10px 20px 20px', // εδώ μεταφέρουμε ΟΛΟ το box πιο αριστερά
         margin: '8px',
         color: 'white',
         fontSize: '15px',
       }}
     >
-      <div style={{ marginBottom: '12px' }}>
+      <div style={{ marginBottom: '12px', marginLeft: '-12px' }}>
         <label>Min EV %: {filters.ev}%</label>
         <input
           type="range"
@@ -35,7 +35,7 @@ const AIControlPanel = ({ filters, setFilters }) => {
           style={{ width: '100%' }}
         />
       </div>
-      <div style={{ marginBottom: '12px' }}>
+      <div style={{ marginBottom: '12px', marginLeft: '-12px' }}>
         <label>Min Confidence %: {filters.confidence}%</label>
         <input
           type="range"
@@ -46,7 +46,7 @@ const AIControlPanel = ({ filters, setFilters }) => {
           style={{ width: '100%' }}
         />
       </div>
-      <div style={{ marginBottom: '12px' }}>
+      <div style={{ marginBottom: '12px', marginLeft: '-12px' }}>
         <label>Filter Label:</label>
         <select
           value={filters.label}
@@ -59,7 +59,7 @@ const AIControlPanel = ({ filters, setFilters }) => {
           <option value="AVOID">Avoid</option>
         </select>
       </div>
-      <div>
+      <div style={{ marginLeft: '-12px' }}>
         <label>
           <input
             type="checkbox"
