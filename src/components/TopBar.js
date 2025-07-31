@@ -45,21 +45,26 @@ function TopBar({ onLoginClick }) {
           style={{ width: '40px', height: '40px', marginLeft: '-6px' }}
         />
 
-        {/* Center: Time */}
+        {/* Center-Right: Time (shifted 2 right) */}
         <span style={{
           color: '#ccc',
           fontSize: '14px',
           background: 'rgba(255,255,255,0.06)',
           padding: '4px 10px',
           borderRadius: '8px',
-          marginLeft: '-10px',
-          marginRight: '-10px'
+          marginLeft: '20px',
+          marginRight: '20px' // shifted 2x to the right
         }}>
           {currentTime}
         </span>
 
-        {/* Right: Settings + Login */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+        {/* Right: Settings + Login (shifted 3x left) */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '18px',
+          marginRight: '36px' // 3x left shift from the edge
+        }}>
           <FaCog color="#ccc" size={20} />
           <div
             onClick={onLoginClick}
@@ -82,7 +87,7 @@ function TopBar({ onLoginClick }) {
         </div>
       </div>
 
-      {/* Bottom Line */}
+      {/* Bottom separator */}
       <div style={{ marginTop: '12px', marginBottom: '20px', width: '100%' }}>
         <div style={{
           height: '2px',
