@@ -56,7 +56,7 @@ function TopBar({ onLoginClick }) {
             display: 'flex',
             alignItems: 'center',
             gap: '12px',
-            marginRight: '18px' // ⬅⬅⬅ Shift right-side group 3 steps left
+            marginRight: '30px' // ⬅⬅⬅ 5 βήματα αριστερά
           }}
         >
           {/* Settings Icon */}
