@@ -57,7 +57,7 @@ function TopBar({ onLoginClick }) {
           display: 'flex',
           alignItems: 'center',
           gap: '16px',
-          transform: 'translateX(-16px) translateY(6px)'  // <-- 2 φορές αριστερά
+          transform: 'translateX(-16px) translateY(6px)' // applies to all
         }}>
           {/* Time */}
           <span style={{ color: 'white', fontSize: '14px' }}>{currentTime}</span>
@@ -79,7 +79,8 @@ function TopBar({ onLoginClick }) {
             style={{
               cursor: 'pointer',
               display: 'flex',
-              alignItems: 'center'
+              alignItems: 'center',
+              transform: 'translateX(-8px)' // μόνο το login -1 φορά αριστερά
             }}
           >
             <svg
