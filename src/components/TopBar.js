@@ -46,13 +46,18 @@ function TopBar({ onLoginClick }) {
           />
         </div>
 
-        {/* Right Section */}
+        {/* Right Section: Time → Settings → Login */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '18px',
-          transform: 'translateX(-18px)' // 3 βήματα αριστερά
+          gap: '16px',
+          transform: 'translateX(-18px)'  // Move slightly left for balance
         }}>
+          {/* Time */}
+          <span style={{ color: 'white', fontSize: '13px' }}>
+            {currentTime}
+          </span>
+
           {/* Settings Icon */}
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -63,15 +68,6 @@ function TopBar({ onLoginClick }) {
           >
             <path d="M19.14 12.936a7.493 7.493 0 0 0 .057-.936c0-.318-.02-.63-.057-.936l2.037-1.593a.468.468 0 0 0 .111-.588l-1.929-3.34a.467.467 0 0 0-.564-.21l-2.4.96a7.42 7.42 0 0 0-1.617-.936l-.363-2.52a.45.45 0 0 0-.45-.39h-3.858a.45.45 0 0 0-.45.39l-.363 2.52a7.42 7.42 0 0 0-1.617.936l-2.4-.96a.46.46 0 0 0-.564.21l-1.93 3.34a.465.465 0 0 0 .112.588l2.037 1.593c-.037.306-.057.618-.057.936 0 .318.02.63.057.936l-2.037 1.593a.468.468 0 0 0-.111.588l1.929 3.34a.467.467 0 0 0 .564.21l2.4-.96c.504.384 1.05.705 1.617.936l.363 2.52c.03.225.225.39.45.39h3.858c.225 0 .42-.165.45-.39l.363-2.52c.567-.231 1.113-.552 1.617-.936l2.4.96a.467.467 0 0 0 .564-.21l1.929-3.34a.468.468 0 0 0-.111-.588l-2.037-1.593ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z" />
           </svg>
-
-          {/* Time in middle */}
-          <span style={{
-            color: 'white',
-            fontSize: '13px',
-            transform: 'translateX(6px)'  // 1 βήμα δεξιά
-          }}>
-            {currentTime}
-          </span>
 
           {/* Login Icon */}
           <div
@@ -95,7 +91,7 @@ function TopBar({ onLoginClick }) {
         </div>
       </div>
 
-      {/* Elegant Full-Width Line */}
+      {/* Gradient Line */}
       <div style={{ marginTop: '12px', marginBottom: '20px', width: '100%' }}>
         <div style={{
           height: '2px',
