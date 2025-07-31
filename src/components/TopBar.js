@@ -36,27 +36,28 @@ function TopBar({ onLoginClick }) {
       <div
         style={{
           display: 'flex',
-          alignItems: 'flex-start',
+          alignItems: 'center',
           justifyContent: 'space-between',
           flexWrap: 'wrap'
         }}
       >
-        {/* Logo */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+        {/* LEFT: Time + Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ color: 'white', fontSize: '14px', marginLeft: '-6px' }}>{currentTime}</span>
           <img
             src="/logo192.png"
             alt="Logo"
-            style={{ width: '40px', height: '40px', marginLeft: '-6px' }}
+            style={{ width: '40px', height: '40px' }}
           />
         </div>
 
-        {/* Right side: Settings → Login → Time */}
+        {/* RIGHT: Settings + Login */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: '12px',
-            marginRight: '30px' // all shifted left
+            marginRight: '30px'
           }}
         >
           {/* Settings Icon */}
@@ -89,9 +90,6 @@ function TopBar({ onLoginClick }) {
               <path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z" />
             </svg>
           </div>
-
-          {/* Current Time – LAST */}
-          <span style={{ color: 'white', fontSize: '14px' }}>{currentTime}</span>
         </div>
       </div>
 
