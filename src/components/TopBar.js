@@ -1,3 +1,4 @@
+// src/components/TopBar.js
 import React, { useEffect, useState } from 'react';
 
 function TopBar({ onLoginClick }) {
@@ -33,32 +34,32 @@ function TopBar({ onLoginClick }) {
     }}>
       <div style={{
         display: 'flex',
-        alignItems: 'flex-start',
+        alignItems: 'center',
         justifyContent: 'space-between',
         flexWrap: 'wrap'
       }}>
         {/* Logo */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
           <img
             src="/logo192.png"
             alt="Logo"
-            style={{ width: '40px', height: '40px', marginLeft: '-6px', borderRadius: '50%' }}
+            style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '50%',
+              marginLeft: '-6px'
+            }}
           />
         </div>
 
-        {/* Right Section: Time → Settings → Login */}
+        {/* Time + Settings + Login */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           gap: '16px',
-          transform: 'translateX(-12px) translateY(6px)'  // Move left & down
+          transform: 'translateX(-12px) translateY(6px)'
         }}>
-          {/* Time */}
-          <span style={{ color: 'white', fontSize: '13px' }}>
-            {currentTime}
-          </span>
-
-          {/* Settings Icon */}
+          <span style={{ color: 'white', fontSize: '14px' }}>{currentTime}</span>
           <svg
             xmlns="http://www.w3.org/2000/svg"
             width="20"
@@ -66,10 +67,8 @@ function TopBar({ onLoginClick }) {
             fill="#ccc"
             viewBox="0 0 24 24"
           >
-            <path d="M19.14 12.936a7.493 7.493 0 0 0 .057-.936c0-.318-.02-.63-.057-.936l2.037-1.593a.468.468 0 0 0 .111-.588l-1.929-3.34a.467.467 0 0 0-.564-.21l-2.4.96a7.42 7.42 0 0 0-1.617-.936l-.363-2.52a.45.45 0 0 0-.45-.39h-3.858a.45.45 0 0 0-.45.39l-.363 2.52a7.42 7.42 0 0 0-1.617.936l-2.4-.96a.46.46 0 0 0-.564.21l-1.93 3.34a.465.465 0 0 0 .112.588l2.037 1.593c-.037.306-.057.618-.057.936 0 .318.02.63.057.936l-2.037 1.593a.468.468 0 0 0-.111.588l1.929 3.34a.467.467 0 0 0 .564.21l2.4-.96c.504.384 1.05.705 1.617.936l.363 2.52c.03.225.225.39.45.39h3.858c.225 0 .42-.165.45-.39l.363-2.52c.567-.231 1.113-.552 1.617-.936l2.4.96a.467.467 0 0 0 .564-.21l1.929-3.34a.468.468 0 0 0-.111-.588l-2.037-1.593ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z" />
+            <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94s-0.02-0.64-0.06-0.94l2.03-1.58c0.18-0.14,0.23-0.4,0.12-0.61l-1.92-3.32 c-0.11-0.21-0.36-0.3-0.58-0.22l-2.39,0.96c-0.5-0.38-1.05-0.7-1.65-0.94L14.5,2.5C14.47,2.22,14.24,2,13.96,2h-3.92 c-0.28,0-0.51,0.22-0.54,0.5l-0.36,2.51c-0.6,0.24-1.15,0.56-1.65,0.94L5.1,5.49C4.88,5.41,4.63,5.5,4.52,5.71L2.6,9.03 c-0.11,0.21-0.06,0.47,0.12,0.61l2.03,1.58C4.7,11.36,4.68,11.68,4.68,12s0.02,0.64,0.06,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.4-0.12,0.61l1.92,3.32c0.11,0.21,0.36,0.3,0.58,0.22l2.39-0.96c0.5,0.38,1.05,0.7,1.65,0.94l0.36,2.51 c0.03,0.28,0.26,0.5,0.54,0.5h3.92c0.28,0,0.51-0.22,0.54-0.5l0.36-2.51c0.6-0.24,1.15-0.56,1.65-0.94l2.39,0.96 c0.22,0.09,0.47-0.01,0.58-0.22l1.92-3.32c0.11-0.21,0.06-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.99,0-3.6-1.61-3.6-3.6 s1.61-3.6,3.6-3.6s3.6,1.61,3.6,3.6S13.99,15.6,12,15.6z" />
           </svg>
-
-          {/* Login Icon */}
           <div
             onClick={onLoginClick}
             style={{
@@ -91,7 +90,7 @@ function TopBar({ onLoginClick }) {
         </div>
       </div>
 
-      {/* Gradient Line */}
+      {/* Bottom line */}
       <div style={{ marginTop: '12px', marginBottom: '20px', width: '100%' }}>
         <div style={{
           height: '2px',
