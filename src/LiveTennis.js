@@ -6,7 +6,6 @@ import {
   generateLabel,
   generateNote
 } from './ai/aiEngine';
-import AIControlPanel from './components/AIControlPanel';
 import './components/PredictionCard.css';
 
 function LiveTennis() {
@@ -37,7 +36,6 @@ function LiveTennis() {
             return { ...match, ev, confidence, aiLabel, aiNote };
           });
 
-          // Play sound if new SAFE or RISKY prediction appears
           const newSafeOrRisky = enriched.find(
             (match) =>
               !prevMatchIds.current.has(match.id) &&
@@ -84,7 +82,7 @@ function LiveTennis() {
 
   return (
     <div style={{ backgroundColor: '#121212', padding: '80px 16px 20px', minHeight: '100vh' }}>
-      <AIControlPanel filters={filters} setFilters={setFilters} />
+      {/* Removed <AIControlPanel /> from here */}
       {filteredMatches.map((match) => (
         <div key={match.id} className="prediction-card">
           <div className="top-row">
