@@ -50,13 +50,13 @@ function TopBar({ onLoginClick }) {
           />
         </div>
 
-        {/* Right side: Settings + Time + Login */}
+        {/* Right side: Settings → Login → Time */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: '12px',
-            marginRight: '30px' // ⬅⬅⬅ 5 βήματα αριστερά
+            marginRight: '30px' // all shifted left
           }}
         >
           {/* Settings Icon */}
@@ -69,9 +69,6 @@ function TopBar({ onLoginClick }) {
           >
             <path d="M12 8.6c-1.9 0-3.4 1.5-3.4 3.4s1.5 3.4 3.4 3.4 3.4-1.5 3.4-3.4-1.5-3.4-3.4-3.4zm10.3 2.8l-1.1-.9c.1-.5.2-1 .2-1.5s-.1-1-.2-1.5l1.1-.9c.3-.3.3-.8.1-1.2l-1.9-3.3c-.2-.4-.7-.5-1.1-.3l-1.3.5c-.8-.6-1.7-1-2.6-1.3l-.2-1.4c0-.4-.4-.7-.8-.7H9.6c-.4 0-.8.3-.8.7l-.2 1.4c-1 .3-1.8.7-2.6 1.3L4.7.7c-.4-.2-.9-.1-1.1.3L1.7 4.3c-.2.4-.1.9.1 1.2l1.1.9c-.1.5-.2 1-.2 1.5s.1 1 .2 1.5l-1.1.9c-.3.3-.3.8-.1 1.2l1.9 3.3c.2.4.7.5 1.1.3l1.3-.5c.8.6 1.7 1 2.6 1.3l.2 1.4c0 .4.4.7.8.7h4.7c.4 0 .8-.3.8-.7l.2-1.4c1-.3 1.8-.7 2.6-1.3l1.3.5c.4.2.9.1 1.1-.3l1.9-3.3c.2-.4.1-.9-.1-1.2z" />
           </svg>
-
-          {/* Current Time */}
-          <span style={{ color: 'white', fontSize: '14px' }}>{currentTime}</span>
 
           {/* Login Icon */}
           <div
@@ -92,10 +89,13 @@ function TopBar({ onLoginClick }) {
               <path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z" />
             </svg>
           </div>
+
+          {/* Current Time – LAST */}
+          <span style={{ color: 'white', fontSize: '14px' }}>{currentTime}</span>
         </div>
       </div>
 
-      {/* Gradient underline */}
+      {/* Line */}
       <div style={{ marginTop: '12px', marginBottom: '20px', width: '100%' }}>
         <div
           style={{
