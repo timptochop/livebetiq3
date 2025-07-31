@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+// src/LiveTennis.js
+import React, { useEffect, useState, useRef } from 'react';
 import {
   calculateEV,
   estimateConfidence,
@@ -13,23 +14,50 @@ function LiveTennis() {
   const [filters, setFilters] = useState({
     ev: 0,
     confidence: 0,
-    label: 'ALL'
+    label: 'ALL',
+    notifications: true,
   });
+  const prevMatchIds = useRef(new Set());
+  const notificationSound = useRef(null);
 
   useEffect(() => {
-    fetch('/api/tennis/live')
-      .then((res) => res.json())
-      .then((data) => {
-        const enriched = data.map((match) => {
-          const ev = calculateEV(match.oddsPlayer1, match.oddsPlayer2);
-          const confidence = estimateConfidence(match.oddsPlayer1, match.oddsPlayer2);
-          const aiLabel = generateLabel(ev, confidence);
-          const aiNote = generateNote(aiLabel, ev, confidence);
-          return { ...match, ev, confidence, aiLabel, aiNote };
-        });
-        setMatches(enriched);
-      });
+    notificationSound.current = new Audio('/notification.mp3');
   }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetch('/api/tennis/live')
+        .then((res) => res.json())
+        .then((data) => {
+          const enriched = data.map((match) => {
+            const ev = calculateEV(match.oddsPlayer1, match.oddsPlayer2);
+            const confidence = estimateConfidence(match.oddsPlayer1, match.oddsPlayer2);
+            const aiLabel = generateLabel(ev, confidence);
+            const aiNote = generateNote(aiLabel, ev, confidence);
+            return { ...match, ev, confidence, aiLabel, aiNote };
+          });
+
+          // Play sound if new SAFE or RISKY prediction appears
+          const newSafeOrRisky = enriched.find(
+            (match) =>
+              !prevMatchIds.current.has(match.id) &&
+              (match.aiLabel === 'SAFE' || match.aiLabel === 'RISKY') &&
+              match.ev * 100 >= filters.ev &&
+              match.confidence >= filters.confidence &&
+              (filters.label === 'ALL' || match.aiLabel === filters.label)
+          );
+
+          if (newSafeOrRisky && filters.notifications && notificationSound.current) {
+            notificationSound.current.play();
+          }
+
+          prevMatchIds.current = new Set(enriched.map((m) => m.id));
+          setMatches(enriched);
+        });
+    }, 8000);
+
+    return () => clearInterval(interval);
+  }, [filters]);
 
   const getLabelColor = (label) => {
     switch (label) {

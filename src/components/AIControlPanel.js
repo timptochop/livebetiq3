@@ -1,40 +1,68 @@
+// src/components/AIControlPanel.js
 import React from 'react';
-import './AIControlPanel.css';
 
 function AIControlPanel({ filters, setFilters }) {
+  const handleSliderChange = (e) => {
+    const { name, value } = e.target;
+    setFilters(prev => ({ ...prev, [name]: Number(value) }));
+  };
+
+  const handleLabelChange = (e) => {
+    setFilters(prev => ({ ...prev, label: e.target.value }));
+  };
+
+  const handleToggleNotifications = () => {
+    setFilters(prev => ({
+      ...prev,
+      notifications: !prev.notifications
+    }));
+  };
+
   return (
-    <div className="ai-control-panel">
-      <div className="control-group">
-        <label>Min EV %</label>
+    <div style={{
+      backgroundColor: '#2c2c2c',
+      padding: '16px',
+      borderRadius: '8px',
+      color: 'white',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '16px',
+      fontSize: '14px'
+    }}>
+      <label>
+        Min EV %: {filters.ev}
         <input
           type="range"
+          name="ev"
           min="0"
-          max="20"
+          max="100"
           step="1"
           value={filters.ev}
-          onChange={(e) => setFilters(prev => ({ ...prev, ev: Number(e.target.value) }))}
+          onChange={handleSliderChange}
+          style={{ width: '100%' }}
         />
-        <span>{filters.ev}%</span>
-      </div>
+      </label>
 
-      <div className="control-group">
-        <label>Min Confidence %</label>
+      <label>
+        Min Confidence %: {filters.confidence}
         <input
           type="range"
+          name="confidence"
           min="0"
           max="100"
           step="1"
           value={filters.confidence}
-          onChange={(e) => setFilters(prev => ({ ...prev, confidence: Number(e.target.value) }))}
+          onChange={handleSliderChange}
+          style={{ width: '100%' }}
         />
-        <span>{filters.confidence}%</span>
-      </div>
+      </label>
 
-      <div className="control-group">
-        <label>Label</label>
+      <label>
+        Prediction Type:
         <select
           value={filters.label}
-          onChange={(e) => setFilters(prev => ({ ...prev, label: e.target.value }))}
+          onChange={handleLabelChange}
+          style={{ width: '100%', padding: '4px', borderRadius: '4px', marginTop: '4px' }}
         >
           <option value="ALL">ALL</option>
           <option value="SAFE">SAFE</option>
@@ -42,7 +70,16 @@ function AIControlPanel({ filters, setFilters }) {
           <option value="AVOID">AVOID</option>
           <option value="STARTS SOON">STARTS SOON</option>
         </select>
-      </div>
+      </label>
+
+      <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        Enable Notifications
+        <input
+          type="checkbox"
+          checked={filters.notifications || false}
+          onChange={handleToggleNotifications}
+        />
+      </label>
     </div>
   );
 }

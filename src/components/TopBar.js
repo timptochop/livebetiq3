@@ -1,9 +1,17 @@
 // src/components/TopBar.js
 import React, { useEffect, useState } from 'react';
+import { FaCog } from 'react-icons/fa';
 
-function TopBar({ onLoginClick }) {
+function TopBar({ onLoginClick, onSettingsChange }) {
   const [currentTime, setCurrentTime] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('loggedInUser'));
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Settings state
+  const [minEV, setMinEV] = useState(0);
+  const [minConfidence, setMinConfidence] = useState(0);
+  const [selectedLabel, setSelectedLabel] = useState('');
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -23,6 +31,10 @@ function TopBar({ onLoginClick }) {
     return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
+  useEffect(() => {
+    onSettingsChange?.({ minEV, minConfidence, selectedLabel, notificationsEnabled });
+  }, [minEV, minConfidence, selectedLabel, notificationsEnabled, onSettingsChange]);
+
   return (
     <div style={{
       backgroundColor: '#1a1a1a',
@@ -32,78 +44,110 @@ function TopBar({ onLoginClick }) {
       width: '100%',
       zIndex: 1000
     }}>
+      {/* Top Row */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        flexWrap: 'wrap'
+        marginBottom: '10px'
       }}>
         {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <img
-            src="/logo192.png"
-            alt="Logo"
-            style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '50%',
-              marginLeft: '-6px'
-            }}
+        <img
+          src="/logo192.png"
+          alt="Logo"
+          style={{ width: '40px', height: '40px', borderRadius: '50%', marginLeft: '-4px' }}
+        />
+
+        {/* Time - Settings - Login */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', transform: 'translateY(2px)' }}>
+          <span style={{ color: '#fff', fontSize: '14px', transform: 'translateX(10px)' }}>{currentTime}</span>
+
+          <FaCog
+            color="#ccc"
+            size={20}
+            style={{ cursor: 'pointer', transform: 'translateX(-6px)' }}
+            onClick={() => setShowSettings(!showSettings)}
           />
-        </div>
 
-        {/* Time + Settings + Login */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '16px',
-          transform: 'translateX(-16px) translateY(6px)' // applies to all
-        }}>
-          {/* Time */}
-          <span style={{ color: 'white', fontSize: '14px' }}>{currentTime}</span>
-
-          {/* Settings Icon */}
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            fill="#ccc"
-            viewBox="0 0 24 24"
-          >
-            <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94s-0.02-0.64-0.06-0.94l2.03-1.58c0.18-0.14,0.23-0.4,0.12-0.61l-1.92-3.32 c-0.11-0.21-0.36-0.3-0.58-0.22l-2.39,0.96c-0.5-0.38-1.05-0.7-1.65-0.94L14.5,2.5C14.47,2.22,14.24,2,13.96,2h-3.92 c-0.28,0-0.51,0.22-0.54,0.5l-0.36,2.51c-0.6,0.24-1.15,0.56-1.65,0.94L5.1,5.49C4.88,5.41,4.63,5.5,4.52,5.71L2.6,9.03 c-0.11,0.21-0.06,0.47,0.12,0.61l2.03,1.58C4.7,11.36,4.68,11.68,4.68,12s0.02,0.64,0.06,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.4-0.12,0.61l1.92,3.32c0.11,0.21,0.36,0.3,0.58,0.22l2.39-0.96c0.5,0.38,1.05,0.7,1.65,0.94l0.36,2.51 c0.03,0.28,0.26,0.5,0.54,0.5h3.92c0.28,0,0.51-0.22,0.54-0.5l0.36-2.51c0.6-0.24,1.15-0.56,1.65-0.94l2.39,0.96 c0.22,0.09,0.47-0.01,0.58-0.22l1.92-3.32c0.11-0.21,0.06-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.99,0-3.6-1.61-3.6-3.6 s1.61-3.6,3.6-3.6s3.6,1.61,3.6,3.6S13.99,15.6,12,15.6z" />
-          </svg>
-
-          {/* Login Icon */}
           <div
             onClick={onLoginClick}
-            style={{
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              transform: 'translateX(-8px)' // μόνο το login -1 φορά αριστερά
-            }}
+            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', transform: 'translateX(-8px)' }}
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              fill={isLoggedIn ? '#00C853' : '#ccc'}
-              viewBox="0 0 24 24"
-            >
-              <path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z" />
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+              fill={isLoggedIn ? '#00C853' : '#ccc'} viewBox="0 0 24 24">
+              <path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 
+              1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z" />
             </svg>
           </div>
         </div>
       </div>
 
-      {/* Bottom line */}
-      <div style={{ marginTop: '12px', marginBottom: '20px', width: '100%' }}>
+      {/* Gradient Divider */}
+      <div style={{ marginBottom: '14px', width: '100%' }}>
         <div style={{
           height: '2px',
-          background: 'linear-gradient(to right, transparent, white, transparent)',
-          width: '100%'
+          background: 'linear-gradient(to right, transparent, white, transparent)'
         }} />
       </div>
+
+      {/* Settings Panel */}
+      {showSettings && (
+        <div style={{
+          backgroundColor: '#222',
+          borderRadius: '8px',
+          padding: '12px',
+          color: '#fff',
+          fontSize: '14px'
+        }}>
+          <div style={{ marginBottom: '10px' }}>
+            <label>Min EV: {minEV}%</label>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={minEV}
+              onChange={(e) => setMinEV(Number(e.target.value))}
+              style={{ width: '100%' }}
+            />
+          </div>
+          <div style={{ marginBottom: '10px' }}>
+            <label>Min Confidence: {minConfidence}%</label>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={minConfidence}
+              onChange={(e) => setMinConfidence(Number(e.target.value))}
+              style={{ width: '100%' }}
+            />
+          </div>
+          <div style={{ marginBottom: '10px' }}>
+            <label>Filter Label:</label>
+            <select
+              value={selectedLabel}
+              onChange={(e) => setSelectedLabel(e.target.value)}
+              style={{ width: '100%', padding: '6px', borderRadius: '4px' }}
+            >
+              <option value="">All</option>
+              <option value="SAFE">SAFE</option>
+              <option value="RISKY">RISKY</option>
+              <option value="AVOID">AVOID</option>
+              <option value="STARTS SOON">STARTS SOON</option>
+            </select>
+          </div>
+          <div>
+            <label>
+              <input
+                type="checkbox"
+                checked={notificationsEnabled}
+                onChange={(e) => setNotificationsEnabled(e.target.checked)}
+                style={{ marginRight: '8px' }}
+              />
+              Enable Notifications
+            </label>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
