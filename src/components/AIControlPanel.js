@@ -1,3 +1,4 @@
+// src/components/AIControlPanel.js
 import React from 'react';
 
 function AIControlPanel({ filters, setFilters }) {
@@ -10,55 +11,58 @@ function AIControlPanel({ filters, setFilters }) {
   };
 
   const handleNotificationsToggle = () => {
-    setFilters((prev) => ({ ...prev, notifications: !prev.notifications }));
+    setFilters((prev) => ({ ...prev, notificationsEnabled: !prev.notificationsEnabled }));
   };
 
   return (
-    <div style={{
-      backgroundColor: '#1e1e1e',
-      padding: '16px',
-      borderRadius: '12px',
-      color: '#fff',
-      fontFamily: 'sans-serif',
-      marginTop: '10px'
-    }}>
-      <div style={{ marginBottom: '14px' }}>
-        <label>Min EV: {filters.ev}%</label>
+    <div
+      style={{
+        padding: '20px',
+        backgroundColor: '#1e1e1e',
+        borderRadius: '12px',
+        color: '#fff',
+        maxWidth: '100%',
+        boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+        marginTop: '12px',
+      }}
+    >
+      <div style={{ marginBottom: '14px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+        <label style={{ marginBottom: '6px' }}>Min EV: {filters.ev}%</label>
         <input
           type="range"
           min="0"
           max="100"
           value={filters.ev}
           onChange={(e) => handleSliderChange('ev', e.target.value)}
-          style={{ width: '100%' }}
+          style={{ width: '95%', marginLeft: '8px' }}
         />
       </div>
 
-      <div style={{ marginBottom: '14px' }}>
-        <label>Min Confidence %: {filters.confidence}%</label>
+      <div style={{ marginBottom: '14px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+        <label style={{ marginBottom: '6px' }}>Min Confidence %: {filters.confidence}%</label>
         <input
           type="range"
           min="0"
           max="100"
           value={filters.confidence}
           onChange={(e) => handleSliderChange('confidence', e.target.value)}
-          style={{ width: '100%' }}
+          style={{ width: '95%', marginLeft: '8px' }}
         />
       </div>
 
-      <div style={{ marginBottom: '14px' }}>
-        <label>Filter Label:</label>
+      <div style={{ marginBottom: '14px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+        <label style={{ marginBottom: '6px' }}>Filter Label:</label>
         <select
           value={filters.label}
           onChange={handleLabelChange}
           style={{
-            width: '100%',
+            width: '95%',
+            marginLeft: '8px',
             padding: '6px',
             backgroundColor: '#2c2c2c',
             color: '#fff',
             border: '1px solid #555',
             borderRadius: '6px',
-            marginTop: '4px'
           }}
         >
           <option value="ALL">All</option>
@@ -68,13 +72,16 @@ function AIControlPanel({ filters, setFilters }) {
         </select>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginTop: '12px', marginLeft: '8px' }}>
         <input
           type="checkbox"
-          checked={filters.notifications}
+          checked={filters.notificationsEnabled}
           onChange={handleNotificationsToggle}
+          id="notificationsToggle"
         />
-        <label>Enable Notifications</label>
+        <label htmlFor="notificationsToggle" style={{ marginLeft: '8px' }}>
+          Enable Notifications
+        </label>
       </div>
     </div>
   );
