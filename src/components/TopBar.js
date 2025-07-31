@@ -1,19 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { FaCog } from 'react-icons/fa';
 
 function TopBar({ onLoginClick }) {
   const [currentTime, setCurrentTime] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('loggedInUser'));
 
   useEffect(() => {
-    const updateClock = () => {
+    const interval = setInterval(() => {
       const now = new Date();
       const hh = String(now.getHours()).padStart(2, '0');
       const mm = String(now.getMinutes()).padStart(2, '0');
       setCurrentTime(`${hh}:${mm}`);
-    };
-    updateClock();
-    const interval = setInterval(updateClock, 10000);
+    }, 10000);
     return () => clearInterval(interval);
   }, []);
 
@@ -33,7 +30,7 @@ function TopBar({ onLoginClick }) {
         position: 'fixed',
         top: 0,
         width: '100%',
-        zIndex: 1000,
+        zIndex: 1000
       }}
     >
       <div
@@ -41,10 +38,10 @@ function TopBar({ onLoginClick }) {
           display: 'flex',
           alignItems: 'flex-start',
           justifyContent: 'space-between',
-          flexWrap: 'wrap',
+          flexWrap: 'wrap'
         }}
       >
-        {/* Left: Logo */}
+        {/* Logo */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
           <img
             src="/logo192.png"
@@ -53,16 +50,36 @@ function TopBar({ onLoginClick }) {
           />
         </div>
 
-        {/* Right: Settings, Time, Login */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <FaCog color="#ccc" size={20} />
-          <span style={{ color: 'white', fontSize: '12px', marginTop: '1px' }}>{currentTime}</span>
+        {/* Right side: Settings + Time + Login */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            marginRight: '18px' // ⬅⬅⬅ Shift right-side group 3 steps left
+          }}
+        >
+          {/* Settings Icon */}
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            fill="#ccc"
+            viewBox="0 0 24 24"
+          >
+            <path d="M12 8.6c-1.9 0-3.4 1.5-3.4 3.4s1.5 3.4 3.4 3.4 3.4-1.5 3.4-3.4-1.5-3.4-3.4-3.4zm10.3 2.8l-1.1-.9c.1-.5.2-1 .2-1.5s-.1-1-.2-1.5l1.1-.9c.3-.3.3-.8.1-1.2l-1.9-3.3c-.2-.4-.7-.5-1.1-.3l-1.3.5c-.8-.6-1.7-1-2.6-1.3l-.2-1.4c0-.4-.4-.7-.8-.7H9.6c-.4 0-.8.3-.8.7l-.2 1.4c-1 .3-1.8.7-2.6 1.3L4.7.7c-.4-.2-.9-.1-1.1.3L1.7 4.3c-.2.4-.1.9.1 1.2l1.1.9c-.1.5-.2 1-.2 1.5s.1 1 .2 1.5l-1.1.9c-.3.3-.3.8-.1 1.2l1.9 3.3c.2.4.7.5 1.1.3l1.3-.5c.8.6 1.7 1 2.6 1.3l.2 1.4c0 .4.4.7.8.7h4.7c.4 0 .8-.3.8-.7l.2-1.4c1-.3 1.8-.7 2.6-1.3l1.3.5c.4.2.9.1 1.1-.3l1.9-3.3c.2-.4.1-.9-.1-1.2z" />
+          </svg>
+
+          {/* Current Time */}
+          <span style={{ color: 'white', fontSize: '14px' }}>{currentTime}</span>
+
+          {/* Login Icon */}
           <div
             onClick={onLoginClick}
             style={{
               cursor: 'pointer',
               display: 'flex',
-              alignItems: 'center',
+              alignItems: 'center'
             }}
           >
             <svg
@@ -78,13 +95,13 @@ function TopBar({ onLoginClick }) {
         </div>
       </div>
 
-      {/* Blend line below */}
+      {/* Gradient underline */}
       <div style={{ marginTop: '12px', marginBottom: '20px', width: '100%' }}>
         <div
           style={{
             height: '2px',
             background: 'linear-gradient(to right, transparent, white, transparent)',
-            width: '100%',
+            width: '100%'
           }}
         />
       </div>
