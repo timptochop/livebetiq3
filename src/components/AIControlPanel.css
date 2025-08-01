@@ -1,37 +1,47 @@
 .ai-control-panel {
-  background-color: #1e1e1e;
-  padding: 10px;
-  border-radius: 10px;
-  font-size: 12px;
-  color: white;
-  width: 92%;
-  margin: auto;
-}
-
-.control-row {
   display: flex;
   flex-direction: column;
+  padding: 8px 0;
+  gap: 10px;
+  transform: scale(0.6); /* Makes the panel and all its children smaller */
+  transform-origin: top left;
+}
+
+.ai-control-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 10px;
 }
 
-.control-label {
-  font-size: 11px;
-  margin-bottom: 4px;
+.ai-control-label {
+  color: white;
+  font-size: 12px;
+  min-width: 100px;
 }
 
-.small-slider {
-  width: 100%;
+.ai-slider {
+  flex: 1;
+  accent-color: #00C853;
   height: 4px;
 }
 
-.small-select {
-  font-size: 11px;
-  padding: 3px;
-  height: 26px;
+.ai-value {
+  width: 40px;
+  font-size: 12px;
+  text-align: right;
+  color: #ccc;
 }
 
-.checkbox-row {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
+.ai-select {
+  background-color: #1e1e1e;
+  color: white;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 4px;
+  font-size: 12px;
+}
+
+.ai-checkbox {
+  transform: scale(1.2);
 }
