@@ -92,6 +92,65 @@ function TopBar({ onLoginClick, onSettingsChange }) {
           background: 'linear-gradient(to right, transparent, white, transparent)'
         }} />
       </div>
+
+      {/* Settings Panel */}
+      {showSettings && (
+        <div style={{
+          backgroundColor: '#222',
+          borderRadius: '8px',
+          padding: '12px',
+          color: '#fff',
+          fontSize: '14px'
+        }}>
+          <div style={{ marginBottom: '10px' }}>
+            <label>Min EV: {minEV}%</label>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={minEV}
+              onChange={(e) => setMinEV(Number(e.target.value))}
+              style={{ width: '100%' }}
+            />
+          </div>
+          <div style={{ marginBottom: '10px' }}>
+            <label>Min Confidence: {minConfidence}%</label>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={minConfidence}
+              onChange={(e) => setMinConfidence(Number(e.target.value))}
+              style={{ width: '100%' }}
+            />
+          </div>
+          <div style={{ marginBottom: '10px' }}>
+            <label>Filter Label:</label>
+            <select
+              value={selectedLabel}
+              onChange={(e) => setSelectedLabel(e.target.value)}
+              style={{ width: '100%', padding: '6px', borderRadius: '4px' }}
+            >
+              <option value="">All</option>
+              <option value="SAFE">SAFE</option>
+              <option value="RISKY">RISKY</option>
+              <option value="AVOID">AVOID</option>
+              <option value="STARTS SOON">STARTS SOON</option>
+            </select>
+          </div>
+          <div>
+            <label>
+              <input
+                type="checkbox"
+                checked={notificationsEnabled}
+                onChange={(e) => setNotificationsEnabled(e.target.checked)}
+                style={{ marginRight: '8px' }}
+              />
+              Enable Notifications
+            </label>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
