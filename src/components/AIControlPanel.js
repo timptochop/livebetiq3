@@ -1,11 +1,45 @@
 import React from 'react';
-import './AIControlPanel.css';
 
 const AIControlPanel = ({ filters, setFilters }) => {
+  const inputStyle = {
+    width: '100%',
+    height: '3px',
+    marginBottom: '6px',
+  };
+
+  const labelStyle = {
+    fontSize: '11px',
+    marginBottom: '2px',
+  };
+
+  const selectStyle = {
+    fontSize: '11px',
+    padding: '2px',
+    height: '24px',
+    marginBottom: '8px',
+  };
+
+  const containerStyle = {
+    backgroundColor: '#1e1e1e',
+    padding: '10px',
+    borderRadius: '10px',
+    fontSize: '12px',
+    color: 'white',
+    width: '92%',
+    margin: 'auto',
+  };
+
+  const checkboxRowStyle = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    fontSize: '11px',
+  };
+
   return (
-    <div className="ai-control-panel">
-      <div className="control-row">
-        <label className="control-label">Min EV %: {filters.ev}</label>
+    <div style={containerStyle}>
+      <div>
+        <label style={labelStyle}>Min EV %: {filters.ev}</label>
         <input
           type="range"
           min="0"
@@ -14,14 +48,12 @@ const AIControlPanel = ({ filters, setFilters }) => {
           onChange={(e) =>
             setFilters({ ...filters, ev: parseInt(e.target.value) })
           }
-          className="small-slider"
+          style={inputStyle}
         />
       </div>
 
-      <div className="control-row">
-        <label className="control-label">
-          Min Confidence %: {filters.confidence}
-        </label>
+      <div>
+        <label style={labelStyle}>Min Confidence %: {filters.confidence}</label>
         <input
           type="range"
           min="0"
@@ -33,18 +65,18 @@ const AIControlPanel = ({ filters, setFilters }) => {
               confidence: parseInt(e.target.value),
             })
           }
-          className="small-slider"
+          style={inputStyle}
         />
       </div>
 
-      <div className="control-row">
-        <label className="control-label">Filter Label:</label>
+      <div>
+        <label style={labelStyle}>Filter Label:</label>
         <select
           value={filters.label}
           onChange={(e) =>
             setFilters({ ...filters, label: e.target.value })
           }
-          className="small-select"
+          style={selectStyle}
         >
           <option value="ALL">All</option>
           <option value="SAFE">Safe</option>
@@ -53,8 +85,8 @@ const AIControlPanel = ({ filters, setFilters }) => {
         </select>
       </div>
 
-      <div className="control-row checkbox-row">
-        <label className="control-label">Enable Notifications</label>
+      <div style={checkboxRowStyle}>
+        <label>Enable Notifications</label>
         <input
           type="checkbox"
           checked={filters.notificationsEnabled}
