@@ -59,7 +59,7 @@ function TopBar({ onLoginClick, onSettingsChange }) {
 
         {/* Time - Settings - Login */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px', transform: 'translateY(2px)' }}>
-          <span style={{ color: '#fff', fontSize: '14px', transform: 'translateX(2px)' }}>{currentTime}</span>
+          <span style={{ color: '#fff', fontSize: '14px', transform: 'translateX(-2px)' }}>{currentTime}</span>
 
           <FaCog
             color="#ccc"
@@ -74,7 +74,7 @@ function TopBar({ onLoginClick, onSettingsChange }) {
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              transform: 'translateX(-32px)' // 4x αριστερά (παραμένει)
+              transform: 'translateX(-32px)'
             }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
