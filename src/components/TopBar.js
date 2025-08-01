@@ -58,7 +58,7 @@ function TopBar({ onLoginClick, onSettingsChange }) {
 
         {/* Time - Settings - Login */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px', transform: 'translateY(2px)' }}>
-          <span style={{ color: '#fff', fontSize: '14px', transform: 'translateX(-8px)' }}>{currentTime}</span>
+          <span style={{ color: '#fff', fontSize: '14px', transform: 'translateX(-16px)' }}>{currentTime}</span>
 
           <FaCog
             color="#ccc"
