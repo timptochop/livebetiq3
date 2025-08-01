@@ -1,53 +1,50 @@
-// src/components/AIControlPanel.js
 import React from 'react';
+import './AIControlPanel.css';
 
 const AIControlPanel = ({ filters, setFilters }) => {
-  const handleSliderChange = (key, value) => {
-    setFilters((prev) => ({ ...prev, [key]: Number(value) }));
-  };
-
-  const handleLabelChange = (e) => {
-    setFilters((prev) => ({ ...prev, label: e.target.value }));
-  };
-
-  const handleToggleNotifications = (e) => {
-    setFilters((prev) => ({ ...prev, notifications: e.target.checked }));
-  };
-
   return (
-    <div style={styles.panel}>
-      <div style={styles.row}>
-        <label style={styles.label}>Min EV %:</label>
+    <div className="ai-control-panel">
+      <div className="control-row">
+        <label className="control-label">Min EV %: {filters.ev}</label>
         <input
           type="range"
           min="0"
           max="100"
           value={filters.ev}
-          onChange={(e) => handleSliderChange('ev', e.target.value)}
-          style={styles.slider}
+          onChange={(e) =>
+            setFilters({ ...filters, ev: parseInt(e.target.value) })
+          }
+          className="small-slider"
         />
-        <span style={styles.value}>{filters.ev}%</span>
       </div>
 
-      <div style={styles.row}>
-        <label style={styles.label}>Min Confidence %:</label>
+      <div className="control-row">
+        <label className="control-label">
+          Min Confidence %: {filters.confidence}
+        </label>
         <input
           type="range"
           min="0"
           max="100"
           value={filters.confidence}
-          onChange={(e) => handleSliderChange('confidence', e.target.value)}
-          style={styles.slider}
+          onChange={(e) =>
+            setFilters({
+              ...filters,
+              confidence: parseInt(e.target.value),
+            })
+          }
+          className="small-slider"
         />
-        <span style={styles.value}>{filters.confidence}%</span>
       </div>
 
-      <div style={styles.row}>
-        <label style={styles.label}>Filter Label:</label>
+      <div className="control-row">
+        <label className="control-label">Filter Label:</label>
         <select
           value={filters.label}
-          onChange={handleLabelChange}
-          style={styles.select}
+          onChange={(e) =>
+            setFilters({ ...filters, label: e.target.value })
+          }
+          className="small-select"
         >
           <option value="ALL">All</option>
           <option value="SAFE">Safe</option>
@@ -56,59 +53,21 @@ const AIControlPanel = ({ filters, setFilters }) => {
         </select>
       </div>
 
-      <div style={styles.row}>
-        <label style={styles.label}>Enable Notifications</label>
+      <div className="control-row checkbox-row">
+        <label className="control-label">Enable Notifications</label>
         <input
           type="checkbox"
-          checked={filters.notifications || false}
-          onChange={handleToggleNotifications}
-          style={styles.checkbox}
+          checked={filters.notificationsEnabled}
+          onChange={(e) =>
+            setFilters({
+              ...filters,
+              notificationsEnabled: e.target.checked,
+            })
+          }
         />
       </div>
     </div>
   );
-};
-
-const styles = {
-  panel: {
-    backgroundColor: '#1e1e1e',
-    padding: '8px',
-    borderRadius: '8px',
-    fontSize: '9px',
-    color: '#fff',
-    width: '100%',
-    boxSizing: 'border-box',
-  },
-  row: {
-    display: 'flex',
-    alignItems: 'center',
-    marginBottom: '6px',
-  },
-  label: {
-    flex: 1,
-    fontSize: '9px',
-    marginRight: '4px',
-  },
-  slider: {
-    flex: 2,
-    height: '6px',
-  },
-  value: {
-    marginLeft: '4px',
-    fontSize: '9px',
-    width: '28px',
-    textAlign: 'right',
-  },
-  select: {
-    flex: 2,
-    fontSize: '9px',
-    padding: '2px',
-  },
-  checkbox: {
-    width: '12px',
-    height: '12px',
-    marginLeft: '4px',
-  },
 };
 
 export default AIControlPanel;
