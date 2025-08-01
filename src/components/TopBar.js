@@ -1,4 +1,3 @@
-// src/components/TopBar.js
 import React, { useEffect, useState } from 'react';
 import { FaCog } from 'react-icons/fa';
 
@@ -66,7 +65,7 @@ function TopBar({ onLoginClick, onSettingsChange }) {
             color="#ccc"
             size={20}
             style={{ cursor: 'pointer', transform: 'translateX(-6px)' }}
-            onClick={() => setShowSettings(!showSettings)}
+            onClick={() => setShowSettings(true)}
           />
 
           <div
@@ -90,16 +89,24 @@ function TopBar({ onLoginClick, onSettingsChange }) {
         }} />
       </div>
 
-      {/* Settings Panel */}
+      {/* Slide-in Settings Panel */}
       {showSettings && (
         <div style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          width: '100%',
+          maxWidth: '360px',
+          height: '100vh',
           backgroundColor: '#222',
-          borderRadius: '8px',
-          padding: '12px',
-          color: '#fff',
-          fontSize: '14px'
+          zIndex: 1100,
+          padding: '20px',
+          boxShadow: '-2px 0 8px rgba(0,0,0,0.6)',
+          overflowY: 'auto'
         }}>
-          <div style={{ marginBottom: '10px' }}>
+          <h3 style={{ color: '#fff', marginBottom: '20px' }}>⚙ Settings</h3>
+
+          <div style={{ marginBottom: '20px' }}>
             <label>Min EV: {minEV}%</label>
             <input
               type="range"
@@ -110,7 +117,8 @@ function TopBar({ onLoginClick, onSettingsChange }) {
               style={{ width: '100%' }}
             />
           </div>
-          <div style={{ marginBottom: '10px' }}>
+
+          <div style={{ marginBottom: '20px' }}>
             <label>Min Confidence: {minConfidence}%</label>
             <input
               type="range"
@@ -121,12 +129,13 @@ function TopBar({ onLoginClick, onSettingsChange }) {
               style={{ width: '100%' }}
             />
           </div>
-          <div style={{ marginBottom: '10px' }}>
+
+          <div style={{ marginBottom: '20px' }}>
             <label>Filter Label:</label>
             <select
               value={selectedLabel}
               onChange={(e) => setSelectedLabel(e.target.value)}
-              style={{ width: '100%', padding: '6px', borderRadius: '4px' }}
+              style={{ width: '100%', padding: '6px', borderRadius: '4px', marginTop: '6px' }}
             >
               <option value="">All</option>
               <option value="SAFE">SAFE</option>
@@ -135,7 +144,8 @@ function TopBar({ onLoginClick, onSettingsChange }) {
               <option value="STARTS SOON">STARTS SOON</option>
             </select>
           </div>
-          <div>
+
+          <div style={{ marginBottom: '20px' }}>
             <label>
               <input
                 type="checkbox"
@@ -146,6 +156,22 @@ function TopBar({ onLoginClick, onSettingsChange }) {
               Enable Notifications
             </label>
           </div>
+
+          <button
+            onClick={() => setShowSettings(false)}
+            style={{
+              marginTop: '10px',
+              backgroundColor: '#00C853',
+              color: '#000',
+              padding: '10px 20px',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              width: '100%'
+            }}
+          >
+            Close
+          </button>
         </div>
       )}
     </div>
