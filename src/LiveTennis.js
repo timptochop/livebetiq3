@@ -1,5 +1,4 @@
-// src/LiveTennis.js
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   calculateEV,
   estimateConfidence,
@@ -8,54 +7,23 @@ import {
 } from './ai/aiEngine';
 import './components/PredictionCard.css';
 
-function LiveTennis() {
+function LiveTennis({ filters }) {
   const [matches, setMatches] = useState([]);
-  const [filters, setFilters] = useState({
-    ev: 0,
-    confidence: 0,
-    label: 'ALL',
-    notifications: true,
-  });
-  const prevMatchIds = useRef(new Set());
-  const notificationSound = useRef(null);
 
   useEffect(() => {
-    notificationSound.current = new Audio('/notification.mp3');
-  }, []);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetch('/api/tennis/live')
-        .then((res) => res.json())
-        .then((data) => {
-          const enriched = data.map((match) => {
-            const ev = calculateEV(match.oddsPlayer1, match.oddsPlayer2);
-            const confidence = estimateConfidence(match.oddsPlayer1, match.oddsPlayer2);
-            const aiLabel = generateLabel(ev, confidence);
-            const aiNote = generateNote(aiLabel, ev, confidence);
-            return { ...match, ev, confidence, aiLabel, aiNote };
-          });
-
-          const newSafeOrRisky = enriched.find(
-            (match) =>
-              !prevMatchIds.current.has(match.id) &&
-              (match.aiLabel === 'SAFE' || match.aiLabel === 'RISKY') &&
-              match.ev * 100 >= filters.ev &&
-              match.confidence >= filters.confidence &&
-              (filters.label === 'ALL' || match.aiLabel === filters.label)
-          );
-
-          if (newSafeOrRisky && filters.notifications && notificationSound.current) {
-            notificationSound.current.play();
-          }
-
-          prevMatchIds.current = new Set(enriched.map((m) => m.id));
-          setMatches(enriched);
+    fetch('/api/tennis/live')
+      .then((res) => res.json())
+      .then((data) => {
+        const enriched = data.map((match) => {
+          const ev = calculateEV(match.oddsPlayer1, match.oddsPlayer2);
+          const confidence = estimateConfidence(match.oddsPlayer1, match.oddsPlayer2);
+          const aiLabel = generateLabel(ev, confidence);
+          const aiNote = generateNote(aiLabel, ev, confidence);
+          return { ...match, ev, confidence, aiLabel, aiNote };
         });
-    }, 8000);
-
-    return () => clearInterval(interval);
-  }, [filters]);
+        setMatches(enriched);
+      });
+  }, []);
 
   const getLabelColor = (label) => {
     switch (label) {
@@ -82,7 +50,6 @@ function LiveTennis() {
 
   return (
     <div style={{ backgroundColor: '#121212', padding: '80px 16px 20px', minHeight: '100vh' }}>
-      {/* Removed <AIControlPanel /> from here */}
       {filteredMatches.map((match) => (
         <div key={match.id} className="prediction-card">
           <div className="top-row">
