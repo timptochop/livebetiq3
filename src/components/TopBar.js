@@ -42,20 +42,23 @@ function TopBar({ onLoginClick, onSettingsChange }) {
       width: '100%',
       zIndex: 1000
     }}>
+      {/* Top Row */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         marginBottom: '10px'
       }}>
+        {/* Logo */}
         <img
           src="/logo192.png"
           alt="Logo"
           style={{ width: '40px', height: '40px', borderRadius: '50%', marginLeft: '-4px' }}
         />
 
+        {/* Time - Settings - Login */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px', transform: 'translateY(2px)' }}>
-          <span style={{ color: '#fff', fontSize: '14px', transform: 'translateX(-4px)' }}>{currentTime}</span>
+          <span style={{ color: '#fff', fontSize: '14px', transform: 'translateX(-8px)' }}>{currentTime}</span>
 
           <FaCog
             color="#ccc"
@@ -82,6 +85,7 @@ function TopBar({ onLoginClick, onSettingsChange }) {
         </div>
       </div>
 
+      {/* Gradient Divider */}
       <div style={{ marginBottom: '14px', width: '100%' }}>
         <div style={{
           height: '2px',
