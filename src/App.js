@@ -1,35 +1,57 @@
 import React, { useState, useEffect } from 'react';
-import './App.css';
-import './index.css';
 import TopBar from './components/TopBar';
 import LiveTennis from './LiveTennis';
 import LoginModal from './components/LoginModal';
+import './App.css';
 
 function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
-  const [user, setUser] = useState(localStorage.getItem('loggedInUser') || '');
-
-  const handleLogin = (username) => {
-    localStorage.setItem('loggedInUser', username);
-    setUser(username);
-    setShowLogin(false);
-  };
+  const [filters, setFilters] = useState({
+    ev: 5,
+    confidence: 60,
+    label: 'ALL',
+    notifications: false
+  });
 
   useEffect(() => {
-    const checkLogin = () => {
-      const storedUser = localStorage.getItem('loggedInUser') || '';
-      setUser(storedUser);
-    };
-    checkLogin();
-    window.addEventListener('storage', checkLogin);
-    return () => window.removeEventListener('storage', checkLogin);
+    const storedUser = localStorage.getItem('loggedInUser');
+    if (storedUser) {
+      setIsLoggedIn(true);
+    }
   }, []);
+
+  const handleLogin = (username, password) => {
+    if (username === 'user' && password === '1234') {
+      localStorage.setItem('loggedInUser', username);
+      setIsLoggedIn(true);
+      setShowLogin(false);
+    } else {
+      alert('Invalid credentials');
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('loggedInUser');
+    setIsLoggedIn(false);
+  };
 
   return (
     <div className="App">
-      <TopBar onLoginClick={() => setShowLogin(true)} user={user} />
-      <LiveTennis />
-      {showLogin && <LoginModal onClose={() => setShowLogin(false)} onLogin={handleLogin} />}
+      <TopBar
+        isLoggedIn={isLoggedIn}
+        onLoginClick={() => setShowLogin(true)}
+        onLogout={handleLogout} // ✅ Χρειαζόταν αυτό
+        filters={filters}
+        setFilters={setFilters}
+      />
+      <LiveTennis filters={filters} />
+      {showLogin && (
+        <LoginModal
+          onLogin={handleLogin}
+          onClose={() => setShowLogin(false)}
+        />
+      )}
     </div>
   );
 }
