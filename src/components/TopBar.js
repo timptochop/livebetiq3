@@ -1,188 +1,175 @@
 import React, { useState, useEffect } from 'react';
-import { FaCog } from 'react-icons/fa';
+import { FaCog, FaUser } from 'react-icons/fa';
+import './TopBar.css';
 
-function TopBar({ onLoginClick, onLogout, isLoggedIn, filters, setFilters }) {
+const TopBar = ({ onLoginClick, loggedInUser, filters, setFilters }) => {
   const [currentTime, setCurrentTime] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
-  const [showLogoutMenu, setShowLogoutMenu] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    const updateTime = () => {
       const now = new Date();
-      const hh = String(now.getHours()).padStart(2, '0');
-      const mm = String(now.getMinutes()).padStart(2, '0');
-      setCurrentTime(`${hh}:${mm}`);
-    }, 10000);
+      const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      setCurrentTime(timeString);
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 60000);
     return () => clearInterval(interval);
   }, []);
 
+  const iconStyle = {
+    fontSize: 22,
+    marginLeft: 18,
+    marginRight: 8,
+    cursor: 'pointer',
+    verticalAlign: 'middle',
+    transform: 'translateY(3px)',
+  };
+
+  const loginIconStyle = {
+    ...iconStyle,
+    color: loggedInUser ? 'limegreen' : 'white',
+    marginLeft: 28, // extra left space as ζητήθηκε
+  };
+
+  const panelStyle = {
+    position: 'fixed',
+    top: 0,
+    right: settingsOpen ? 0 : '-300px',
+    width: 300,
+    height: '100%',
+    backgroundColor: '#1c1c1c',
+    padding: 20,
+    boxShadow: '-2px 0 5px rgba(0,0,0,0.3)',
+    transition: 'right 0.3s ease-in-out',
+    zIndex: 999,
+    color: '#fff',
+    overflowY: 'auto',
+  };
+
+  const labelStyle = { display: 'block', marginTop: 15, fontSize: 14 };
+
   return (
-    <div style={{
-      backgroundColor: '#1a1a1a',
-      padding: '10px 16px 0',
-      position: 'fixed',
-      top: 0,
-      width: '100%',
-      zIndex: 1000
-    }}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: '10px'
-      }}>
+    <>
+      <div style={styles.topBar}>
         <img
           src="/logo192.png"
           alt="Logo"
-          style={{ width: '40px', height: '40px', borderRadius: '50%', marginLeft: '-4px' }}
+          style={{ height: 32, width: 32, borderRadius: '50%', marginLeft: 10 }}
         />
+        <span style={styles.time}>{currentTime}</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', marginRight: 20 }}>
+          <FaCog style={iconStyle} onClick={() => setSettingsOpen(!settingsOpen)} />
+          <FaUser style={loginIconStyle} onClick={onLoginClick} />
+        </div>
+      </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', transform: 'translateY(2px)' }}>
-          <span style={{ color: '#fff', fontSize: '14px', transform: 'translateX(-20px)' }}>{currentTime}</span>
+      <div style={panelStyle}>
+        <h3 style={{ marginTop: 0 }}>⚙ Ρυθμίσεις AI</h3>
+        <label style={labelStyle}>Min EV %</label>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={1}
+          value={filters.minEV}
+          onChange={(e) => setFilters({ ...filters, minEV: Number(e.target.value) })}
+          style={styles.slider}
+        />
+        <div style={styles.value}>{filters.minEV}%</div>
 
-          <FaCog
-            color="#ccc"
-            size={20}
-            style={{ cursor: 'pointer', transform: 'translateX(-28px)' }}
-            onClick={() => setShowSettings(true)}
+        <label style={labelStyle}>Min Confidence %</label>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={1}
+          value={filters.minConfidence}
+          onChange={(e) => setFilters({ ...filters, minConfidence: Number(e.target.value) })}
+          style={styles.slider}
+        />
+        <div style={styles.value}>{filters.minConfidence}%</div>
+
+        <label style={labelStyle}>Label Filter</label>
+        <select
+          value={filters.label}
+          onChange={(e) => setFilters({ ...filters, label: e.target.value })}
+          style={styles.select}
+        >
+          <option value="All">All</option>
+          <option value="SAFE">SAFE</option>
+          <option value="RISKY">RISKY</option>
+          <option value="AVOID">AVOID</option>
+          <option value="STARTS SOON">STARTS SOON</option>
+        </select>
+
+        <label style={labelStyle}>🔔 Ειδοποιήσεις</label>
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={filters.notificationsEnabled}
+            onChange={(e) =>
+              setFilters({ ...filters, notificationsEnabled: e.target.checked })
+            }
           />
+          <span className="sliderRound"></span>
+        </label>
 
-          <div style={{ position: 'relative', cursor: 'pointer', transform: 'translateX(-36px)' }}>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              fill={isLoggedIn ? '#00C853' : '#ccc'}
-              viewBox="0 0 24 24"
-              onClick={() => {
-                if (!isLoggedIn) onLoginClick();
-                else setShowLogoutMenu(!showLogoutMenu);
-              }}
-            >
-              <path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 
-                1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z" />
-            </svg>
-
-            {isLoggedIn && showLogoutMenu && (
-              <div style={{
-                position: 'absolute',
-                top: '26px',
-                right: 0,
-                backgroundColor: '#333',
-                borderRadius: '6px',
-                padding: '8px',
-                color: 'white',
-                fontSize: '14px',
-                zIndex: 2000
-              }}>
-                <div
-                  onClick={() => {
-                    onLogout();
-                    setShowLogoutMenu(false);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                >
-                  Logout
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <button style={styles.closeButton} onClick={() => setSettingsOpen(false)}>
+          Κλείσιμο
+        </button>
       </div>
-
-      <div style={{ marginBottom: '14px', width: '100%' }}>
-        <div style={{
-          height: '2px',
-          background: 'linear-gradient(to right, transparent, white, transparent)'
-        }} />
-      </div>
-
-      {showSettings && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          right: 0,
-          width: '100%',
-          maxWidth: '360px',
-          height: '100vh',
-          backgroundColor: '#222',
-          zIndex: 1100,
-          padding: '20px',
-          boxShadow: '-2px 0 8px rgba(0,0,0,0.6)',
-          overflowY: 'auto'
-        }}>
-          <h3 style={{ color: '#fff', marginBottom: '20px' }}>Settings</h3>
-
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ color: '#fff' }}>Min EV: {filters.ev}%</label>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={filters.ev}
-              onChange={(e) => setFilters({ ...filters, ev: Number(e.target.value) })}
-              style={{ width: '100%' }}
-            />
-          </div>
-
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ color: '#fff' }}>Min Confidence: {filters.confidence}%</label>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={filters.confidence}
-              onChange={(e) => setFilters({ ...filters, confidence: Number(e.target.value) })}
-              style={{ width: '100%' }}
-            />
-          </div>
-
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ color: '#fff' }}>Filter Label:</label>
-            <select
-              value={filters.label}
-              onChange={(e) => setFilters({ ...filters, label: e.target.value })}
-              style={{ width: '100%', padding: '6px', borderRadius: '4px', marginTop: '6px' }}
-            >
-              <option value="ALL">All</option>
-              <option value="SAFE">SAFE</option>
-              <option value="RISKY">RISKY</option>
-              <option value="AVOID">AVOID</option>
-              <option value="STARTS SOON">STARTS SOON</option>
-            </select>
-          </div>
-
-          <div style={{ marginBottom: '20px', color: '#fff' }}>
-            <label>
-              <input
-                type="checkbox"
-                checked={filters.notifications}
-                onChange={(e) => setFilters({ ...filters, notifications: e.target.checked })}
-                style={{ marginRight: '8px' }}
-              />
-              Enable Notifications
-            </label>
-          </div>
-
-          <button
-            onClick={() => setShowSettings(false)}
-            style={{
-              marginTop: '10px',
-              backgroundColor: '#00C853',
-              color: '#000',
-              padding: '10px 20px',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              width: '100%'
-            }}
-          >
-            Close
-          </button>
-        </div>
-      )}
-    </div>
+    </>
   );
-}
+};
+
+const styles = {
+  topBar: {
+    display: 'flex',
+    alignItems: 'center',
+    backgroundColor: '#111',
+    padding: '8px 0',
+    color: 'white',
+    position: 'fixed',
+    top: 0,
+    width: '100%',
+    zIndex: 999,
+  },
+  time: {
+    fontSize: 16,
+    marginLeft: 12,
+    fontWeight: '500',
+    color: '#ccc',
+  },
+  slider: {
+    width: '100%',
+    marginTop: 6,
+  },
+  select: {
+    width: '100%',
+    padding: 6,
+    borderRadius: 4,
+    border: '1px solid #444',
+    backgroundColor: '#222',
+    color: '#fff',
+    marginTop: 5,
+  },
+  closeButton: {
+    marginTop: 30,
+    padding: '8px 16px',
+    backgroundColor: '#444',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 6,
+    cursor: 'pointer',
+    width: '100%',
+  },
+  value: {
+    textAlign: 'right',
+    fontSize: 13,
+    marginBottom: 6,
+    color: '#aaa',
+  },
+};
 
 export default TopBar;

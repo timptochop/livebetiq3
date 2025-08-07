@@ -1,55 +1,44 @@
 import React, { useState, useEffect } from 'react';
 import TopBar from './components/TopBar';
-import LiveTennis from './LiveTennis';
+import LiveTennis from './components/LiveTennis';
 import LoginModal from './components/LoginModal';
 import './App.css';
 
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [showLogin, setShowLogin] = useState(false);
   const [filters, setFilters] = useState({
-    ev: 5,
-    confidence: 60,
-    label: 'ALL',
-    notifications: false
+    minEV: 0,
+    minConfidence: 0,
+    label: 'All',
+    notificationsEnabled: true,
   });
 
+  const [loggedInUser, setLoggedInUser] = useState(localStorage.getItem('loggedInUser') || null);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+
   useEffect(() => {
-    const storedUser = localStorage.getItem('loggedInUser');
-    if (storedUser) {
-      setIsLoggedIn(true);
-    }
-  }, []);
-
-  const handleLogin = (username, password) => {
-    if (username === 'user' && password === '1234') {
-      localStorage.setItem('loggedInUser', username);
-      setIsLoggedIn(true);
-      setShowLogin(false);
+    if (loggedInUser) {
+      localStorage.setItem('loggedInUser', loggedInUser);
     } else {
-      alert('Invalid credentials');
+      localStorage.removeItem('loggedInUser');
     }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('loggedInUser');
-    setIsLoggedIn(false);
-  };
+  }, [loggedInUser]);
 
   return (
     <div className="App">
       <TopBar
-        isLoggedIn={isLoggedIn}
-        onLoginClick={() => setShowLogin(true)}
-        onLogout={handleLogout} // ✅ Χρειαζόταν αυτό
+        onLoginClick={() => setIsLoginModalOpen(true)}
+        loggedInUser={loggedInUser}
         filters={filters}
         setFilters={setFilters}
       />
-      <LiveTennis filters={filters} />
-      {showLogin && (
+      <LiveTennis filters={filters} notificationsEnabled={filters.notificationsEnabled} />
+      {isLoginModalOpen && (
         <LoginModal
-          onLogin={handleLogin}
-          onClose={() => setShowLogin(false)}
+          onClose={() => setIsLoginModalOpen(false)}
+          onLoginSuccess={(user) => {
+            setLoggedInUser(user);
+            setIsLoginModalOpen(false);
+          }}
         />
       )}
     </div>

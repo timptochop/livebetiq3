@@ -1,11 +1,15 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-import './index.css';
+const express = require('express');
+const cors = require('cors');
+const app = express();
+const mockAPI = require('./mockGoalServeAPI');
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+app.use(cors());
+
+app.get('/api/live-matches', (req, res) => {
+  res.json(mockAPI());
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
