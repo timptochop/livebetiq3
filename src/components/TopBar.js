@@ -1,175 +1,63 @@
-import React, { useState, useEffect } from 'react';
-import { FaCog, FaUser } from 'react-icons/fa';
+import React, { useEffect, useState } from 'react';
 import './TopBar.css';
+import { FaCog } from 'react-icons/fa';
 
-const TopBar = ({ onLoginClick, loggedInUser, filters, setFilters }) => {
+export default function TopBar({ filters, setFilters }) {
+  const [showSettings, setShowSettings] = useState(false);
   const [currentTime, setCurrentTime] = useState('');
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
-    const updateTime = () => {
+    const tick = () => {
       const now = new Date();
-      const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      setCurrentTime(timeString);
+      setCurrentTime(`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`);
     };
-    updateTime();
-    const interval = setInterval(updateTime, 60000);
-    return () => clearInterval(interval);
+    tick();
+    const t = setInterval(tick, 10000);
+    return () => clearInterval(t);
   }, []);
 
-  const iconStyle = {
-    fontSize: 22,
-    marginLeft: 18,
-    marginRight: 8,
-    cursor: 'pointer',
-    verticalAlign: 'middle',
-    transform: 'translateY(3px)',
-  };
-
-  const loginIconStyle = {
-    ...iconStyle,
-    color: loggedInUser ? 'limegreen' : 'white',
-    marginLeft: 28, // extra left space as ζητήθηκε
-  };
-
-  const panelStyle = {
-    position: 'fixed',
-    top: 0,
-    right: settingsOpen ? 0 : '-300px',
-    width: 300,
-    height: '100%',
-    backgroundColor: '#1c1c1c',
-    padding: 20,
-    boxShadow: '-2px 0 5px rgba(0,0,0,0.3)',
-    transition: 'right 0.3s ease-in-out',
-    zIndex: 999,
-    color: '#fff',
-    overflowY: 'auto',
-  };
-
-  const labelStyle = { display: 'block', marginTop: 15, fontSize: 14 };
-
   return (
-    <>
-      <div style={styles.topBar}>
-        <img
-          src="/logo192.png"
-          alt="Logo"
-          style={{ height: 32, width: 32, borderRadius: '50%', marginLeft: 10 }}
-        />
-        <span style={styles.time}>{currentTime}</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', marginRight: 20 }}>
-          <FaCog style={iconStyle} onClick={() => setSettingsOpen(!settingsOpen)} />
-          <FaUser style={loginIconStyle} onClick={onLoginClick} />
+    <div className="topbar-container">
+      <div className="topbar-inner">
+        <img src="/logo192.png" alt="Logo" className="topbar-logo" />
+        <span className="topbar-time">{currentTime}</span>
+        <div className="topbar-icons">
+          <FaCog className="topbar-icon" onClick={() => setShowSettings(true)} />
         </div>
       </div>
+      <div className="topbar-divider" />
 
-      <div style={panelStyle}>
-        <h3 style={{ marginTop: 0 }}>⚙ Ρυθμίσεις AI</h3>
-        <label style={labelStyle}>Min EV %</label>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={1}
-          value={filters.minEV}
-          onChange={(e) => setFilters({ ...filters, minEV: Number(e.target.value) })}
-          style={styles.slider}
-        />
-        <div style={styles.value}>{filters.minEV}%</div>
+      {showSettings && (
+        <div className="settings-panel">
+          <h3 style={{ color:'#fff' }}>Settings</h3>
 
-        <label style={labelStyle}>Min Confidence %</label>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={1}
-          value={filters.minConfidence}
-          onChange={(e) => setFilters({ ...filters, minConfidence: Number(e.target.value) })}
-          style={styles.slider}
-        />
-        <div style={styles.value}>{filters.minConfidence}%</div>
+          <label style={{ color:'#fff' }}>Min EV: {filters.ev}%</label>
+          <input type="range" min="0" max="100" value={filters.ev}
+                 onChange={(e)=>setFilters({ ...filters, ev:Number(e.target.value) })} />
 
-        <label style={labelStyle}>Label Filter</label>
-        <select
-          value={filters.label}
-          onChange={(e) => setFilters({ ...filters, label: e.target.value })}
-          style={styles.select}
-        >
-          <option value="All">All</option>
-          <option value="SAFE">SAFE</option>
-          <option value="RISKY">RISKY</option>
-          <option value="AVOID">AVOID</option>
-          <option value="STARTS SOON">STARTS SOON</option>
-        </select>
+          <label style={{ color:'#fff' }}>Min Confidence: {filters.confidence}%</label>
+          <input type="range" min="0" max="100" value={filters.confidence}
+                 onChange={(e)=>setFilters({ ...filters, confidence:Number(e.target.value) })} />
 
-        <label style={labelStyle}>🔔 Ειδοποιήσεις</label>
-        <label className="switch">
-          <input
-            type="checkbox"
-            checked={filters.notificationsEnabled}
-            onChange={(e) =>
-              setFilters({ ...filters, notificationsEnabled: e.target.checked })
-            }
-          />
-          <span className="sliderRound"></span>
-        </label>
+          <label style={{ color:'#fff' }}>Filter Label:</label>
+          <select value={filters.label}
+                  onChange={(e)=>setFilters({ ...filters, label:e.target.value })}>
+            <option value="ALL">All</option>
+            <option value="SAFE">SAFE</option>
+            <option value="RISKY">RISKY</option>
+            <option value="AVOID">AVOID</option>
+            <option value="STARTS SOON">STARTS SOON</option>
+          </select>
 
-        <button style={styles.closeButton} onClick={() => setSettingsOpen(false)}>
-          Κλείσιμο
-        </button>
-      </div>
-    </>
+          <label style={{ color:'#fff', display:'block', marginTop: 8 }}>
+            <input type="checkbox" checked={filters.notifications}
+                   onChange={(e)=>setFilters({ ...filters, notifications:e.target.checked })} />
+            {' '}Enable Notifications
+          </label>
+
+          <button className="settings-close" onClick={()=>setShowSettings(false)}>Close</button>
+        </div>
+      )}
+    </div>
   );
-};
-
-const styles = {
-  topBar: {
-    display: 'flex',
-    alignItems: 'center',
-    backgroundColor: '#111',
-    padding: '8px 0',
-    color: 'white',
-    position: 'fixed',
-    top: 0,
-    width: '100%',
-    zIndex: 999,
-  },
-  time: {
-    fontSize: 16,
-    marginLeft: 12,
-    fontWeight: '500',
-    color: '#ccc',
-  },
-  slider: {
-    width: '100%',
-    marginTop: 6,
-  },
-  select: {
-    width: '100%',
-    padding: 6,
-    borderRadius: 4,
-    border: '1px solid #444',
-    backgroundColor: '#222',
-    color: '#fff',
-    marginTop: 5,
-  },
-  closeButton: {
-    marginTop: 30,
-    padding: '8px 16px',
-    backgroundColor: '#444',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 6,
-    cursor: 'pointer',
-    width: '100%',
-  },
-  value: {
-    textAlign: 'right',
-    fontSize: 13,
-    marginBottom: 6,
-    color: '#aaa',
-  },
-};
-
-export default TopBar;
+}

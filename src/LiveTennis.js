@@ -1,65 +1,110 @@
-import React, { useEffect, useState, useRef } from 'react';
-import './PredictionCard.css';
+// src/LiveTennis.js
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  calculateEV,
+  estimateConfidence,
+  generateLabel,
+  generateNote,
+} from './utils/aiPredictionEngine';
+import './components/PredictionCard.css';
 
-const LiveTennis = ({ filters, notificationsEnabled }) => {
-  const [matches, setMatches] = useState([]);
-  const notifiedMatchesRef = useRef(new Set());
+// Αν δώσεις REACT_APP_API_URL χρησιμοποιείται αυτό (π.χ. http://localhost:5000).
+// Αλλιώς, στο Vercel θα χτυπάει το serverless route /api/predictions.
+const API_BASE = (process.env.REACT_APP_API_URL || '').trim() || '/api';
 
-  const fetchData = async () => {
-    const res = await fetch('/api/live-matches');
-    const data = await res.json();
-    setMatches(data);
-  };
+export default function LiveTennis({ filters }) {
+  const [predictions, setPredictions] = useState([]);
+  const [status, setStatus] = useState('idle');   // idle | loading | ok | error
+  const [errorMsg, setErrorMsg] = useState('');
+
+  async function fetchPredictions(signal) {
+    try {
+      setStatus('loading');
+      setErrorMsg('');
+      const res = await fetch(`${API_BASE}/predictions`, { signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      const enriched = (data || []).map((m, i) => {
+        const ev = m.ev ?? calculateEV(m.odds1, m.odds2, m);
+        const confidence = m.confidence ?? estimateConfidence(m.odds1, m.odds2, m);
+        const aiLabel = m.label ?? generateLabel(ev, confidence);
+        const aiNote = m.note ?? generateNote(aiLabel, ev, confidence);
+        return { id: m.id ?? `p-${i}`, ...m, ev, confidence, aiLabel, aiNote };
+      });
+
+      setPredictions(enriched);
+      setStatus('ok');
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      setStatus('error');
+      setErrorMsg(err?.message || 'Network error');
+    }
+  }
 
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 10000);
-    return () => clearInterval(interval);
+    const ctrl = new AbortController();
+    fetchPredictions(ctrl.signal);
+    const t = setInterval(() => fetchPredictions(ctrl.signal), 20000);
+    return () => {
+      ctrl.abort();
+      clearInterval(t);
+    };
   }, []);
 
-  const playNotification = () => {
-    const audio = new Audio('/notification.mp3');
-    audio.play();
+  const filtered = useMemo(() => {
+    return predictions.filter((m) => {
+      if ((m.ev ?? 0) < Number(filters.ev)) return false;
+      if ((m.confidence ?? 0) < Number(filters.confidence)) return false;
+      if (filters.label && filters.label !== 'ALL' && m.aiLabel !== filters.label) return false;
+      return true;
+    });
+  }, [predictions, filters]);
+
+  const labelColor = (label) => {
+    switch (label) {
+      case 'SAFE': return '#00C853';
+      case 'RISKY': return '#FFD600';
+      case 'AVOID': return '#D50000';
+      case 'STARTS SOON': return '#B0BEC5';
+      default: return '#FFFFFF';
+    }
   };
 
-  const filteredMatches = matches.filter(match => {
-    const ev = match.ev;
-    const conf = match.confidence;
-    const label = match.label;
-    const evPass = ev >= filters.minEV;
-    const confPass = conf >= filters.minConfidence;
-    const labelPass = filters.label === 'All' || filters.label === label;
-    return evPass && confPass && labelPass;
-  });
-
-  useEffect(() => {
-    filteredMatches.forEach((match) => {
-      if (
-        (match.label === 'SAFE' || match.label === 'RISKY') &&
-        match.ev > 5 &&
-        notificationsEnabled &&
-        !notifiedMatchesRef.current.has(match.id)
-      ) {
-        playNotification();
-        notifiedMatchesRef.current.add(match.id);
-      }
-    });
-  }, [filteredMatches, notificationsEnabled]);
-
   return (
-    <div>
-      {filteredMatches.map((match) => (
-        <div key={match.id} className={`prediction-card ${match.label.toLowerCase()}`}>
-          <div><strong>{match.player1} vs {match.player2}</strong></div>
-          <div>EV: {match.ev.toFixed(2)}%</div>
-          <div>Confidence: {match.confidence.toFixed(2)}%</div>
-          <div>Label: <span className="label">{match.label}</span></div>
-          <div className="note">{match.note}</div>
-          {match.label !== 'STARTS SOON' && <span className="blinking-dot"></span>}
+    <div style={{ background: '#121212', padding: '80px 16px 20px', minHeight: '100vh' }}>
+      {status === 'loading' && (
+        <div style={{ color: '#bbb', textAlign: 'center', marginTop: 24 }}>Loading…</div>
+      )}
+
+      {status === 'error' && (
+        <div style={{ color: '#ff6b6b', textAlign: 'center', marginTop: 24 }}>
+          Failed to fetch ({errorMsg}).{' '}
+          {API_BASE.startsWith('http') ? `API: ${API_BASE}` : 'Using /api function'}
+        </div>
+      )}
+
+      {filtered.map((m) => (
+        <div key={m.id} className="prediction-card">
+          <div className="top-row">
+            <span className="match-name">{m.player1} vs {m.player2}</span>
+            <span className="label" style={{ backgroundColor: labelColor(m.aiLabel) }}>
+              {m.aiLabel}
+            </span>
+          </div>
+          <div className="info-row">
+            <span className="info-item">EV: {Number(m.ev).toFixed(1)}%</span>
+            <span className="info-item">Conf: {Number(m.confidence).toFixed(0)}%</span>
+          </div>
+          <div className="note"><em>{m.aiNote}</em></div>
         </div>
       ))}
+
+      {status === 'ok' && filtered.length === 0 && (
+        <div style={{ color: '#888', textAlign: 'center', marginTop: 24 }}>
+          No matches match your filters yet.
+        </div>
+      )}
     </div>
   );
-};
-
-export default LiveTennis;
+}

@@ -1,12 +1,10 @@
-/* src/components/TopBar.css */
-
 .topbar-container {
   background-color: #1a1a1a;
   position: fixed;
   top: 0;
   width: 100%;
   z-index: 1000;
-  padding: 10px 12px;
+  padding: 10px 12px 0;
 }
 
 .topbar-inner {
@@ -16,59 +14,51 @@
 }
 
 .topbar-logo {
-  width: 48px;
-  height: 48px;
-}
-
-.topbar-time {
-  color: white;
-  font-size: 14px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
 }
 
 .topbar-icons {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
 }
 
-.topbar-icon {
-  color: #ccc;
-  font-size: 18px;
-}
-
-.topbar-user {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 16px;
-  color: #ccc;
-  cursor: pointer;
-}
-
-.username {
-  max-width: 80px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.topbar-time { color: #fff; font-size: 14px; }
+.topbar-icon { color: #ccc; cursor: pointer; }
 
 .topbar-divider {
-  border-top: 1px solid white;
+  height: 2px;
   margin-top: 10px;
   margin-bottom: 14px;
+  background: linear-gradient(to right, transparent, #fff, transparent);
 }
 
-@media (max-width: 480px) {
-  .topbar-time {
-    font-size: 12px;
-  }
+/* slide-in settings panel */
+.settings-panel {
+  position: fixed;
+  top: 0; right: 0;
+  width: 100%; max-width: 360px;
+  height: 100vh;
+  background: #222;
+  color: #fff;
+  padding: 20px;
+  box-shadow: -2px 0 8px rgba(0,0,0,0.6);
+  z-index: 1100;
+  overflow-y: auto;
+}
+.settings-panel h3 { margin-top: 0; }
+.settings-panel input[type="range"] { width: 100%; }
+.settings-panel select { width: 100%; padding: 6px; border-radius: 4px; }
 
-  .topbar-user {
-    font-size: 14px;
-  }
-
-  .topbar-logo {
-    width: 40px;
-    height: 40px;
-  }
+.settings-close {
+  margin-top: 14px;
+  background: #00C853;
+  color: #000;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 16px;
+  cursor: pointer;
+  width: 100%;
 }

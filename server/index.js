@@ -1,18 +1,16 @@
 const express = require('express');
 const cors = require('cors');
-const mockGoalServeAPI = require('./mockGoalServeAPI');
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 
-// Κύρια διαδρομή
-app.use('/api/tennis', mockGoalServeAPI);
+const matches = require('./mockGoalServeAPI');
 
-// ✅ Alias διαδρομή για το frontend
-app.use('/api/predictions', mockGoalServeAPI);
+app.get('/api/predictions', (req, res) => {
+  res.json(matches);
+});
 
 app.listen(PORT, () => {
-  console.log('✅ Server running on port ' + PORT);
+  console.log(`Server is running on port ${PORT}`);
 });

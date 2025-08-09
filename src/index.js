@@ -1,15 +1,6 @@
-const express = require('express');
-const cors = require('cors');
-const app = express();
-const mockAPI = require('./mockGoalServeAPI');
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import './index.css';
+import App from './App';
 
-app.use(cors());
-
-app.get('/api/live-matches', (req, res) => {
-  res.json(mockAPI());
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
