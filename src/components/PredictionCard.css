@@ -1,42 +1,75 @@
+/* --------- Container λίστας --------- */
 .prediction-list {
-  max-width: 720px;
-  margin: 80px auto 24px;
-  padding: 0 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  padding: 16px;
 }
+
+/* Αν υπάρχει ΜΟΝΟ μία κάρτα, κεντράρισμα/σωστή θέση στο viewport */
 .prediction-list.single {
-  min-height: calc(100vh - 120px);
+  min-height: calc(100vh - 88px); /* αφαιρεί ύψος topbar */
+  display: flex;
+  align-items: flex-start; /* άλλαξε σε center αν θες πλήρες κέντρο */
   justify-content: center;
 }
 
+/* --------- Κάρτα πρόβλεψης --------- */
 .prediction-card {
-  background: #1e1e1e;
-  color: #eee;
-  border: 1px solid #2a2a2a;
-  border-radius: 10px;
-  padding: 12px;
+  background: #1a1a1a;
+  border: 1px solid #2b2b2b;
+  border-radius: 12px;
+  color: #e7e7e7;
+  margin: 12px auto;
+  max-width: 680px;
+  width: 92%;
+  padding: 14px 16px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
 }
 
+/* Πάνω σειρά: Όνομα αγώνα + label */
 .top-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
+.match-name {
+  font-weight: 600;
+  font-size: 18px;
+  color: #ffffff;
+  letter-spacing: 0.2px;
+}
+
+/* Πράσινο SAFE, κίτρινο RISKY κτλ. το background έρχεται inline από React */
 .label {
-  padding: 2px 6px;
-  border-radius: 4px;
-  margin-left: 8px;
+  padding: 4px 10px;
+  font-weight: 700;
+  border-radius: 8px;
+  color: #000;
+}
+
+/* Μεσαία σειρά: EV + Conf */
+.info-row {
+  display: flex;
+  gap: 18px;
+  margin-top: 10px;
+  font-size: 15px;
+}
+
+.info-item {
+  color: #d9d9d9;
   font-weight: 600;
 }
 
-.info-row {
-  display: flex;
-  gap: 12px;
-  margin-top: 8px;
+/* Κάτω σημείωση (AI note) */
+.note {
+  margin-top: 10px;
+  color: #bcbcbc;
+  font-style: italic;
 }
 
-.info-item { font-weight: 600; opacity: 0.95; }
-.note { margin-top: 6px; opacity: 0.85; }
+/* Μικρές οθόνες */
+@media (max-width: 390px) {
+  .match-name { font-size: 16px; }
+  .label { padding: 3px 8px; }
+  .prediction-card { padding: 12px 14px; }
+}
