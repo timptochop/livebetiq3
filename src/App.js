@@ -1,7 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+// src/App.js
+import React, { useEffect, useRef, useState } from 'react';
 import TopBar from './components/TopBar';
 import LiveTennis from './LiveTennis';
 import './App.css';
+
+const LS_KEY = 'lb_filters_v1';
 
 const DEFAULT_FILTERS = {
   ev: 5,
@@ -10,71 +13,93 @@ const DEFAULT_FILTERS = {
   notifications: true,
 };
 
-// helper: median
-function median(nums) {
-  const a = nums.filter(n => Number.isFinite(n)).sort((x, y) => x - y);
-  if (a.length === 0) return NaN;
-  const mid = Math.floor(a.length / 2);
-  return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
+function loadFilters() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return DEFAULT_FILTERS;
+    const obj = JSON.parse(raw);
+    return { ...DEFAULT_FILTERS, ...obj };
+  } catch {
+    return DEFAULT_FILTERS;
+  }
 }
 
-// AI-based προεπιλογές από τα τρέχοντα δεδομένα
-function computeAiDefaults(data = []) {
-  if (!data || data.length === 0) return { ...DEFAULT_FILTERS };
-
-  const safe = data.filter(m => m.aiLabel === 'SAFE');
-  const risky = data.filter(m => m.aiLabel === 'RISKY');
-  const pool = safe.length ? safe : (risky.length ? risky : data);
-
-  const evMed = median(pool.map(m => Number(m.ev)));
-  const confMed = median(pool.map(m => Number(m.confidence)));
-
-  // Μικρή εξομάλυνση/ασφάλεια
-  const ev = Math.max(5, Math.round(evMed || DEFAULT_FILTERS.ev));
-  const confidence = Math.min(100, Math.max(40, Math.round(confMed || DEFAULT_FILTERS.confidence)));
-
-  return { ev, confidence, label: 'ALL', notifications: true };
+function saveFilters(f) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(f));
+  } catch {}
 }
 
 export default function App() {
-  // αρχικοποίηση από localStorage
-  const initialFilters = useMemo(() => {
-    try {
-      const raw = localStorage.getItem('filters_v1');
-      return raw ? { ...DEFAULT_FILTERS, ...JSON.parse(raw) } : { ...DEFAULT_FILTERS };
-    } catch {
-      return { ...DEFAULT_FILTERS };
+  const [filters, setFilters] = useState(loadFilters);
+  const lastDataRef = useRef([]);               // κρατάει το τελευταίο enriched dataset
+  const userTouchedRef = useRef(false);         // για να μην “πατάμε” τον χρήστη
+  const aiAppliedRef = useRef(false);           // εφαρμόστηκε ήδη AI default;
+
+  // κάθε φορά που αλλάζουν φίλτρα → σώσε στο localStorage
+  useEffect(() => { saveFilters(filters); }, [filters]);
+
+  // wrapper ώστε όταν αλλάζει κάτι από τον χρήστη να το ξέρουμε
+  const setFiltersTouched = (updater) => {
+    userTouchedRef.current = true;
+    setFilters((prev) => (typeof updater === 'function' ? updater(prev) : updater));
+  };
+
+  // λογική “AI default”: πάρε το καλύτερο SAFE, αλλιώς το καλύτερο RISKY
+  const computeAIDefault = (data = []) => {
+    if (!Array.isArray(data) || data.length === 0) return null;
+    const sortByEV = (a, b) => Number(b.ev ?? 0) - Number(a.ev ?? 0);
+
+    const safe = data.filter(m => m.aiLabel === 'SAFE').sort(sortByEV)[0];
+    const risky = data.filter(m => m.aiLabel === 'RISKY').sort(sortByEV)[0];
+    const pick = safe || risky || null;
+    if (!pick) return null;
+
+    const evTarget = Math.max(5, Math.floor(Number(pick.ev) || 0));
+    const confTarget = Math.max(50, Math.round(Number(pick.confidence) || 0));
+    const labelTarget = pick.aiLabel;
+
+    return { ev: evTarget, confidence: confTarget, label: labelTarget };
+  };
+
+  // όταν έρχονται νέα δεδομένα από το LiveTennis
+  const handleData = (enriched) => {
+    lastDataRef.current = enriched || [];
+    // εφάρμοσε αυτόματα AI default ΜΟΝΟ μία φορά & μόνο αν ο χρήστης δεν έχει πειράξει φίλτρα
+    if (!aiAppliedRef.current && !userTouchedRef.current) {
+      const ai = computeAIDefault(lastDataRef.current);
+      if (ai) {
+        setFilters((prev) => ({ ...prev, ...ai }));
+        aiAppliedRef.current = true;
+      }
     }
-  }, []);
+  };
 
-  const [filters, setFilters] = useState(initialFilters);
-  const [lastData, setLastData] = useState([]); // οι πιο πρόσφατες προβλέψεις από το LiveTennis
-
-  // save on change
-  useEffect(() => {
-    try { localStorage.setItem('filters_v1', JSON.stringify(filters)); } catch {}
-  }, [filters]);
-
-  // handlers για TopBar
-  const handleResetFilters = () => setFilters({ ...DEFAULT_FILTERS });
-  const handleAIDefaults = () => setFilters(computeAiDefaults(lastData));
+  // Reset → πήγαινε στο AI default (αν δεν υπάρχει data, γύρνα στα default)
+  const handleReset = () => {
+    const ai = computeAIDefault(lastDataRef.current);
+    if (ai) {
+      setFilters((prev) => ({ ...prev, ...ai }));
+    } else {
+      setFilters({ ...DEFAULT_FILTERS });
+    }
+    // ο χρήστης “άγγιξε” φίλτρα με reset, οπότε μην ξαναεπιβάλλουμε AI αυτόματα
+    userTouchedRef.current = true;
+  };
 
   return (
-    <div className="App" style={{ background: '#121212', minHeight: '100vh' }}>
+    <div style={{ background: '#121212', minHeight: '100vh' }}>
       <TopBar
         filters={filters}
-        setFilters={setFilters}
-        onReset={handleResetFilters}
-        onAIDefault={handleAIDefaults}
+        setFilters={setFiltersTouched}
+        onReset={handleReset}
       />
 
-      {/* ο player για τα notifications */}
-      <audio id="notif-audio" src="/notification.mp3" preload="auto" />
+      {/* Η λίστα με τα παιχνίδια + callback για data */}
+      <LiveTennis filters={filters} onData={handleData} />
 
-      <LiveTennis
-        filters={filters}
-        onData={(enriched) => setLastData(enriched)} // παίρνουμε τα enriched για το AI Default
-      />
+      {/* ήχος ειδοποίησης για SAFE/RISKY */}
+      <audio id="notif-audio" src="/notify.mp3" preload="auto" />
     </div>
   );
 }
