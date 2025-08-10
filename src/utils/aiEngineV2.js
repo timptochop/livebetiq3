@@ -1,15 +1,14 @@
 // src/utils/aiEngineV2.js
-//
 // Pluggable AI scoring: feature extraction -> weighted score -> calibration -> outputs
 
 // 1) Ρυθμίσεις βαρών (εύκολα ρυθμιζόμενα)
 const WEIGHTS = {
   // odds features
-  favImplied      : 0.90,   // πόσο «δίκαιη» είναι η τιμή του φαβορί
-  priceSpread     : -0.60,  // penalty όσο πιο κοντά οι τιμές
-  plusMoneyEdge   : 0.45,   // μικρό bonus όταν το underdog έχει λογική
+  favImplied      : 0.90,   // πόσο «δίκαιη» είναι η τιμή του φαβορί (implied prob)
+  priceSpread     : -0.60,  // penalty όσο πιο κοντά οι τιμές (coinflip → λιγότερη άκρη)
+  plusMoneyEdge   : 0.45,   // μικρό bonus όταν υπάρχει underdog spot
 
-  // basic stats (προέρχονται από mock ή αργότερα από API)
+  // basic stats (έρχονται από mock ή αργότερα από API)
   form            : 0.35,   // πρόσφατη φόρμα 0..100
   momentum        : 0.30,   // live momentum 0..100
   h2h             : 0.25,   // head-to-head υπέρ παίκτη 0..100
@@ -20,20 +19,20 @@ const WEIGHTS = {
   volatility      : -0.25,  // υψηλή μεταβλητότητα μειώνει σιγουριά
 };
 
-// 2) Calibration tables: μετατρέπουμε raw score -> confidence/EV
+// 2) Calibration: raw score -> confidence/EV
 function calibrateConfidence(raw) {
-  // raw περίπου -3..+3 (μετά από z-like scaling)
-  // Το φέρνουμε σε 30..90 για πιο «ανθρώπινη» κλίμακα
+  // raw περίπου -3..+3 (μετά από scaling)
+  // Χαρτογράφηση σε 30..90 για πιο «ανθρώπινη» κλίμακα
   const x = Math.max(-3, Math.min(3, raw));
-  const pct = 60 / 6 * (x + 3) + 30; // linear map [-3,3] -> [30,90]
+  const pct = (60 / 6) * (x + 3) + 30; // [-3,3] -> [30,90]
   return Math.round(pct);
 }
 
 function calibrateEV(raw) {
-  // EV % περίπου: μικρή κλίμακα, για να αποφεύγουμε υπερβολές
-  // map [-3,3] -> [-10, +15]
+  // EV% σε λογικό εύρος για live (αποφυγή υπερβολών)
+  // Χαρτογράφηση [-3,3] -> [-10, +15]
   const x = Math.max(-3, Math.min(3, raw));
-  const ev = (25 / 6) * x + 2.5; // center ~2.5 ώστε να «κυλάει» σε live
+  const ev = (25 / 6) * x + 2.5; // center ~2.5
   return Math.round(ev * 10) / 10; // 1 δεκαδικό
 }
 
@@ -47,9 +46,8 @@ function featuresFromMatch(m) {
   const imp2 = odds2 > 0 ? 1 / odds2 : 0;
   const favImplied = Math.max(imp1, imp2); // 0..1
 
-  const priceSpread = Math.abs(odds1 - odds2); // όσο μικρότερο, τόσο πιο coinflip
-  const plusMoneyEdge =
-    (odds1 >= 2.3 || odds2 >= 2.3) ? 1 : 0; // μικρό σήμα για underdog spots
+  const priceSpread = Math.abs(odds1 - odds2); // μικρότερο spread → πιο coinflip
+  const plusMoneyEdge = (odds1 >= 2.2 || odds2 >= 2.2) ? 1 : 0; // underdog spots
 
   // optional fields με defaults
   const form       = clamp01((m.form ?? m.stats ?? 60) / 100);
@@ -74,23 +72,22 @@ function featuresFromMatch(m) {
 
 // 4) Raw score
 function score(feat) {
-  // scale & combine
   const s =
-    WEIGHTS.favImplied    * norm(feat.favImplied, 0, 1) +
-    WEIGHTS.priceSpread   * norm(feat.priceSpread, 0, 1.5) +   // typical spread 0..1.5
-    WEIGHTS.plusMoneyEdge * feat.plusMoneyEdge +
-    WEIGHTS.form          * feat.form +
-    WEIGHTS.momentum      * feat.momentum +
-    WEIGHTS.h2h           * feat.h2h +
-    WEIGHTS.surfaceFit    * feat.surfaceFit +
-    WEIGHTS.fatiguePenalty* feat.fatigue +
-    WEIGHTS.volatility    * feat.volatility;
+    WEIGHTS.favImplied     * norm(feat.favImplied, 0, 1) +
+    WEIGHTS.priceSpread    * norm(feat.priceSpread, 0, 2.0) + // ελαφρώς πιο ήπιο cap
+    WEIGHTS.plusMoneyEdge  * feat.plusMoneyEdge +
+    WEIGHTS.form           * feat.form +
+    WEIGHTS.momentum       * feat.momentum +
+    WEIGHTS.h2h            * feat.h2h +
+    WEIGHTS.surfaceFit     * feat.surfaceFit +
+    WEIGHTS.fatiguePenalty * feat.fatigue +
+    WEIGHTS.volatility     * feat.volatility;
 
   // συμπίεση σε περίπου -3..+3
   return Math.max(-3, Math.min(3, s * 3.2));
 }
 
-// 5) Label rules (σταθερές, μπορούν να ρυθμιστούν)
+// 5) Label rules
 function labelFrom(ev, conf) {
   if (ev >= 8 && conf >= 72) return 'SAFE';
   if (ev >= 4 && conf >= 58) return 'RISKY';
@@ -107,7 +104,7 @@ function noteFrom(label, ev, conf) {
   }
 }
 
-// 6) Δημόσιμες συναρτήσεις (drop-in replacement του παλιού engine)
+// 6) Δημόσιμες συναρτήσεις (drop-in αντί του παλιού engine)
 export function calculateEV(odds1, odds2, m = {}) {
   const f = featuresFromMatch({ ...m, odds1, odds2 });
   const raw = score(f);

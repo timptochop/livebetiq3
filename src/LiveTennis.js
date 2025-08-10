@@ -1,137 +1,149 @@
-// src/utils/aiEngineV2.js
-//
-// Pluggable AI scoring: feature extraction -> weighted score -> calibration -> outputs
+// src/LiveTennis.js
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  calculateEV,
+  estimateConfidence,
+  generateLabel,
+  generateNote,
+} from './utils/aiEngineV2';
+import './components/PredictionCard.css';
 
-// 1) Ρυθμίσεις βαρών (εύκολα ρυθμιζόμενα)
-const WEIGHTS = {
-  // odds features
-  favImplied      : 0.90,   // πόσο «δίκαιη» είναι η τιμή του φαβορί
-  priceSpread     : -0.60,  // penalty όσο πιο κοντά οι τιμές
-  plusMoneyEdge   : 0.45,   // μικρό bonus όταν το underdog έχει λογική
+const API_BASE =
+  (process.env.REACT_APP_API_URL && process.env.REACT_APP_API_URL.trim()) ||
+  '/api';
 
-  // basic stats (προέρχονται από mock ή αργότερα από API)
-  form            : 0.35,   // πρόσφατη φόρμα 0..100
-  momentum        : 0.30,   // live momentum 0..100
-  h2h             : 0.25,   // head-to-head υπέρ παίκτη 0..100
-  surfaceFit      : 0.20,   // καταλληλότητα επιφάνειας 0..100
-  fatiguePenalty  : -0.40,  // penalty κούρασης 0..100
+export default function LiveTennis({ filters, onData }) {
+  const [predictions, setPredictions] = useState([]);
+  const [status, setStatus] = useState('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+  const seenIdsRef = useRef(new Set());
 
-  // bias catch-all
-  volatility      : -0.25,  // υψηλή μεταβλητότητα μειώνει σιγουριά
-};
-
-// 2) Calibration tables: μετατρέπουμε raw score -> confidence/EV
-function calibrateConfidence(raw) {
-  // raw περίπου -3..+3 (μετά από z-like scaling)
-  // Το φέρνουμε σε 30..90 για πιο «ανθρώπινη» κλίμακα
-  const x = Math.max(-3, Math.min(3, raw));
-  const pct = 60 / 6 * (x + 3) + 30; // linear map [-3,3] -> [30,90]
-  return Math.round(pct);
-}
-
-function calibrateEV(raw) {
-  // EV % περίπου: μικρή κλίμακα, για να αποφεύγουμε υπερβολές
-  // map [-3,3] -> [-10, +15]
-  const x = Math.max(-3, Math.min(3, raw));
-  const ev = (25 / 6) * x + 2.5; // center ~2.5 ώστε να «κυλάει» σε live
-  return Math.round(ev * 10) / 10; // 1 δεκαδικό
-}
-
-// 3) Feature extraction (ασφαλές σε ελλιπή δεδομένα)
-function featuresFromMatch(m) {
-  const odds1 = Number(m.odds1 ?? m.odds ?? 0);
-  const odds2 = Number(m.odds2 ?? 0);
-
-  // implied probs
-  const imp1 = odds1 > 0 ? 1 / odds1 : 0;
-  const imp2 = odds2 > 0 ? 1 / odds2 : 0;
-  const favImplied = Math.max(imp1, imp2); // 0..1
-
-  const priceSpread = Math.abs(odds1 - odds2); // όσο μικρότερο, τόσο πιο coinflip
-  const plusMoneyEdge =
-    (odds1 >= 2.3 || odds2 >= 2.3) ? 1 : 0; // μικρό σήμα για underdog spots
-
-  // optional fields με defaults
-  const form       = clamp01((m.form ?? m.stats ?? 60) / 100);
-  const momentum   = clamp01((m.momentum ?? 50) / 100);
-  const h2h        = clamp01((m.h2h ?? 50) / 100);
-  const surfaceFit = clamp01((m.surfaceFit ?? 50) / 100);
-  const fatigue    = clamp01((m.fatigue ?? 30) / 100);
-  const volatility = clamp01((m.volatility ?? 40) / 100);
-
-  return {
-    favImplied,
-    priceSpread,
-    plusMoneyEdge,
-    form,
-    momentum,
-    h2h,
-    surfaceFit,
-    fatigue,
-    volatility,
+  // ήχος + δόνηση (mobile)
+  const notify = () => {
+    try {
+      const el = document.getElementById('notif-audio');
+      if (el) el.play().catch(() => {});
+      if (navigator.vibrate) navigator.vibrate(120);
+    } catch {}
   };
-}
 
-// 4) Raw score
-function score(feat) {
-  // scale & combine
-  const s =
-    WEIGHTS.favImplied    * norm(feat.favImplied, 0, 1) +
-    WEIGHTS.priceSpread   * norm(feat.priceSpread, 0, 1.5) +   // typical spread 0..1.5
-    WEIGHTS.plusMoneyEdge * feat.plusMoneyEdge +
-    WEIGHTS.form          * feat.form +
-    WEIGHTS.momentum      * feat.momentum +
-    WEIGHTS.h2h           * feat.h2h +
-    WEIGHTS.surfaceFit    * feat.surfaceFit +
-    WEIGHTS.fatiguePenalty* feat.fatigue +
-    WEIGHTS.volatility    * feat.volatility;
+  const fetchPredictions = async (signal) => {
+    try {
+      setStatus('loading');
+      const res = await fetch(`${API_BASE}/predictions`, { signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
 
-  // συμπίεση σε περίπου -3..+3
-  return Math.max(-3, Math.min(3, s * 3.2));
-}
+      const enriched = (data || []).map((m, i) => {
+        const ev = m.ev ?? calculateEV(m.odds1, m.odds2, m);
+        const confidence =
+          m.confidence ?? estimateConfidence(m.odds1, m.odds2, m);
+        const aiLabel = m.label ?? generateLabel(ev, confidence);
+        const aiNote = m.note ?? generateNote(aiLabel, ev, confidence);
+        return { id: m.id ?? `p-${i}`, ...m, ev, confidence, aiLabel, aiNote };
+      });
 
-// 5) Label rules (σταθερές, μπορούν να ρυθμιστούν)
-function labelFrom(ev, conf) {
-  if (ev >= 8 && conf >= 72) return 'SAFE';
-  if (ev >= 4 && conf >= 58) return 'RISKY';
-  if (ev < 0) return 'AVOID';
-  return 'STARTS SOON';
-}
+      // notifications: νέα SAFE/RISKY με EV>5 που δεν έχουμε ξαναδεί
+      if (filters.notifications) {
+        const newImportant = enriched.filter(
+          (m) =>
+            (m.aiLabel === 'SAFE' || m.aiLabel === 'RISKY') &&
+            Number(m.ev) > 5 &&
+            !seenIdsRef.current.has(m.id)
+        );
+        if (newImportant.length > 0) notify();
+      }
+      enriched.forEach((m) => seenIdsRef.current.add(m.id));
 
-function noteFrom(label, ev, conf) {
-  switch (label) {
-    case 'SAFE':  return `Solid edge (${ev.toFixed(1)}% EV, ${conf}% conf).`;
-    case 'RISKY': return `Some edge (${ev.toFixed(1)}% EV) but lower confidence (${conf}%).`;
-    case 'AVOID': return `Negative EV (${ev.toFixed(1)}%). Skip.`;
-    default:      return `Match starting soon. Keep an eye on live odds.`;
-  }
-}
+      setPredictions(enriched);
+      setStatus('ok');
 
-// 6) Δημόσιμες συναρτήσεις (drop-in replacement του παλιού engine)
-export function calculateEV(odds1, odds2, m = {}) {
-  const f = featuresFromMatch({ ...m, odds1, odds2 });
-  const raw = score(f);
-  return calibrateEV(raw);
-}
+      // δώσε τα enriched πίσω στο App (για AI default / reset)
+      if (typeof onData === 'function') onData(enriched);
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      setStatus('error');
+      setErrorMsg(err.message || 'Network error');
+    }
+  };
 
-export function estimateConfidence(odds1, odds2, m = {}) {
-  const f = featuresFromMatch({ ...m, odds1, odds2 });
-  const raw = score(f);
-  return calibrateConfidence(raw);
-}
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchPredictions(ctrl.signal);
+    const t = setInterval(() => fetchPredictions(ctrl.signal), 20000);
+    return () => {
+      ctrl.abort();
+      clearInterval(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-export function generateLabel(ev, conf) {
-  return labelFrom(Number(ev) || 0, Number(conf) || 0);
-}
+  const filtered = useMemo(
+    () =>
+      predictions.filter((m) => {
+        if ((m.ev ?? 0) < Number(filters.ev)) return false;
+        if ((m.confidence ?? 0) < Number(filters.confidence)) return false;
+        if (filters.label && filters.label !== 'ALL' && m.aiLabel !== filters.label)
+          return false;
+        return true;
+      }),
+    [predictions, filters]
+  );
 
-export function generateNote(label, ev, conf) {
-  return noteFrom(label, Number(ev) || 0, Number(conf) || 0);
-}
+  const labelColorMap = {
+    SAFE: '#00C853',
+    RISKY: '#FFD600',
+    AVOID: '#D50000',
+    'STARTS SOON': '#B0BEC5',
+  };
+  const labelColor = (label) => labelColorMap[label] || '#FFFFFF';
 
-// utils
-function clamp01(x) { return Math.max(0, Math.min(1, x)); }
-function norm(x, lo, hi) {
-  if (hi === lo) return 0;
-  const t = (x - lo) / (hi - lo);
-  return Math.max(0, Math.min(1, t));
+  return (
+    <div style={{ background: '#121212', minHeight: '100vh' }}>
+      {status === 'loading' && (
+        <div style={{ color: '#bbb', textAlign: 'center', paddingTop: 24 }}>
+          Loading...
+        </div>
+      )}
+      {status === 'error' && (
+        <div style={{ color: '#ff6b6b', textAlign: 'center', paddingTop: 24 }}>
+          Failed to fetch ({errorMsg}).{' '}
+          {API_BASE.startsWith('http') ? `API: ${API_BASE}` : 'Using /api'}
+        </div>
+      )}
+
+      <div className={`prediction-list ${filtered.length === 1 ? 'single' : ''}`}>
+        {filtered.map((m) => (
+          <div key={m.id} className="prediction-card">
+            <div className="top-row">
+              <span className="match-name">
+                {m.player1} vs {m.player2}
+              </span>
+              <span
+                className="label"
+                style={{ backgroundColor: labelColor(m.aiLabel) }}
+              >
+                {m.aiLabel}
+              </span>
+            </div>
+            <div className="info-row">
+              <span className="info-item">EV: {Number(m.ev).toFixed(1)}%</span>
+              <span className="info-item">
+                Conf: {Number(m.confidence).toFixed(0)}%
+              </span>
+            </div>
+            <div className="note">
+              <em>{m.aiNote}</em>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {status === 'ok' && filtered.length === 0 && (
+        <div style={{ color: '#888', textAlign: 'center', padding: 24 }}>
+          No matches match your filters yet.
+        </div>
+      )}
+    </div>
+  );
 }

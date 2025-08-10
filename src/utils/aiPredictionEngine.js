@@ -1,88 +1,96 @@
 // src/utils/aiPredictionEngine.js
 
-// --- helpers ---
-function clamp(x, lo, hi) {
-  return Math.max(lo, Math.min(hi, x));
+// --- Tunable weights & thresholds ------------------------------------------
+const WEIGHTS = {
+  // EV thresholds (%)
+  EV_SAFE_MIN: 5,
+  EV_RISKY_MIN: 2,
+
+  // Confidence thresholds (%)
+  CONF_SAFE_MIN: 65,
+  CONF_RISKY_MIN: 55,
+
+  // Limits/Clamps
+  CONF_MIN: 30,
+  CONF_MAX: 90,
+  EV_MIN: -20,
+  EV_MAX: 20
+};
+
+/** Δώσε τα τρέχοντα weights (για debug/UI στο μέλλον) */
+export function getWeights() {
+  return { ...WEIGHTS };
 }
 
-// Υπολογισμός "δίκαιων" πιθανοτήτων με κανονικοποίηση overround (margin της αγοράς)
-function fairProbsFromOdds(odds1, odds2) {
-  const imp1 = 1 / odds1;
-  const imp2 = 1 / odds2;
-  const overround = imp1 + imp2; // > 1 λόγω margin
-  if (!isFinite(overround) || overround <= 0) return { p1: 0.5, p2: 0.5, overround: 1 };
-
-  return {
-    p1: imp1 / overround, // fair prob για παίκτη1
-    p2: imp2 / overround, // fair prob για παίκτη2
-    overround,            // χρήσιμο για confidence penalty
-  };
+/** Πέρασε νέα weights on the fly (π.χ. από admin panel στο μέλλον) */
+export function setWeights(next = {}) {
+  Object.keys(next).forEach((k) => {
+    if (k in WEIGHTS && typeof next[k] === 'number') {
+      WEIGHTS[k] = next[k];
+    }
+  });
 }
 
-// EV (%) του "καλύτερου" side, με βάση τις ίδιες δύο αποδόσεις
-// EV_side = (odds * fairProb - 1) * 100
+// ---------------------------------------------------------------------------
+
+/**
+ * Υπολογισμός EV (%).
+ * - Αν έχεις odds1/odds2 -> proxy υπολογισμός γύρω από 50/50
+ * - Αλλιώς fallback σε probability * odds
+ */
 export function calculateEV(odds1, odds2, fallback) {
-  // Primary: δύο αποδόσεις
-  if (typeof odds1 === 'number' && typeof odds2 === 'number' && odds1 > 1 && odds2 > 1) {
-    const { p1, p2 } = fairProbsFromOdds(odds1, odds2);
-    const ev1 = (odds1 * p1 - 1) * 100;
-    const ev2 = (odds2 * p2 - 1) * 100;
-    // πάρε το καλύτερο edge (το πιο θετικό)
-    const best = Math.max(ev1, ev2);
-    return clamp(Number(best.toFixed(2)), -50, 50);
+  if (typeof odds1 === 'number' && typeof odds2 === 'number') {
+    const p1 = 1 / odds1;
+    const p2 = 1 / odds2;
+    const edge = Math.max(p1, p2) - 0.5; // απόκλιση από coin-flip
+    const ev = edge * 100;
+    return clamp(ev, WEIGHTS.EV_MIN, WEIGHTS.EV_MAX);
   }
-
-  // Fallback: probability + odds από το αντικείμενο
   if (fallback?.probability != null && fallback?.odds != null) {
     const ev = (fallback.probability * fallback.odds - 1) * 100;
-    return clamp(Number(ev.toFixed(2)), -50, 50);
+    return clamp(ev, WEIGHTS.EV_MIN, WEIGHTS.EV_MAX);
   }
-
   return 0;
 }
 
-// Confidence: βασίζεται στη "διαφορά" των αποδόσεων (όσο μεγαλύτερη, τόσο πιο ξεκάθαρο φαβορί)
-// + penalty/bonus από το overround (χαμηλό overround = καλύτερης ποιότητας τιμές)
-// + optional fallback (stats/odds)
+/**
+ * Εκτίμηση confidence (%).
+ * - Αν έχουμε odds: όσο μικρότερη διαφορά τόσο υψηλότερο “σίγουρο”
+ * - Fallback: χρησιμοποιεί stats/odds
+ */
 export function estimateConfidence(odds1, odds2, fallback) {
-  if (typeof odds1 === 'number' && typeof odds2 === 'number' && odds1 > 1 && odds2 > 1) {
-    const spread = Math.abs(odds1 - odds2);             // διαφορά αποδόσεων
-    const { overround } = fairProbsFromOdds(odds1, odds2);
-
-    // base από spread (0..?) -> χάρτης σε 30..85
-    const base = clamp(85 - spread * 12, 30, 85);
-
-    // penalty/bonus από overround (1.02~1.12 typ)
-    // όσο πιο κοντά στο 1, τόσο καλύτερα -> +0..+7
-    const orPenalty = clamp((1.12 - Math.min(overround, 1.12)) * 70, 0, 7);
-
-    const conf = base + orPenalty;
-    return clamp(Math.round(conf), 30, 92);
+  if (typeof odds1 === 'number' && typeof odds2 === 'number') {
+    const spread = Math.abs(odds1 - odds2);
+    const conf = 70 - spread * 10;
+    return clamp(Math.round(conf), WEIGHTS.CONF_MIN, WEIGHTS.CONF_MAX);
   }
-
   if (fallback?.stats != null && fallback?.odds != null) {
-    // απλούστερο fallback: στατιστικά + "ποιότητα" από το πόσο κοντά είναι οι αποδόσεις στο 2.00
-    const quality = (2.5 - Math.min(2.5, Math.abs(2 - fallback.odds))) * 10; // 0..25 περίπου
-    const conf = fallback.stats * 0.8 + quality;
-    return clamp(Math.round(conf), 30, 90);
+    const conf = fallback.stats * 0.9 + (2.5 - Math.min(2.5, Math.abs(2 - fallback.odds))) * 10;
+    return clamp(Math.round(conf), WEIGHTS.CONF_MIN, WEIGHTS.CONF_MAX);
   }
-
-  return 55;
+  return 50;
 }
 
-// Labeling: απλά, καθαρά thresholds
+/** Κατάταξη ετικέτας με βάση τα thresholds */
 export function generateLabel(ev, conf) {
-  if (ev >= 5 && conf >= 65) return 'SAFE';
-  if (ev >= 2 && conf >= 55) return 'RISKY';
+  if (ev >= WEIGHTS.EV_SAFE_MIN && conf >= WEIGHTS.CONF_SAFE_MIN) return 'SAFE';
+  if (ev >= WEIGHTS.EV_RISKY_MIN && conf >= WEIGHTS.CONF_RISKY_MIN) return 'RISKY';
   if (ev < 0) return 'AVOID';
   return 'STARTS SOON';
 }
 
+/** Μικρό reasoning μήνυμα */
 export function generateNote(label, ev, conf) {
+  const e = Number(ev).toFixed(1);
+  const c = Math.round(conf);
   switch (label) {
-    case 'SAFE':  return `Solid edge (${ev.toFixed(1)}% EV, ${conf}% conf).`;
-    case 'RISKY': return `Some edge (${ev.toFixed(1)}% EV) but lower confidence (${conf}%).`;
-    case 'AVOID': return `Negative EV (${ev.toFixed(1)}%). Skip.`;
+    case 'SAFE':  return `Solid edge (${e}% EV, ${c}% conf).`;
+    case 'RISKY': return `Some edge (${e}% EV) but lower confidence (${c}%).`;
+    case 'AVOID': return `Negative EV (${e}%). Skip.`;
     default:      return `Match starting soon. Keep an eye on live odds.`;
   }
+}
+
+function clamp(x, lo, hi) {
+  return Math.max(lo, Math.min(hi, x));
 }
