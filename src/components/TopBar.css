@@ -1,42 +1,41 @@
-.topbar-container {
-  background-color: #1a1a1a;
-  position: sticky;
-  top: 0;
-  width: 100%;
-  z-index: 1000;
-  padding: 10px 12px 6px;
+.topbar-container{
+  background-color:#1a1a1a;
+  position:sticky; top:0; width:100%;
+  z-index:1000; padding:10px 12px 6px;
+}
+.topbar-inner{ display:flex; align-items:center; justify-content:space-between; }
+.topbar-logo{ width:40px; height:40px; border-radius:8px; }
+.topbar-time{ color:#fff; font-size:14px; }
+
+/* clickable icon */
+.topbar-icons{
+  display:flex; align-items:center; gap:10px;
+  background:transparent; border:none; cursor:pointer; padding:6px;
+}
+.topbar-icon{ color:#fff; font-size:22px; }
+.topbar-icons:active .topbar-icon{ transform:scale(0.95); }
+
+.topbar-divider{ border-top:1px solid #333; margin-top:8px; }
+
+.settings-panel{
+  background:#111; border:1px solid #333; border-radius:8px;
+  padding:12px; margin-top:10px;
+}
+.setting-row{ margin-bottom:10px; display:flex; gap:10px; align-items:center; }
+.setting-row.checkbox{ align-items:center; }
+
+.setting-actions{ display:flex; gap:8px; }
+.btn-primary{
+  background:#00c853; color:#000; border:none; border-radius:6px; padding:8px 12px; font-weight:600; cursor:pointer;
+}
+.btn-secondary{
+  background:#2b2b2b; color:#fff; border:1px solid #444; border-radius:6px; padding:8px 12px; cursor:pointer;
+}
+.close-btn{
+  margin-left:auto; background:#e0e0e0; color:#000; border:none; border-radius:6px; padding:8px 12px; cursor:pointer;
 }
 
-.topbar-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.topbar-logo { width: 40px; height: 40px; border-radius: 8px; }
-.topbar-time { color: #fff; font-size: 14px; }
-
-.topbar-icons { display: flex; align-items: center; gap: 10px; cursor: pointer; }
-.topbar-icon { color: #fff; font-size: 20px; } /* ορατό λευκό, αρκετά μεγάλο */
-
-.topbar-divider { border-top: 1px solid #333; margin-top: 8px; }
-
-.settings-panel {
-  background: #111;
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 12px;
-  margin-top: 10px;
-}
-
-.setting-row { margin-bottom: 10px; display: flex; gap: 10px; align-items: center; }
-.setting-row.checkbox { align-items: center; }
-.close-btn {
-  width: 100%;
-  padding: 8px 10px;
-  border: none;
-  border-radius: 6px;
-  background: #e0e0e0;
-  color: #000;
-  cursor: pointer;
+@media (max-width:480px){
+  .topbar-time{ font-size:12px; }
+  .topbar-logo{ width:36px; height:36px; }
 }

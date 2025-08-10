@@ -1,16 +1,17 @@
+// src/LiveTennis.js
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { calculateEV, estimateConfidence, generateLabel, generateNote } from './utils/aiPredictionEngine';
 import './components/PredictionCard.css';
 
 const API_BASE = (process.env.REACT_APP_API_URL && process.env.REACT_APP_API_URL.trim()) || '/api';
 
-export default function LiveTennis({ filters }) {
+export default function LiveTennis({ filters, onData }) {
   const [predictions, setPredictions] = useState([]);
   const [status, setStatus] = useState('idle');
   const [errorMsg, setErrorMsg] = useState('');
-  const seenIdsRef = useRef(new Set()); // για notification diff
+  const seenIdsRef = useRef(new Set());
 
-  // helper: play sound
+  // helper: play sound + vibration (mobile friendly)
   const notify = () => {
     try {
       const el = document.getElementById('notif-audio');
@@ -34,19 +35,20 @@ export default function LiveTennis({ filters }) {
         return { id: m.id ?? `p-${i}`, ...m, ev, confidence, aiLabel, aiNote };
       });
 
-      // Notifications: νέα SAFE/RISKY με ev > 5% που δεν έχουν ξαναφάνει
+      // Notifications: νέα SAFE/RISKY με EV>5 που δεν έχουμε ξαναδεί
       if (filters.notifications) {
         const newImportant = enriched.filter(m =>
-          (m.aiLabel === 'SAFE' || m.aiLabel === 'RISKY') && Number(m.ev) > 5 && !seenIdsRef.current.has(m.id)
+          (m.aiLabel === 'SAFE' || m.aiLabel === 'RISKY') &&
+          Number(m.ev) > 5 && !seenIdsRef.current.has(m.id)
         );
         if (newImportant.length > 0) notify();
       }
-
-      // ενημέρωση seen set
       enriched.forEach(m => seenIdsRef.current.add(m.id));
 
       setPredictions(enriched);
       setStatus('ok');
+
+      if (typeof onData === 'function') onData(enriched);
     } catch (err) {
       if (err.name === 'AbortError') return;
       setStatus('error');
@@ -59,7 +61,7 @@ export default function LiveTennis({ filters }) {
     fetchPredictions(ctrl.signal);
     const t = setInterval(() => fetchPredictions(ctrl.signal), 20000);
     return () => { ctrl.abort(); clearInterval(t); };
-  }, []); // 1ο mount
+  }, []); // mount once
 
   const filtered = useMemo(
     () => predictions.filter((m) => {
@@ -72,12 +74,12 @@ export default function LiveTennis({ filters }) {
   );
 
   const labelColor = (label) =>
-    ({ SAFE:'#00C853', RISKY:'#FFD600', AVOID:'#D50000', 'STARTS SOON':'#B0BEC5' }[label] || '#FFFFFF');
+    ({ SAFE: '#00C853', RISKY: '#FFD600', AVOID: '#D50000', 'STARTS SOON': '#B0BEC5' }[label] || '#FFFFFF');
 
   return (
     <div style={{ background:'#121212', minHeight:'100vh' }}>
       {status === 'loading' && (
-        <div style={{ color:'#bbb', textAlign:'center', paddingTop:24 }}>Loading…</div>
+        <div style={{ color:'#bbb', textAlign:'center', paddingTop:24 }}>Loading...</div>
       )}
       {status === 'error' && (
         <div style={{ color:'#ff6b6b', textAlign:'center', paddingTop:24 }}>
@@ -102,7 +104,9 @@ export default function LiveTennis({ filters }) {
       </div>
 
       {status === 'ok' && filtered.length === 0 && (
-        <div style={{ color:'#888', textAlign:'center', padding:24 }}>No matches match your filters yet.</div>
+        <div style={{ color:'#888', textAlign:'center', padding:24 }}>
+          No matches match your filters yet.
+        </div>
       )}
     </div>
   );
