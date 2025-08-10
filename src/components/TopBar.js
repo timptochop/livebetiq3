@@ -2,62 +2,90 @@ import React, { useEffect, useState } from 'react';
 import './TopBar.css';
 import { FaCog } from 'react-icons/fa';
 
-export default function TopBar({ filters, setFilters }) {
-  const [showSettings, setShowSettings] = useState(false);
-  const [currentTime, setCurrentTime] = useState('');
+function TopBar({ filters, setFilters }) {
+  const [time, setTime] = useState(() => new Date());
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    const tick = () => {
-      const now = new Date();
-      setCurrentTime(`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`);
-    };
-    tick();
-    const t = setInterval(tick, 10000);
+    const t = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
 
   return (
     <div className="topbar-container">
       <div className="topbar-inner">
-        <img src="/logo192.png" alt="Logo" className="topbar-logo" />
-        <span className="topbar-time">{currentTime}</span>
-        <div className="topbar-icons">
-          <FaCog className="topbar-icon" onClick={() => setShowSettings(true)} />
+        <img className="topbar-logo" src="/logo192.png" alt="LiveBet IQ" />
+        <div className="topbar-time">
+          {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </div>
+
+        <div
+          className="topbar-icons"
+          aria-label="Settings"
+          onClick={() => setOpen((v) => !v)}
+        >
+          <FaCog className="topbar-icon" />
         </div>
       </div>
+
       <div className="topbar-divider" />
 
-      {showSettings && (
+      {open && (
         <div className="settings-panel">
-          <h3 style={{ color:'#fff' }}>Settings</h3>
+          <div className="setting-row">
+            <label>Min EV %: {filters.ev}</label>
+            <input
+              type="range" min="0" max="20" step="1"
+              value={filters.ev}
+              onChange={(e) =>
+                setFilters((f) => ({ ...f, ev: Number(e.target.value) }))
+              }
+            />
+          </div>
 
-          <label style={{ color:'#fff' }}>Min EV: {filters.ev}%</label>
-          <input type="range" min="0" max="100" value={filters.ev}
-                 onChange={(e)=>setFilters({ ...filters, ev:Number(e.target.value) })} />
+          <div className="setting-row">
+            <label>Min Confidence %: {filters.confidence}</label>
+            <input
+              type="range" min="0" max="100" step="1"
+              value={filters.confidence}
+              onChange={(e) =>
+                setFilters((f) => ({ ...f, confidence: Number(e.target.value) }))
+              }
+            />
+          </div>
 
-          <label style={{ color:'#fff' }}>Min Confidence: {filters.confidence}%</label>
-          <input type="range" min="0" max="100" value={filters.confidence}
-                 onChange={(e)=>setFilters({ ...filters, confidence:Number(e.target.value) })} />
+          <div className="setting-row">
+            <label>Label</label>
+            <select
+              value={filters.label}
+              onChange={(e) => setFilters((f) => ({ ...f, label: e.target.value }))}
+            >
+              <option value="ALL">ALL</option>
+              <option value="SAFE">SAFE</option>
+              <option value="RISKY">RISKY</option>
+              <option value="AVOID">AVOID</option>
+              <option value="STARTS SOON">STARTS SOON</option>
+            </select>
+          </div>
 
-          <label style={{ color:'#fff' }}>Filter Label:</label>
-          <select value={filters.label}
-                  onChange={(e)=>setFilters({ ...filters, label:e.target.value })}>
-            <option value="ALL">All</option>
-            <option value="SAFE">SAFE</option>
-            <option value="RISKY">RISKY</option>
-            <option value="AVOID">AVOID</option>
-            <option value="STARTS SOON">STARTS SOON</option>
-          </select>
+          <div className="setting-row checkbox">
+            <label>
+              <input
+                type="checkbox"
+                checked={filters.notifications}
+                onChange={(e) =>
+                  setFilters((f) => ({ ...f, notifications: e.target.checked }))
+                }
+              />
+              Notifications
+            </label>
+          </div>
 
-          <label style={{ color:'#fff', display:'block', marginTop: 8 }}>
-            <input type="checkbox" checked={filters.notifications}
-                   onChange={(e)=>setFilters({ ...filters, notifications:e.target.checked })} />
-            {' '}Enable Notifications
-          </label>
-
-          <button className="settings-close" onClick={()=>setShowSettings(false)}>Close</button>
+          <button className="close-btn" onClick={() => setOpen(false)}>Close</button>
         </div>
       )}
     </div>
   );
 }
+
+export default TopBar;

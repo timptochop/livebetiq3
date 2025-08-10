@@ -1,10 +1,10 @@
 .topbar-container {
   background-color: #1a1a1a;
-  position: fixed;
+  position: sticky;
   top: 0;
   width: 100%;
   z-index: 1000;
-  padding: 10px 12px 0;
+  padding: 10px 12px 6px;
 }
 
 .topbar-inner {
@@ -13,52 +13,30 @@
   justify-content: space-between;
 }
 
-.topbar-logo {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-}
-
-.topbar-icons {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
+.topbar-logo { width: 40px; height: 40px; border-radius: 8px; }
 .topbar-time { color: #fff; font-size: 14px; }
-.topbar-icon { color: #ccc; cursor: pointer; }
 
-.topbar-divider {
-  height: 2px;
-  margin-top: 10px;
-  margin-bottom: 14px;
-  background: linear-gradient(to right, transparent, #fff, transparent);
-}
+.topbar-icons { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.topbar-icon { color: #fff; font-size: 20px; } /* ορατό λευκό, αρκετά μεγάλο */
 
-/* slide-in settings panel */
+.topbar-divider { border-top: 1px solid #333; margin-top: 8px; }
+
 .settings-panel {
-  position: fixed;
-  top: 0; right: 0;
-  width: 100%; max-width: 360px;
-  height: 100vh;
-  background: #222;
-  color: #fff;
-  padding: 20px;
-  box-shadow: -2px 0 8px rgba(0,0,0,0.6);
-  z-index: 1100;
-  overflow-y: auto;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 10px;
 }
-.settings-panel h3 { margin-top: 0; }
-.settings-panel input[type="range"] { width: 100%; }
-.settings-panel select { width: 100%; padding: 6px; border-radius: 4px; }
 
-.settings-close {
-  margin-top: 14px;
-  background: #00C853;
-  color: #000;
+.setting-row { margin-bottom: 10px; display: flex; gap: 10px; align-items: center; }
+.setting-row.checkbox { align-items: center; }
+.close-btn {
+  width: 100%;
+  padding: 8px 10px;
   border: none;
   border-radius: 6px;
-  padding: 10px 16px;
+  background: #e0e0e0;
+  color: #000;
   cursor: pointer;
-  width: 100%;
 }
