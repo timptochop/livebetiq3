@@ -1,34 +1,63 @@
 .topbar-container {
-  background-color: #1a1a1a;
   position: sticky;
   top: 0;
-  width: 100%;
   z-index: 1000;
-  padding: 10px 12px 6px;
+
+  background-color: #1a1a1a;
+
+  /* Safe areas για iPhone (notch) */
+  padding-top: calc(8px + env(safe-area-inset-top));
+  padding-left: 12px;
+  padding-right: max(12px, env(safe-area-inset-right));
+  padding-bottom: 6px;
 }
 
 .topbar-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 44px; /* hit target */
 }
 
-.topbar-logo { width: 40px; height: 40px; border-radius: 8px; }
-.topbar-time { color: #fff; font-size: 14px; }
+.topbar-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+}
 
+.topbar-time {
+  color: #fff;
+  font-size: 14px;
+}
+
+/* Κουμπί ρυθμίσεων: 44x44 hitbox, κέντρο, χωρίς να κόβεται */
 .topbar-icons {
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+
   cursor: pointer;
-  background: transparent;
-  border: none;
-  padding: 4px;
+  border-radius: 10px;
+  /* προαιρετικό hover/focus feedback */
 }
-.topbar-icon { color: #fff; font-size: 20px; }
+.topbar-icons:active {
+  background: rgba(255, 255, 255, 0.08);
+}
 
-.topbar-divider { border-top: 1px solid #333; margin-top: 8px; }
+.topbar-icon {
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+}
 
+.topbar-divider {
+  border-top: 1px solid #333;
+  margin-top: 8px;
+}
+
+/* Settings panel */
 .settings-panel {
   background: #111;
   border: 1px solid #333;
@@ -37,25 +66,23 @@
   margin-top: 10px;
 }
 
-.setting-row { margin-bottom: 10px; display: flex; gap: 10px; align-items: center; }
-.setting-row.checkbox { align-items: center; }
-
-.buttons-row {
+.setting-row {
+  margin-bottom: 10px;
   display: flex;
   gap: 10px;
+  align-items: center;
 }
 
-.reset-btn,
+.setting-row.checkbox {
+  align-items: center;
+}
+
 .close-btn {
-  flex: 1 1 auto;
-  padding: 10px 12px;
+  width: 100%;
+  padding: 8px 10px;
   border: none;
   border-radius: 6px;
+  background: #e0e0e0;
+  color: #000;
   cursor: pointer;
 }
-
-.reset-btn { background: #2e7d32; color: #fff; }
-.reset-btn:hover { filter: brightness(1.1); }
-
-.close-btn { background: #e0e0e0; color: #000; }
-.close-btn:hover { filter: brightness(0.95); }
