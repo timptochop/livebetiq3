@@ -4,7 +4,6 @@ import {
   calculateEV,
   estimateConfidence,
   generateLabel,
-  generateNote,
 } from './utils/aiEngineV2';
 import './components/PredictionCard.css';
 
@@ -12,13 +11,32 @@ const API_BASE =
   (process.env.REACT_APP_API_URL && process.env.REACT_APP_API_URL.trim()) ||
   '/api';
 
+/* ---------- helpers for match set/phase ---------- */
+function deriveCurrentSet(m) {
+  // Use API value when present
+  if (m.currentSet != null) return Number(m.currentSet) || 0;
+
+  // Heuristic for mock/simplified data:
+  const t = (m.time || '').toLowerCase();
+  if (t.includes('starts')) return 0;   // not started
+  if (t.includes('live')) return 2;     // treat as set 2 so it shows PENDING
+  return 0;
+}
+
+function phaseLabel(m) {
+  const cs = deriveCurrentSet(m);
+  if (cs === 0) return 'STARTS SOON';
+  if (cs > 0 && cs < 3) return 'PENDING';
+  return null; // set >= 3 => let AI decide SAFE/RISKY/AVOID
+}
+
 export default function LiveTennis({ filters, onData }) {
   const [predictions, setPredictions] = useState([]);
   const [status, setStatus] = useState('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const seenIdsRef = useRef(new Set());
 
-  // ήχος + δόνηση (mobile)
+  // sound + vibration (mobile friendly)
   const notify = () => {
     try {
       const el = document.getElementById('notif-audio');
@@ -38,15 +56,28 @@ export default function LiveTennis({ filters, onData }) {
         const ev = m.ev ?? calculateEV(m.odds1, m.odds2, m);
         const confidence =
           m.confidence ?? estimateConfidence(m.odds1, m.odds2, m);
-        const aiLabel = m.label ?? generateLabel(ev, confidence);
-        const aiNote = m.note ?? generateNote(aiLabel, ev, confidence);
-        return { id: m.id ?? `p-${i}`, ...m, ev, confidence, aiLabel, aiNote };
+
+        const currentSet = deriveCurrentSet(m);
+        const phase = phaseLabel(m); // STARTS SOON / PENDING / null
+
+        // If phase exists use it; otherwise (set >= 3) let AI label
+        const aiLabel = phase ?? (m.label ?? generateLabel(ev, confidence));
+
+        return {
+          id: m.id ?? `p-${i}`,
+          ...m,
+          currentSet,
+          ev,
+          confidence,
+          aiLabel,
+        };
       });
 
-      // notifications: νέα SAFE/RISKY με EV>5 που δεν έχουμε ξαναδεί
+      // Notifications: only for set >= 3 and new SAFE/RISKY with EV>5
       if (filters.notifications) {
         const newImportant = enriched.filter(
           (m) =>
+            m.currentSet >= 3 &&
             (m.aiLabel === 'SAFE' || m.aiLabel === 'RISKY') &&
             Number(m.ev) > 5 &&
             !seenIdsRef.current.has(m.id)
@@ -58,7 +89,6 @@ export default function LiveTennis({ filters, onData }) {
       setPredictions(enriched);
       setStatus('ok');
 
-      // δώσε τα enriched πίσω στο App (για AI default / reset)
       if (typeof onData === 'function') onData(enriched);
     } catch (err) {
       if (err.name === 'AbortError') return;
@@ -75,15 +105,21 @@ export default function LiveTennis({ filters, onData }) {
       ctrl.abort();
       clearInterval(t);
     };
-  }, []);
+  }, []); // mount once
 
   const filtered = useMemo(
     () =>
       predictions.filter((m) => {
-        if ((m.ev ?? 0) < Number(filters.ev)) return false;
-        if ((m.confidence ?? 0) < Number(filters.confidence)) return false;
+        // Label filter (now supports PENDING too)
         if (filters.label && filters.label !== 'ALL' && m.aiLabel !== filters.label)
           return false;
+
+        // For STARTS SOON / PENDING do not enforce EV/Confidence
+        if (m.aiLabel === 'STARTS SOON' || m.aiLabel === 'PENDING') return true;
+
+        // Only for set >= 3 (SAFE/RISKY/AVOID) apply thresholds
+        if ((m.ev ?? 0) < Number(filters.ev)) return false;
+        if ((m.confidence ?? 0) < Number(filters.confidence)) return false;
         return true;
       }),
     [predictions, filters]
@@ -94,6 +130,7 @@ export default function LiveTennis({ filters, onData }) {
     RISKY: '#FFD600',
     AVOID: '#D50000',
     'STARTS SOON': '#B0BEC5',
+    PENDING: '#90A4AE',
   };
   const labelColor = (label) => labelColorMap[label] || '#FFFFFF';
 
@@ -117,6 +154,7 @@ export default function LiveTennis({ filters, onData }) {
             <div className="top-row">
               <span className="match-name">
                 {m.player1} vs {m.player2}
+                {m.currentSet ? ` · Set ${m.currentSet}` : ''}
               </span>
               <span
                 className="label"
@@ -125,15 +163,16 @@ export default function LiveTennis({ filters, onData }) {
                 {m.aiLabel}
               </span>
             </div>
-            <div className="info-row">
-              <span className="info-item">EV: {Number(m.ev).toFixed(1)}%</span>
-              <span className="info-item">
-                Conf: {Number(m.confidence).toFixed(0)}%
-              </span>
-            </div>
-            <div className="note">
-              <em>{m.aiNote}</em>
-            </div>
+
+            {/* Only show EV/Conf from set 3 and after */}
+            {m.currentSet >= 3 && (
+              <div className="info-row">
+                <span className="info-item">EV: {Number(m.ev).toFixed(1)}%</span>
+                <span className="info-item">
+                  Conf: {Number(m.confidence).toFixed(0)}%
+                </span>
+              </div>
+            )}
           </div>
         ))}
       </div>
