@@ -27,22 +27,23 @@ export default function LiveTennis({ filters, onData }) {
     } catch {}
   };
 
-  async function fetchPredictions() {
+  const fetchPredictions = async (signal) => {
     try {
       setStatus('loading');
-      const res = await fetch(`${API_BASE}/predictions`);
+      const res = await fetch(`${API_BASE}/predictions`, { signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
 
       const enriched = (data || []).map((m, i) => {
         const ev = m.ev ?? calculateEV(m.odds1, m.odds2, m);
-        const confidence = m.confidence ?? estimateConfidence(m.odds1, m.odds2, m);
+        const confidence =
+          m.confidence ?? estimateConfidence(m.odds1, m.odds2, m);
         const aiLabel = m.label ?? generateLabel(ev, confidence);
-        const aiNote  = m.note  ?? generateNote(aiLabel, ev, confidence);
+        const aiNote = m.note ?? generateNote(aiLabel, ev, confidence);
         return { id: m.id ?? `p-${i}`, ...m, ev, confidence, aiLabel, aiNote };
       });
 
-      // Notifications: νέα SAFE/RISKY με EV>5 που δεν έχουμε ξαναδεί
+      // notifications: νέα SAFE/RISKY με EV>5 που δεν έχουμε ξαναδεί
       if (filters.notifications) {
         const newImportant = enriched.filter(
           (m) =>
@@ -57,19 +58,23 @@ export default function LiveTennis({ filters, onData }) {
       setPredictions(enriched);
       setStatus('ok');
 
-      // γυρνά τα enriched στο App για AI default / reset
+      // δώσε τα enriched πίσω στο App (για AI default / reset)
       if (typeof onData === 'function') onData(enriched);
     } catch (err) {
+      if (err.name === 'AbortError') return;
       setStatus('error');
       setErrorMsg(err.message || 'Network error');
     }
-  }
+  };
 
   useEffect(() => {
-    fetchPredictions();                       // 1η φόρτωση
-    const t = setInterval(fetchPredictions, 20000); // κάθε 20s
-    return () => clearInterval(t);            // καθάρισμα στο unmount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const ctrl = new AbortController();
+    fetchPredictions(ctrl.signal);
+    const t = setInterval(() => fetchPredictions(ctrl.signal), 20000);
+    return () => {
+      ctrl.abort();
+      clearInterval(t);
+    };
   }, []);
 
   const filtered = useMemo(
