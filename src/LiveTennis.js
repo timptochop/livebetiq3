@@ -6,17 +6,19 @@ import {
   generateLabel,
   generateNote,
 } from './utils/aiEngineV2';
+import { logPrediction } from './utils/telemetry'; // ⬅️ NEW
 import './components/PredictionCard.css';
 
 const API_BASE =
   (process.env.REACT_APP_API_URL && process.env.REACT_APP_API_URL.trim()) ||
   '/api';
 
-// -------- helpers για σετ/φάση αγώνα --------
+// -------- helpers for set/phase --------
 function deriveCurrentSet(m) {
   if (m.currentSet != null) return Number(m.currentSet) || 0;
-  if ((m.time || '').toLowerCase().includes('starts')) return 0;
-  if ((m.time || '').toLowerCase().includes('live')) return 2;
+  const t = (m.time || '').toLowerCase();
+  if (t.includes('starts')) return 0;
+  if (t.includes('live')) return 2;
   return 0;
 }
 
@@ -24,7 +26,7 @@ function phaseLabel(m) {
   const cs = deriveCurrentSet(m);
   if (cs === 0) return 'STARTS SOON';
   if (cs > 0 && cs < 3) return 'PENDING';
-  return null; // 3ο+ σετ => αφήνουμε το AI να αποφασίσει SAFE/RISKY/AVOID
+  return null; // 3rd+ set -> let AI decide SAFE/RISKY/AVOID
 }
 
 export default function LiveTennis({ filters, onData }) {
@@ -32,6 +34,7 @@ export default function LiveTennis({ filters, onData }) {
   const [status, setStatus] = useState('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const seenIdsRef = useRef(new Set());
+  const loggedRef = useRef(new Set()); // ⬅️ NEW: don't log same id twice
 
   const notify = () => {
     try {
@@ -50,8 +53,7 @@ export default function LiveTennis({ filters, onData }) {
 
       const enriched = (data || []).map((m, i) => {
         const ev = m.ev ?? calculateEV(m.odds1, m.odds2, m);
-        const confidence =
-          m.confidence ?? estimateConfidence(m.odds1, m.odds2, m);
+        const confidence = m.confidence ?? estimateConfidence(m.odds1, m.odds2, m);
 
         const phase = phaseLabel(m);
         const aiLabel = phase ?? (m.label ?? generateLabel(ev, confidence));
@@ -68,7 +70,7 @@ export default function LiveTennis({ filters, onData }) {
         };
       });
 
-      // notifications μόνο για 3ο+ σετ και SAFE/RISKY με EV>5 (και νέα ids)
+      // notify for new important SAFE/RISKY (3rd+ set)
       if (filters.notifications) {
         const newImportant = enriched.filter(
           (m) =>
@@ -79,7 +81,21 @@ export default function LiveTennis({ filters, onData }) {
         );
         if (newImportant.length > 0) notify();
       }
+
+      // mark seen ids
       enriched.forEach((m) => seenIdsRef.current.add(m.id));
+
+      // ⬇️ NEW: quiet snapshot logging once per id when we have a real call
+      enriched.forEach((m) => {
+        if (
+          m.currentSet >= 3 &&
+          (m.aiLabel === 'SAFE' || m.aiLabel === 'RISKY') &&
+          !loggedRef.current.has(m.id)
+        ) {
+          logPrediction(m);
+          loggedRef.current.add(m.id);
+        }
+      });
 
       setPredictions(enriched);
       setStatus('ok');
@@ -100,18 +116,14 @@ export default function LiveTennis({ filters, onData }) {
       ctrl.abort();
       clearInterval(t);
     };
-  }, []); // intentionally no deps
+  }, []); // mount once
 
   const filtered = useMemo(
     () =>
       predictions.filter((m) => {
         if (filters.label && filters.label !== 'ALL' && m.aiLabel !== filters.label)
           return false;
-
-        // STARTS SOON / PENDING δεν κόβονται από EV/Conf
         if (m.aiLabel === 'STARTS SOON' || m.aiLabel === 'PENDING') return true;
-
-        // μόνο για 3ο+ σετ εφαρμόζουμε thresholds
         if ((m.ev ?? 0) < Number(filters.ev)) return false;
         if ((m.confidence ?? 0) < Number(filters.confidence)) return false;
         return true;
@@ -129,14 +141,7 @@ export default function LiveTennis({ filters, onData }) {
   const labelColor = (label) => labelColorMap[label] || '#FFFFFF';
 
   return (
-    <div
-      style={{
-        background: '#121212',
-        minHeight: '100vh',
-        // Σπρώξε περιεχόμενο κάτω από το TopBar για να μην “φεύγει” το header:
-        paddingTop: 'calc(var(--topbar-h, 56px) + env(safe-area-inset-top, 0px))',
-      }}
-    >
+    <div style={{ background: '#121212', minHeight: '100vh' }}>
       {status === 'loading' && (
         <div style={{ color: '#bbb', textAlign: 'center', paddingTop: 24 }}>
           Loading...
@@ -165,12 +170,12 @@ export default function LiveTennis({ filters, onData }) {
               </span>
             </div>
 
-            {/* Σε 3ο+ σετ δείχνουμε EV/Conf + note. 
-                Για STARTS SOON/PENDING δεν δείχνουμε καθόλου περιγραφή. */}
             {m.currentSet >= 3 ? (
               <>
                 <div className="info-row">
-                  <span className="info-item">EV: {Number(m.ev).toFixed(1)}%</span>
+                  <span className="info-item">
+                    EV: {Number(m.ev).toFixed(1)}%
+                  </span>
                   <span className="info-item">
                     Conf: {Number(m.confidence).toFixed(0)}%
                   </span>

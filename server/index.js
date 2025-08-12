@@ -1,16 +1,23 @@
-const express = require('express');
-const cors = require('cors');
+// server/index.js
+import express from 'express';
+import path from 'path';
+import telemetry from './telemetry.js'; // ⬅️ NEW
+
 const app = express();
-const PORT = process.env.PORT || 5000;
+app.use(express.json());
 
-app.use(cors());
+// --- existing API routes of yours ---
+// import your other routers here and app.use('/api/xxx', ...)
 
-const matches = require('./mockGoalServeAPI');
+// telemetry endpoints (silent logs)
+app.use('/api', telemetry);
 
-app.get('/api/predictions', (req, res) => {
-  res.json(matches);
+// static (CRA build) — keep whatever you already had
+const __dirname = path.resolve();
+app.use(express.static(path.join(__dirname, 'build')));
+app.get('*', (_, res) => {
+  res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+const port = process.env.PORT || 5000;
+app.listen(port, () => console.log('server up on', port));

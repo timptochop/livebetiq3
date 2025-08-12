@@ -1,3 +1,4 @@
+// src/components/TopBar.js
 import React, { useEffect, useState } from 'react';
 import './TopBar.css';
 import { FaCog } from 'react-icons/fa';
@@ -15,18 +16,14 @@ function TopBar({ filters, setFilters, onReset }) {
     <div className="topbar-container">
       <div className="topbar-inner">
         <img className="topbar-logo" src="/logo192.png" alt="LiveBet IQ" />
-
         <div className="topbar-time">
           {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </div>
 
         <div
           className="topbar-icons"
-          role="button"
           aria-label="Settings"
-          tabIndex={0}
-          onClick={() => setOpen(v => !v)}
-          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setOpen(v => !v)}
+          onClick={() => setOpen((v) => !v)}
         >
           <FaCog className="topbar-icon" />
         </div>
@@ -41,7 +38,9 @@ function TopBar({ filters, setFilters, onReset }) {
             <input
               type="range" min="0" max="20" step="1"
               value={filters.ev}
-              onChange={(e) => setFilters(f => ({ ...f, ev: Number(e.target.value) }))}
+              onChange={(e) =>
+                setFilters((f) => ({ ...f, ev: Number(e.target.value) }))
+              }
             />
           </div>
 
@@ -50,7 +49,9 @@ function TopBar({ filters, setFilters, onReset }) {
             <input
               type="range" min="0" max="100" step="1"
               value={filters.confidence}
-              onChange={(e) => setFilters(f => ({ ...f, confidence: Number(e.target.value) }))}
+              onChange={(e) =>
+                setFilters((f) => ({ ...f, confidence: Number(e.target.value) }))
+              }
             />
           </div>
 
@@ -58,13 +59,14 @@ function TopBar({ filters, setFilters, onReset }) {
             <label>Label</label>
             <select
               value={filters.label}
-              onChange={(e) => setFilters(f => ({ ...f, label: e.target.value }))}
+              onChange={(e) => setFilters((f) => ({ ...f, label: e.target.value }))}
             >
               <option value="ALL">ALL</option>
+              <option value="STARTS SOON">STARTS SOON</option>
+              <option value="PENDING">PENDING</option>{/* ΝΕΟ */}
               <option value="SAFE">SAFE</option>
               <option value="RISKY">RISKY</option>
               <option value="AVOID">AVOID</option>
-              <option value="STARTS SOON">STARTS SOON</option>
             </select>
           </div>
 
@@ -74,26 +76,21 @@ function TopBar({ filters, setFilters, onReset }) {
                 type="checkbox"
                 checked={filters.notifications}
                 onChange={(e) =>
-                  setFilters(f => ({ ...f, notifications: e.target.checked }))
+                  setFilters((f) => ({ ...f, notifications: e.target.checked }))
                 }
               />
-              Notifications
+              Notifications (SAFE/RISKY μόνο στο 3ο+ σετ)
             </label>
           </div>
 
-          <button className="close-btn" onClick={() => setOpen(false)}>
-            Close
-          </button>
-
-          {onReset && (
-            <button
-              className="close-btn"
-              style={{ marginTop: 8, background: '#cde7cd' }}
-              onClick={onReset}
-            >
-              Reset to AI Default
+          <div className="setting-row" style={{ width: '100%' }}>
+            <button className="close-btn" onClick={() => setOpen(false)} style={{ marginRight: 8 }}>
+              Close
             </button>
-          )}
+            <button className="close-btn" onClick={onReset}>
+              Reset (AI default)
+            </button>
+          </div>
         </div>
       )}
     </div>
