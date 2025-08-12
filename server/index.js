@@ -1,23 +1,24 @@
 // server/index.js
 import express from 'express';
 import path from 'path';
-import telemetry from './telemetry.js'; // ⬅️ NEW
+
+import mockGoalServeAPI from './mockGoalServeAPI.js'; // κρατάει τα /api/predictions (ή ό,τι έχεις)
+import telemetry from './telemetry.js';               // ΝΕΟ: τα endpoints για telemetry
 
 const app = express();
 app.use(express.json());
 
-// --- existing API routes of yours ---
-// import your other routers here and app.use('/api/xxx', ...)
+// ---- API routes ----
+app.use('/api', mockGoalServeAPI); // υπάρχον
+app.use('/api', telemetry);        // ΝΕΟ
 
-// telemetry endpoints (silent logs)
-app.use('/api', telemetry);
-
-// static (CRA build) — keep whatever you already had
+// ---- static (CRA build) ----
 const __dirname = path.resolve();
 app.use(express.static(path.join(__dirname, 'build')));
-app.get('*', (_, res) => {
+
+app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
 
 const port = process.env.PORT || 5000;
-app.listen(port, () => console.log('server up on', port));
+app.listen(port, () => console.log('[server] listening on', port));

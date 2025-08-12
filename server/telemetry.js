@@ -1,62 +1,55 @@
 // server/telemetry.js
-import fs from 'fs';
-import path from 'path';
-import express from 'express';
+import { Router } from 'express';
 
-const router = express.Router();
+const router = Router();
 
-// simple JSONL logs (one JSON object per line)
-const DATA_DIR = path.join(process.cwd(), '.data');
-const PRED_LOG = path.join(DATA_DIR, 'predictions.jsonl');
-const OUTC_LOG = path.join(DATA_DIR, 'outcomes.jsonl');
+// Μικρό in-memory buffer για πρόσφατα events (δεν είναι DB)
+const BUFFER_MAX = 1000;
+const eventsBuffer = [];
 
-function ensureFiles() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-  if (!fs.existsSync(PRED_LOG)) fs.writeFileSync(PRED_LOG, '');
-  if (!fs.existsSync(OUTC_LOG)) fs.writeFileSync(OUTC_LOG, '');
-}
-ensureFiles();
-
-router.post('/log-prediction', (req, res) => {
-  try {
-    const row = {
-      ts: Date.now(),
-      id: req.body.id,
-      player1: req.body.player1,
-      player2: req.body.player2,
-      currentSet: req.body.currentSet,
-      ev: req.body.ev,
-      confidence: req.body.confidence,
-      label: req.body.label, // SAFE | RISKY | AVOID
-      odds1: req.body.odds1,
-      odds2: req.body.odds2,
-      form: req.body.form ?? null,
-      momentum: req.body.momentum ?? null,
-      h2h: req.body.h2h ?? null,
-      surfaceFit: req.body.surfaceFit ?? null,
-      fatigue: req.body.fatigue ?? null,
-      volatility: req.body.volatility ?? null,
-    };
-    fs.appendFileSync(PRED_LOG, JSON.stringify(row) + '\n');
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false });
-  }
+/**
+ * Υγεία endpoint, για δοκιμή:
+ * GET /api/telemetry/health  -> { ok: true }
+ */
+router.get('/telemetry/health', (req, res) => {
+  res.json({ ok: true });
 });
 
-router.post('/log-outcome', (req, res) => {
-  try {
-    const row = {
-      ts: Date.now(),
-      id: req.body.id,
-      winner: req.body.winner, // "player1" | "player2" | "void"
-      sets: req.body.sets ?? null, // e.g. "2-1"
-    };
-    fs.appendFileSync(OUTC_LOG, JSON.stringify(row) + '\n');
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false });
+/**
+ * Στέλνουμε telemetry:
+ * POST /api/telemetry
+ * body: { event: string, data?: object | primitive }
+ */
+router.post('/telemetry', (req, res) => {
+  const { event, data } = req.body || {};
+
+  const item = {
+    ts: new Date().toISOString(),
+    ip:
+      req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      null,
+    ua: req.headers['user-agent'] || null,
+    event: String(event || 'unknown').slice(0, 64),
+    data: typeof data === 'object' && data !== null ? data : { value: data ?? null },
+  };
+
+  eventsBuffer.push(item);
+  if (eventsBuffer.length > BUFFER_MAX) eventsBuffer.shift();
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[telemetry]', item.event, JSON.stringify(item.data));
   }
+
+  res.json({ ok: true });
+});
+
+/**
+ * Πρόσφατα events (για γρήγορο έλεγχο ενώ αναπτύσσουμε)
+ * GET /api/telemetry/latest -> { ok:true, items:[...] }
+ */
+router.get('/telemetry/latest', (req, res) => {
+  res.json({ ok: true, items: eventsBuffer.slice(-50) });
 });
 
 export default router;
