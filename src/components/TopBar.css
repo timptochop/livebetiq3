@@ -1,88 +1,139 @@
+/* TopBar.css — stable sticky top bar with proper touch targets */
+
+:root {
+  --topbar-height: 68px;
+  --topbar-bg: #1a1a1a;
+  --topbar-fg: #ffffff;
+  --divider: #2a2a2a;
+}
+
+/* container always sticks */
 .topbar-container {
   position: sticky;
   top: 0;
   z-index: 1000;
-
-  background-color: #1a1a1a;
-
-  /* Safe areas για iPhone (notch) */
-  padding-top: calc(8px + env(safe-area-inset-top));
-  padding-left: 12px;
-  padding-right: max(12px, env(safe-area-inset-right));
-  padding-bottom: 6px;
+  width: 100%;
+  background-color: var(--topbar-bg);
+  backdrop-filter: saturate(130%) blur(4px);
+  -webkit-backdrop-filter: saturate(130%) blur(4px);
+  /* keep height fixed; padding for inner alignment */
+  height: var(--topbar-height);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-bottom: 1px solid var(--divider);
 }
 
+/* single row layout inside */
 .topbar-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 44px; /* hit target */
+  height: var(--topbar-height);
+  padding: 0 12px;
+  box-sizing: border-box;
 }
 
+/* brand/logo left */
 .topbar-logo {
   width: 40px;
   height: 40px;
   border-radius: 8px;
+  object-fit: cover;
 }
 
+/* digital clock */
 .topbar-time {
-  color: #fff;
+  margin-left: 8px;
+  color: var(--topbar-fg);
   font-size: 14px;
+  letter-spacing: 0.2px;
+  opacity: 0.95;
+  flex: 1; /* pushes icons to right */
 }
 
-/* Κουμπί ρυθμίσεων: 44x44 hitbox, κέντρο, χωρίς να κόβεται */
+/* icons area on the right with 44px tap targets */
 .topbar-icons {
-  width: 44px;
-  height: 44px;
   display: flex;
   align-items: center;
-  justify-content: center;
-
-  cursor: pointer;
-  border-radius: 10px;
-  /* προαιρετικό hover/focus feedback */
-}
-.topbar-icons:active {
-  background: rgba(255, 255, 255, 0.08);
+  gap: 6px;
 }
 
 .topbar-icon {
-  color: #fff;
-  font-size: 22px;
-  line-height: 1;
+  color: var(--topbar-fg);
+  font-size: 20px;
+  width: 44px;   /* touch target */
+  height: 44px;  /* touch target */
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  cursor: pointer;
 }
 
+.topbar-icon:active {
+  background: rgba(255,255,255,0.08);
+}
+
+/* optional divider (kept for compatibility) */
 .topbar-divider {
-  border-top: 1px solid #333;
-  margin-top: 8px;
+  display: none; /* no extra line; we already have border-bottom */
 }
 
-/* Settings panel */
+/* slide-in settings panel (non-fullscreen) */
 .settings-panel {
-  background: #111;
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 12px;
-  margin-top: 10px;
+  position: fixed;
+  right: 0;
+  top: var(--topbar-height);
+  width: min(420px, 92vw);
+  height: calc(100vh - var(--topbar-height));
+  background: #0e0e0e;
+  border-left: 1px solid #2a2a2a;
+  box-shadow: -12px 0 24px rgba(0,0,0,0.35);
+  padding: 14px 14px 18px 14px;
+  z-index: 1200;
+  overflow-y: auto;
 }
 
 .setting-row {
-  margin-bottom: 10px;
   display: flex;
-  gap: 10px;
   align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: #e6e6e6;
+  font-size: 14px;
+}
+
+.setting-row input[type="range"] {
+  flex: 1;
+}
+
+.setting-row select {
+  flex: 1;
+  background: #141414;
+  border: 1px solid #2a2a2a;
+  color: #e6e6e6;
+  padding: 6px 8px;
+  border-radius: 6px;
 }
 
 .setting-row.checkbox {
-  align-items: center;
+  gap: 8px;
 }
 
 .close-btn {
   width: 100%;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: #e0e0e0;
   color: #000;
+  font-weight: 600;
+  margin-top: 8px;
   cursor: pointer;
+}
+
+@media (max-width: 420px) {
+  :root { --topbar-height: 66px; }
+  .topbar-time { font-size: 13px; }
+  .topbar-icon { width: 42px; height: 42px; }
 }

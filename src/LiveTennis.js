@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 // src/LiveTennis.js
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -6,19 +7,20 @@ import {
   generateLabel,
   generateNote,
 } from './utils/aiEngineV2';
-import { logPrediction } from './utils/telemetry'; // ⬅️ NEW
 import './components/PredictionCard.css';
 
 const API_BASE =
   (process.env.REACT_APP_API_URL && process.env.REACT_APP_API_URL.trim()) ||
   '/api';
 
-// -------- helpers for set/phase --------
+// -------- helpers for set / match phase --------
 function deriveCurrentSet(m) {
+  // If API provides currentSet, use it
   if (m.currentSet != null) return Number(m.currentSet) || 0;
-  const t = (m.time || '').toLowerCase();
-  if (t.includes('starts')) return 0;
-  if (t.includes('live')) return 2;
+  // Heuristics for mock/simplified data:
+  const time = String(m.time || '').toLowerCase();
+  if (time.includes('starts')) return 0;   // not started
+  if (time.includes('live')) return 2;     // live but assume pre-3rd set
   return 0;
 }
 
@@ -26,7 +28,7 @@ function phaseLabel(m) {
   const cs = deriveCurrentSet(m);
   if (cs === 0) return 'STARTS SOON';
   if (cs > 0 && cs < 3) return 'PENDING';
-  return null; // 3rd+ set -> let AI decide SAFE/RISKY/AVOID
+  return null; // 3rd set+ => let AI decide SAFE/RISKY/AVOID
 }
 
 export default function LiveTennis({ filters, onData }) {
@@ -34,8 +36,8 @@ export default function LiveTennis({ filters, onData }) {
   const [status, setStatus] = useState('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const seenIdsRef = useRef(new Set());
-  const loggedRef = useRef(new Set()); // ⬅️ NEW: don't log same id twice
 
+  // sound + vibration (mobile friendly)
   const notify = () => {
     try {
       const el = document.getElementById('notif-audio');
@@ -55,9 +57,13 @@ export default function LiveTennis({ filters, onData }) {
         const ev = m.ev ?? calculateEV(m.odds1, m.odds2, m);
         const confidence = m.confidence ?? estimateConfidence(m.odds1, m.odds2, m);
 
+        // phase based on set
         const phase = phaseLabel(m);
+
+        // If phase exists (STARTS SOON or PENDING) keep that label.
+        // Only when phase === null (3rd set +) we let AI decide.
         const aiLabel = phase ?? (m.label ?? generateLabel(ev, confidence));
-        const aiNote = m.note ?? generateNote(aiLabel, ev, confidence);
+        const aiNote  = m.note ?? generateNote(aiLabel, ev, confidence);
 
         return {
           id: m.id ?? `p-${i}`,
@@ -70,7 +76,7 @@ export default function LiveTennis({ filters, onData }) {
         };
       });
 
-      // notify for new important SAFE/RISKY (3rd+ set)
+      // Notifications: only for 3rd set+ and SAFE/RISKY with EV>5 and unseen ids
       if (filters.notifications) {
         const newImportant = enriched.filter(
           (m) =>
@@ -81,21 +87,7 @@ export default function LiveTennis({ filters, onData }) {
         );
         if (newImportant.length > 0) notify();
       }
-
-      // mark seen ids
       enriched.forEach((m) => seenIdsRef.current.add(m.id));
-
-      // ⬇️ NEW: quiet snapshot logging once per id when we have a real call
-      enriched.forEach((m) => {
-        if (
-          m.currentSet >= 3 &&
-          (m.aiLabel === 'SAFE' || m.aiLabel === 'RISKY') &&
-          !loggedRef.current.has(m.id)
-        ) {
-          logPrediction(m);
-          loggedRef.current.add(m.id);
-        }
-      });
 
       setPredictions(enriched);
       setStatus('ok');
@@ -116,14 +108,19 @@ export default function LiveTennis({ filters, onData }) {
       ctrl.abort();
       clearInterval(t);
     };
-  }, []); // mount once
+  }, []); // intentionally no deps to keep steady polling
 
   const filtered = useMemo(
     () =>
       predictions.filter((m) => {
+        // Label filter (supports PENDING as well)
         if (filters.label && filters.label !== 'ALL' && m.aiLabel !== filters.label)
           return false;
+
+        // If label is STARTS SOON or PENDING, don't cut by EV/Conf
         if (m.aiLabel === 'STARTS SOON' || m.aiLabel === 'PENDING') return true;
+
+        // Only for 3rd set+ (SAFE/RISKY/AVOID) apply thresholds:
         if ((m.ev ?? 0) < Number(filters.ev)) return false;
         if ((m.confidence ?? 0) < Number(filters.confidence)) return false;
         return true;
@@ -140,8 +137,9 @@ export default function LiveTennis({ filters, onData }) {
   };
   const labelColor = (label) => labelColorMap[label] || '#FFFFFF';
 
+  // add paddingTop so the sticky TopBar doesn't overlap the first cards
   return (
-    <div style={{ background: '#121212', minHeight: '100vh' }}>
+    <div style={{ background: '#121212', minHeight: '100vh', paddingTop: 84 }}>
       {status === 'loading' && (
         <div style={{ color: '#bbb', textAlign: 'center', paddingTop: 24 }}>
           Loading...
@@ -173,9 +171,7 @@ export default function LiveTennis({ filters, onData }) {
             {m.currentSet >= 3 ? (
               <>
                 <div className="info-row">
-                  <span className="info-item">
-                    EV: {Number(m.ev).toFixed(1)}%
-                  </span>
+                  <span className="info-item">EV: {Number(m.ev).toFixed(1)}%</span>
                   <span className="info-item">
                     Conf: {Number(m.confidence).toFixed(0)}%
                   </span>
@@ -184,7 +180,15 @@ export default function LiveTennis({ filters, onData }) {
                   <em>{m.aiNote}</em>
                 </div>
               </>
-            ) : null}
+            ) : (
+              <div className="note">
+                <em>
+                  {m.aiLabel === 'STARTS SOON'
+                    ? 'Match has not started yet.'
+                    : 'Live match before 3rd set — waiting for stronger signal.'}
+                </em>
+              </div>
+            )}
           </div>
         ))}
       </div>

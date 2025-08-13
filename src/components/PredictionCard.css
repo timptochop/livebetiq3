@@ -1,81 +1,97 @@
-/* src/components/PredictionCard.css */
+/* PredictionCard.css — clean mobile-first cards */
 
-.screen {
-  background: #121212;
-  min-height: 100vh;
+:root {
+  --card-bg: #171717;
+  --card-fg: #eaeaea;
+  --muted: #9aa0a6;
+  --line: #2a2a2a;
+
+  --safe: #00C853;
+  --risky: #FFD600;
+  --avoid: #D50000;
+  --soon: #B0BEC5;
+  --pending: #90A4AE;
 }
 
-/* Λίστα καρτών */
+/* list container; spacing from the top bar handled by inline paddingTop in LiveTennis */
 .prediction-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 14px 14px 32px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  padding: 12px;
+  box-sizing: border-box;
 }
 
-/* Όταν υπάρχει μόνο 1 κάρτα, να φαίνεται “κεντραρισμένη” */
 .prediction-list.single {
   max-width: 680px;
   margin: 0 auto;
 }
 
-/* Κάρτα */
 .prediction-card {
-  background: #1b1b1b;
-  border: 1px solid #2c2c2c;
-  border-radius: 14px;
-  padding: 14px 14px 12px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  background: var(--card-bg);
+  color: var(--card-fg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
 }
 
-/* Επάνω σειρά: τίτλος αριστερά, badge δεξιά */
+/* top row: names + label */
 .top-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 }
 
 .match-name {
-  color: #fff;
-  font-size: 18px;
   font-weight: 700;
-  line-height: 1.25;
+  font-size: 15px;
+  letter-spacing: 0.2px;
+  color: #f2f2f2;
 }
 
+/* label pill */
 .label {
-  display: inline-block;
-  padding: 6px 10px;
-  border-radius: 10px;
-  color: #000;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  min-width: 92px;
+  border-radius: 999px;
   font-weight: 800;
+  font-size: 12px;
+  color: #121212; /* readable on bright pills */
+}
+
+/* mid info row */
+.info-row {
+  display: flex;
+  gap: 14px;
+  margin-top: 10px;
   font-size: 13px;
 }
 
-/* Στοιχεία EV/Conf κάτω από τον τίτλο */
-.info-row {
-  display: flex;
-  gap: 18px;
-  margin-top: 8px;
-  color: #ddd;
-  font-size: 15px;
-  font-weight: 600;
+.info-item {
+  color: #f2f2f2;
 }
 
-.info-item b { font-weight: 800; }
-
-/* Σημείωση AI */
 .note {
-  margin-top: 10px;
-  color: #bdbdbd;
-  font-style: italic;
-  font-size: 15px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
 }
 
-/* Μικρές οθόνες: πιο σφιχτά paddings */
-@media (max-width: 380px) {
-  .prediction-card { padding: 12px; }
-  .match-name { font-size: 17px; }
-  .info-row { font-size: 14px; gap: 14px; }
-  .label { padding: 5px 9px; font-size: 12px; }
+/* compact on very small screens */
+@media (max-width: 360px) {
+  .match-name { font-size: 14px; }
+  .label { min-width: 84px; font-size: 11px; padding: 4px 8px; }
+  .info-row { gap: 10px; font-size: 12px; }
 }
+
+/* (Optional) color utilities if ever needed */
+.label.safe { background: var(--safe); }
+.label.risky { background: var(--risky); }
+.label.avoid { background: var(--avoid); }
+.label.starts-soon { background: var(--soon); }
+.label.pending { background: var(--pending); }

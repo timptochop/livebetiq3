@@ -23,7 +23,7 @@ function TopBar({ filters, setFilters, onReset }) {
         <div
           className="topbar-icons"
           aria-label="Settings"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => setOpen(v => !v)}
         >
           <FaCog className="topbar-icon" />
         </div>
@@ -36,7 +36,10 @@ function TopBar({ filters, setFilters, onReset }) {
           <div className="setting-row">
             <label>Min EV %: {filters.ev}</label>
             <input
-              type="range" min="0" max="20" step="1"
+              type="range"
+              min="0"
+              max="20"
+              step="1"
               value={filters.ev}
               onChange={(e) =>
                 setFilters((f) => ({ ...f, ev: Number(e.target.value) }))
@@ -47,7 +50,10 @@ function TopBar({ filters, setFilters, onReset }) {
           <div className="setting-row">
             <label>Min Confidence %: {filters.confidence}</label>
             <input
-              type="range" min="0" max="100" step="1"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
               value={filters.confidence}
               onChange={(e) =>
                 setFilters((f) => ({ ...f, confidence: Number(e.target.value) }))
@@ -62,11 +68,11 @@ function TopBar({ filters, setFilters, onReset }) {
               onChange={(e) => setFilters((f) => ({ ...f, label: e.target.value }))}
             >
               <option value="ALL">ALL</option>
-              <option value="STARTS SOON">STARTS SOON</option>
-              <option value="PENDING">PENDING</option>{/* ΝΕΟ */}
               <option value="SAFE">SAFE</option>
               <option value="RISKY">RISKY</option>
               <option value="AVOID">AVOID</option>
+              <option value="STARTS SOON">STARTS SOON</option>
+              <option value="PENDING">PENDING</option> {/* ← νέο */}
             </select>
           </div>
 
@@ -79,18 +85,21 @@ function TopBar({ filters, setFilters, onReset }) {
                   setFilters((f) => ({ ...f, notifications: e.target.checked }))
                 }
               />
-              Notifications (SAFE/RISKY μόνο στο 3ο+ σετ)
+              Notifications
             </label>
           </div>
 
-          <div className="setting-row" style={{ width: '100%' }}>
-            <button className="close-btn" onClick={() => setOpen(false)} style={{ marginRight: 8 }}>
-              Close
-            </button>
-            <button className="close-btn" onClick={onReset}>
-              Reset (AI default)
-            </button>
+          <div className="setting-row">
+            <button className="close-btn" onClick={() => setOpen(false)}>Close</button>
           </div>
+
+          {typeof onReset === 'function' && (
+            <div className="setting-row">
+              <button className="close-btn" onClick={onReset}>
+                Reset to AI Default
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
