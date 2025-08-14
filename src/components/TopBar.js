@@ -1,7 +1,7 @@
 // src/components/TopBar.js
 import React, { useEffect, useState } from 'react';
 import './TopBar.css';
-import { FaCog } from 'react-icons/fa';
+import { FaCog, FaLock } from 'react-icons/fa';
 
 function TopBar({ filters, setFilters, onReset }) {
   const [time, setTime] = useState(() => new Date());
@@ -16,16 +16,30 @@ function TopBar({ filters, setFilters, onReset }) {
     <div className="topbar-container">
       <div className="topbar-inner">
         <img className="topbar-logo" src="/logo192.png" alt="LiveBet IQ" />
+
         <div className="topbar-time">
           {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </div>
 
-        <div
-          className="topbar-icons"
-          aria-label="Settings"
-          onClick={() => setOpen(v => !v)}
-        >
-          <FaCog className="topbar-icon" />
+        <div className="topbar-icons">
+          {/* Decorative lock icon – no action */}
+          <span
+            className="topbar-icon topbar-icon--lock"
+            aria-hidden="true"
+            title="Locked (visual only)"
+          >
+            <FaLock />
+          </span>
+
+          {/* Settings (smaller glyph, same comfy tap area) */}
+          <button
+            type="button"
+            className="topbar-icon topbar-icon--settings"
+            aria-label="Settings"
+            onClick={() => setOpen(v => !v)}
+          >
+            <FaCog />
+          </button>
         </div>
       </div>
 
@@ -72,7 +86,7 @@ function TopBar({ filters, setFilters, onReset }) {
               <option value="RISKY">RISKY</option>
               <option value="AVOID">AVOID</option>
               <option value="STARTS SOON">STARTS SOON</option>
-              <option value="PENDING">PENDING</option> {/* ← νέο */}
+              <option value="PENDING">PENDING</option>
             </select>
           </div>
 
