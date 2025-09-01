@@ -1,25 +1,27 @@
 {
   "name": "livebetiq3",
-  "version": "0.95.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "LiveBet IQ – stable client + simple server",
+  "dependencies": {
+    "axios": "^1.6.8",
+    "concurrently": "^8.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-icons": "^4.12.0",
+    "react-scripts": "5.0.1",
+    "xml2js": "^0.6.2"
+  },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "server": "node server/index.js"
-  },
-  "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.18.2",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-icons": "^5.5.0",
-    "web-vitals": "^3.5.2"
-  },
-  "devDependencies": {
-    "eslint-plugin-react-hooks": "^4.6.0",
-    "react-scripts": "5.0.1"
+    "eject": "react-scripts eject",
+    "server": "node -r dotenv/config server/index.js",
+    "client": "react-scripts start",
+    "dev": "concurrently \"npm run server\" \"npm run client\""
   },
   "browserslist": {
     "production": [

@@ -1,0 +1,70 @@
+.live-tennis-container {
+  background-color: #121212; /* σκοτεινό φόντο */
+  color: #ffffff; /* όλα τα γράμματα άσπρα */
+  padding: 20px;
+  border-radius: 8px;
+  font-family: Arial, sans-serif;
+}
+
+.live-tennis-container h2,
+.live-tennis-container h3,
+.live-tennis-container p,
+.live-tennis-container span,
+.live-tennis-container div {
+  color: #ffffff !important; /* σιγουριά ότι όλα θα είναι άσπρα */
+}
+
+.match-row {
+  display: grid;
+  grid-template-columns: 100px 250px 200px 200px 150px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid #333;
+}
+
+.match-row:nth-child(even) {
+  background-color: #1e1e1e;
+}
+
+.match-row:nth-child(odd) {
+  background-color: #2a2a2a;
+}
+
+.status-live {
+  color: #00e676; /* πράσινο για Live */
+  font-weight: bold;
+}
+
+.status-upcoming {
+  color: #ffea00; /* κίτρινο για Not Started */
+  font-weight: bold;
+}
+
+.status-finished {
+  color: #ff1744; /* κόκκινο για Finished */
+  font-weight: bold;
+}
+
+.label-safe {
+  background-color: #2e7d32; /* πράσινο σκούρο */
+  color: #ffffff;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.label-risky {
+  background-color: #f9a825; /* κίτρινο/πορτοκαλί */
+  color: #000000;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.label-avoid {
+  background-color: #c62828; /* κόκκινο */
+  color: #ffffff;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+}

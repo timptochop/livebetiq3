@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scores sport="tennis">
+  <category name="ATP">
+    <match id="1" status="inprogress" start_date="2025-08-20T14:00:00Z">
+      <player1 name="Novak Djokovic" />
+      <player2 name="Rafael Nadal" />
+      <score1>3</score1>
+      <score2>2</score2>
+    </match>
+    <match id="2" status="finished" start_date="2025-08-20T11:00:00Z">
+      <player1 name="Carlos Alcaraz" />
+      <player2 name="Daniil Medvedev" />
+      <score1>2</score1>
+      <score2>0</score2>
+    </match>
+  </category>
+  <category name="WTA">
+    <match id="3" status="scheduled" start_date="2025-08-21T17:30:00Z">
+      <player1 name="Iga Swiatek" />
+      <player2 name="Aryna Sabalenka" />
+    </match>
+  </category>
+</scores>

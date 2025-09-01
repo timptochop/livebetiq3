@@ -1,24 +1,27 @@
 // server/index.js
-import express from 'express';
-import path from 'path';
+const express = require('express');
+const cors = require('cors');
+const dotenv = require('dotenv');
+const { fetchLiveTennis } = require('../api/_lib/goalServeLiveAPI');
 
-import mockGoalServeAPI from './mockGoalServeAPI.js'; // κρατάει τα /api/predictions (ή ό,τι έχεις)
-import telemetry from './telemetry.js';               // ΝΕΟ: τα endpoints για telemetry
-
+dotenv.config();
 const app = express();
+const PORT = process.env.PORT || 5000;
+
+app.use(cors());
 app.use(express.json());
 
-// ---- API routes ----
-app.use('/api', mockGoalServeAPI); // υπάρχον
-app.use('/api', telemetry);        // ΝΕΟ
+app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-// ---- static (CRA build) ----
-const __dirname = path.resolve();
-app.use(express.static(path.join(__dirname, 'build')));
-
-app.get('*', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'build', 'index.html'));
+app.get('/api/gs/tennis-live', async (req, res) => {
+  try {
+    const data = await fetchLiveTennis();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: 'fetch_failed', message: err.message || 'unknown_error' });
+  }
 });
 
-const port = process.env.PORT || 5000;
-app.listen(port, () => console.log('[server] listening on', port));
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
+});
