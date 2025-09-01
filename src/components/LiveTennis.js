@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+// src/components/LiveTennis.js
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { fetchTennisPredictions } from '../utils/fetchTennisLive';
 
 function parseDateTime(d, t) {
   const ds = String(d || '').trim();
@@ -35,6 +37,7 @@ function labelColor(tag) {
   if (t === 'SAFE') return { bg: '#2e7d32', fg: '#fff' };
   if (t === 'RISKY') return { bg: '#ffb300', fg: '#000' };
   if (t === 'AVOID') return { bg: '#c62828', fg: '#fff' };
+  if (t === 'PENDING') return { bg: '#546e7a', fg: '#fff' };
   return { bg: '#546e7a', fg: '#fff' };
 }
 
@@ -86,19 +89,22 @@ export default function LiveTennis() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [q, setQ] = useState('');
+  const lastOkRef = useRef([]); // κρατάμε τα τελευταία καλά δεδομένα
 
   const load = async () => {
     setLoading(true);
     setErr('');
     try {
-      const res = await fetch('/api/gs/tennis-predictions');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const matches = Array.isArray(data?.matches) ? data.matches : [];
-      setRows(matches);
+      const matches = await fetchTennisPredictions();
+      const safe = Array.isArray(matches) ? matches : [];
+      setRows(safe);
+      lastOkRef.current = safe;
     } catch (e) {
-      setErr(e.message || 'Failed to load');
-      setRows([]);
+      setErr(e.message || 'HTTP 500');
+      // ΜΗΝ καθαρίσεις τα rows — κράτα τα τελευταία επιτυχημένα
+      if (lastOkRef.current.length > 0) {
+        setRows(lastOkRef.current);
+      }
     } finally {
       setLoading(false);
     }
