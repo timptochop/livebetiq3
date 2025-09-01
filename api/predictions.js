@@ -1,141 +1,78 @@
 // api/predictions.js
-// Vercel Serverless Function – returns tennis predictions from LIVE provider,
-// with a safe fallback to mock data if env vars are missing or the provider fails.
+import axios from "axios";
 
-export const config = {
-  runtime: 'nodejs', // ✅ valid value for Vercel (Node 18+ by default)
-};
-
-const LIVE_API_URL = process.env.LIVE_API_URL || '';   // e.g. https://api.example.com/tennis/live
-const LIVE_API_KEY = process.env.LIVE_API_KEY || '';   // e.g. your token/key
-
-// ---- utils ----
-function num(v, d = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : d;
+function toArray(x) {
+  return !x ? [] : Array.isArray(x) ? x : [x];
 }
 
-function deriveCurrentSetFromScore(score) {
-  if (!score) return 0;
-  if (typeof score === 'string') {
-    const m = score.match(/^\s*(\d+)\s*-\s*(\d+)\s*$/);
-    if (m) return num(m[1]) + num(m[2]);
+function normalizeLive(json) {
+  const categories = toArray(json?.scores?.category);
+  const out = [];
+  for (const cat of categories) {
+    const catName = cat?.["@name"] || "";
+    const catId = cat?.["@id"] || "";
+    const matches = toArray(cat?.match);
+    for (const m of matches) {
+      const players = toArray(m?.player).map((p) => ({
+        id: p?.["@id"] || "",
+        name: p?.["@name"] || "",
+        s1: p?.["@s1"] ?? p?.s1 ?? null,
+        s2: p?.["@s2"] ?? p?.s2 ?? null,
+        s3: p?.["@s3"] ?? p?.s3 ?? null,
+        s4: p?.["@s4"] ?? p?.s4 ?? null,
+        s5: p?.["@s5"] ?? p?.s5 ?? null,
+      }));
+      out.push({
+        id: m?.["@id"] || "",
+        date: m?.["@date"] || "",
+        time: m?.["@time"] || "",
+        status: m?.["@status"] || "",
+        categoryId: catId,
+        categoryName: catName,
+        players,
+        prediction: {
+          label: "PENDING",
+          pick: null,
+          confidence: 0,
+          source: "fallback",
+          detail: "set_pending",
+        },
+      });
+    }
   }
-  if (typeof score === 'object' && score.sets) {
-    const s = score.sets;
-    return num(s.p1) + num(s.p2);
-  }
-  return 0;
-}
-
-function mapProviderMatch(raw) {
-  const p1 = raw.player1 ?? raw.home ?? raw.p1 ?? raw.name1 ?? 'Player A';
-  const p2 = raw.player2 ?? raw.away ?? raw.p2 ?? raw.name2 ?? 'Player B';
-
-  const odds1 =
-    num(raw.odds1) ||
-    num(raw.homeOdds) ||
-    num(raw.decimalOdds1) ||
-    num(raw.odds?.p1) ||
-    0;
-
-  const odds2 =
-    num(raw.odds2) ||
-    num(raw.awayOdds) ||
-    num(raw.decimalOdds2) ||
-    num(raw.odds?.p2) ||
-    0;
-
-  const status =
-    raw.status ?? raw.time ?? raw.phase ?? raw.state ?? 'Live';
-
-  const currentSet =
-    num(raw.currentSet) ||
-    deriveCurrentSetFromScore(raw.score ?? raw.sets ?? raw.result ?? null);
-
-  return {
-    id: String(raw.id ?? `${p1}-${p2}-${raw.startTime ?? ''}`),
-    player1: String(p1),
-    player2: String(p2),
-    odds1,
-    odds2,
-    time: String(status),
-    currentSet,
-  };
-}
-
-function mockList() {
-  return [
-    {
-      id: 'm1',
-      player1: 'Djokovic',
-      player2: 'Nadal',
-      odds1: 1.70,
-      odds2: 2.20,
-      time: 'Live',
-      currentSet: 2,
-    },
-    {
-      id: 'm2',
-      player1: 'Alcaraz',
-      player2: 'Zverev',
-      odds1: 1.95,
-      odds2: 1.95,
-      time: 'Starts Soon',
-      currentSet: 0,
-    },
-    {
-      id: 'm3',
-      player1: 'Tsitsipas',
-      player2: 'Medvedev',
-      odds1: 2.40,
-      odds2: 1.55,
-      time: 'Live',
-      currentSet: 2,
-    },
-  ];
+  return out;
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    return res.status(405).json({ error: 'Method Not Allowed' });
-  }
-
-  if (!LIVE_API_URL || !LIVE_API_KEY) {
-    return res.status(200).json(mockList());
-  }
-
   try {
-    const url = new URL(LIVE_API_URL);
-    const rsp = await fetch(url.toString(), {
-      headers: {
-        Authorization: `Bearer ${LIVE_API_KEY}`,
-        Accept: 'application/json',
-      },
-    });
-
-    if (!rsp.ok) {
-      console.warn('[api/predictions] Provider HTTP', rsp.status);
-      return res.status(200).json(mockList());
+    const token = process.env.GOALSERVE_TOKEN;
+    if (!token) {
+      return res.status(500).json({ error: "missing_token" });
     }
 
-    const data = await rsp.json().catch(() => null);
+    const url = `https://www.goalserve.com/getfeed/${token}/tennis_scores/home?json=1`;
 
-    const matches = Array.isArray(data?.matches)
-      ? data.matches
-      : Array.isArray(data?.events)
-      ? data.events
-      : Array.isArray(data)
-      ? data
-      : [];
+    const response = await axios.get(url, {
+      timeout: 15000,
+      headers: { "User-Agent": "livebetiq/1.0 (+vercel)" },
+      decompress: true,
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
 
-    const mapped = matches.map(mapProviderMatch);
-    if (!mapped.length) return res.status(200).json(mockList());
+    if (response.status >= 400) {
+      return res
+        .status(502)
+        .json({ error: "upstream_error", status: response.status });
+    }
 
-    return res.status(200).json(mapped);
+    const raw = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+    const matches = normalizeLive(raw);
+
+    return res.status(200).json({ matches });
   } catch (err) {
-    console.error('[api/predictions] error', err);
-    return res.status(200).json(mockList());
+    console.error("[/api/predictions] error:", err?.message || err);
+    return res
+      .status(500)
+      .json({ error: "internal_error", detail: err?.message || "unknown" });
   }
 }
