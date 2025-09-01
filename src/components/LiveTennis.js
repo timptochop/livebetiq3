@@ -1,5 +1,5 @@
 // src/components/LiveTennis.js
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { fetchTennisPredictions } from '../utils/fetchTennisLive';
 
 function parseDateTime(d, t) {
@@ -20,6 +20,7 @@ function parseDateTime(d, t) {
 function isUpcoming(s) {
   return String(s || '').toLowerCase() === 'not started';
 }
+
 function isFinishedLike(s) {
   const x = String(s || '').toLowerCase();
   return (
@@ -89,22 +90,16 @@ export default function LiveTennis() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [q, setQ] = useState('');
-  const lastOkRef = useRef([]); // κρατάμε τα τελευταία καλά δεδομένα
 
   const load = async () => {
     setLoading(true);
     setErr('');
     try {
       const matches = await fetchTennisPredictions();
-      const safe = Array.isArray(matches) ? matches : [];
-      setRows(safe);
-      lastOkRef.current = safe;
+      setRows(Array.isArray(matches) ? matches : []);
     } catch (e) {
-      setErr(e.message || 'HTTP 500');
-      // ΜΗΝ καθαρίσεις τα rows — κράτα τα τελευταία επιτυχημένα
-      if (lastOkRef.current.length > 0) {
-        setRows(lastOkRef.current);
-      }
+      setErr(e.message || 'Failed to load');
+      setRows([]);
     } finally {
       setLoading(false);
     }
