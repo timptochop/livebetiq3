@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import TopBar from './TopBar';
 import fetchTennisLive from '../utils/fetchTennisLive';
 
-// --- helpers ---
+// ---- helpers ----
 function parseDateTime(d, t) {
   const ds = String(d || '').trim();
   const ts = String(t || '').trim();
@@ -17,7 +17,6 @@ function parseDateTime(d, t) {
   const dt = new Date(yyyy || 1970, (mm || 1) - 1, dd || 1, HH, MM, 0, 0);
   return isNaN(dt.getTime()) ? null : dt;
 }
-
 function isUpcoming(s) {
   return String(s || '').toLowerCase() === 'not started';
 }
@@ -37,37 +36,7 @@ function isLive(s) {
   const low = String(s).toLowerCase();
   if (isFinishedLike(low)) return false;
   if (isUpcoming(low)) return false;
-  return true; // οτιδήποτε άλλο το θεωρούμε live
-}
-
-function labelColor(tag) {
-  const t = String(tag || '').toUpperCase();
-  if (t === 'SAFE') return { bg: '#2e7d32', fg: '#fff' };
-  if (t === 'RISKY') return { bg: '#ffb300', fg: '#000' };
-  if (t === 'AVOID') return { bg: '#c62828', fg: '#fff' };
-  if (t === 'PENDING') return { bg: '#546e7a', fg: '#fff' };
-  return { bg: '#546e7a', fg: '#fff' };
-}
-function statusPill(status) {
-  const s = String(status || '');
-  let bg = '#2962ff';
-  if (isUpcoming(s)) bg = '#2e7d32';
-  if (isFinishedLike(s)) bg = '#8e24aa';
-  return (
-    <span
-      style={{
-        background: bg,
-        color: '#fff',
-        borderRadius: 999,
-        padding: '4px 10px',
-        fontSize: 12,
-        display: 'inline-block',
-        lineHeight: 1,
-      }}
-    >
-      {s}
-    </span>
-  );
+  return true;
 }
 function num(v) {
   if (v === null || v === undefined) return null;
@@ -88,14 +57,21 @@ function currentSetFromScores(players) {
   }
   return k;
 }
+function labelColor(tag) {
+  const t = String(tag || '').toUpperCase();
+  if (t === 'SAFE') return { bg: '#2e7d32', fg: '#fff' };
+  if (t === 'RISKY') return { bg: '#ffb300', fg: '#000' };
+  if (t === 'AVOID') return { bg: '#c62828', fg: '#fff' };
+  if (t === 'PENDING') return { bg: '#546e7a', fg: '#fff' };
+  return { bg: '#546e7a', fg: '#fff' };
+}
 const AI_LABELS = new Set(['SAFE', 'RISKY', 'AVOID']);
 
 export default function LiveTennis() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
-  const [q, setQ] = useState('');
-  const [aiOnly, setAiOnly] = useState(true); // default ON όπως στο top bar
+  const [notificationsOn, setNotificationsOn] = useState(true);
 
   const load = async () => {
     setLoading(true);
@@ -162,49 +138,29 @@ export default function LiveTennis() {
     });
   }, [rows]);
 
-  // Μετρητής LIVE (όλα τα live, ανεξάρτητα από AI)
   const liveCount = useMemo(() => normalized.filter((m) => m.isLive).length, [normalized]);
 
-  // Φίλτρα + ταξινόμηση
+  // ταξινόμηση: live with AI -> live pending -> upcoming (χωρίς AI φίλτρο πλέον)
   const filteredSorted = useMemo(() => {
-    const term = q.trim().toLowerCase();
-
-    // φιλτράρουμε finished ΟΛΑ
     let keep = normalized.filter((m) => !m.isFinished);
 
-    // αναζήτηση
-    if (term) {
-      keep = keep.filter((m) => {
-        const blob = `${m.name1} ${m.name2} ${m.categoryName}`.toLowerCase();
-        return blob.includes(term);
-      });
-    }
-
-    // AI only toggle
-    if (aiOnly) {
-      keep = keep.filter((m) => AI_LABELS.has(m.prediction.label));
-    }
-
-    // ταξινόμηση: live with AI -> live pending -> upcoming
     const rank = (m) => {
-      if (m.isLive && AI_LABELS.has(m.prediction.label)) return 0; // live + AI
-      if (m.isLive) return 1; // live pending
-      return 2; // upcoming
+      if (m.isLive && AI_LABELS.has(m.prediction.label)) return 0;
+      if (m.isLive) return 1;
+      return 2;
     };
 
     return [...keep].sort((a, b) => {
       const r = rank(a) - rank(b);
       if (r !== 0) return r;
-      // μέσα σε κάθε bucket, βάζουμε setNum desc και ώρα asc
       const s = (b.setNum || 0) - (a.setNum || 0);
       if (s !== 0) return s;
       const ta = a.dt ? a.dt.getTime() : Number.POSITIVE_INFINITY;
       const tb = b.dt ? b.dt.getTime() : Number.POSITIVE_INFINITY;
       return ta - tb;
     });
-  }, [normalized, q, aiOnly]);
+  }, [normalized]);
 
-  // --- UI ---
   const chip = (text, bg = '#546e7a', fg = '#fff') => (
     <span
       style={{
@@ -225,132 +181,95 @@ export default function LiveTennis() {
     <div style={{ background: '#0b0b0b', color: '#fff', minHeight: '100vh' }}>
       <TopBar
         liveCount={liveCount}
-        aiOnly={aiOnly}
-        setAiOnly={setAiOnly}
+        notificationsOn={notificationsOn}
+        setNotificationsOn={setNotificationsOn}
         onSettingsClick={() => {}}
         onLoginClick={() => {}}
-        logoSrc="/logo.png" // άλλαξέ το αν χρησιμοποιείς logo192.png
+        logoSrc="/logo.png"
       />
 
       <div style={{ padding: 12, maxWidth: 1100, margin: '0 auto' }}>
-        {/* Search row (ΧΩΡΙΣ τον μεγάλο τίτλο) */}
-        <div
-          style={{
-            margin: '12px auto 10px',
-            background: '#151515',
-            borderRadius: 12,
-            border: '1px solid #222',
-            padding: 12,
-          }}
-        >
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Αναζήτηση παίκτη ή διοργάνωσης…"
-            style={{
-              width: '100%',
-              padding: '12px 14px',
-              background: '#0f1113',
-              color: '#fff',
-              border: '1px solid #333',
-              borderRadius: 10,
-              outline: 'none',
-            }}
-          />
-          {loading && <div style={{ marginTop: 8, color: '#cfd3d7' }}>Φόρτωση…</div>}
-          {err && <div style={{ marginTop: 8, color: '#ff8a80' }}>{err}</div>}
-        </div>
-
-        {/* Κάρτες αγώνων */}
-        {filteredSorted.length === 0 ? (
+        {/* Καμία αναζήτηση, κανένα empty-state */}
+        {!loading && err && (
           <div
             style={{
-              color: '#cfd3d7',
-              padding: 16,
-              textAlign: 'center',
-              background: '#151515',
-              border: '1px solid #222',
-              borderRadius: 12,
+              margin: '12px 0',
+              background: '#2b1c1c',
+              border: '1px solid #4d2222',
+              borderRadius: 10,
+              padding: 12,
+              color: '#ff8a80',
             }}
           >
-            Καμία εγγραφή.
-            {aiOnly && (
-              <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
-                (Δοκίμασε να κλείσεις το AI στο πάνω δεξιά «AI ON/OFF».)
-              </div>
-            )}
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {filteredSorted.map((m) => {
-              const { label, pick, confidence } = m.prediction;
-              const setBadge =
-                m.isLive && m.setNum > 0
-                  ? chip(`SET ${m.setNum}`, '#2e7d32')
-                  : m.isUpcoming
-                  ? chip('STARTS SOON', '#5c6770')
-                  : null;
-
-              // τελεία live/ όχι live
-              const dotColor = m.isLive ? '#1db954' : '#e53935';
-
-              const aiPill = AI_LABELS.has(label)
-                ? chip(label, labelColor(label).bg, labelColor(label).fg)
-                : null;
-
-              return (
-                <div
-                  key={m.id}
-                  style={{
-                    background: '#151515',
-                    border: '1px solid #222',
-                    borderRadius: 18,
-                    padding: 14,
-                    boxShadow: '0 8px 22px rgba(0,0,0,0.35)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                  }}
-                >
-                  {/* live dot */}
-                  <span
-                    style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: 999,
-                      background: dotColor,
-                      display: 'inline-block',
-                    }}
-                  />
-
-                  {/* ονόματα */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontWeight: 800,
-                        letterSpacing: 0.2,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {m.name1} <span style={{ opacity: 0.6, fontWeight: 600 }}>vs</span> {m.name2}
-                    </div>
-                    <div style={{ marginTop: 4, fontSize: 13, color: '#cfd3d7' }}>
-                      {m.date} {m.time} • {m.categoryName}
-                    </div>
-                  </div>
-
-                  {/* badges δεξιά: set/starts + AI */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {setBadge}
-                    {aiPill}
-                  </div>
-                </div>
-              );
-            })}
+            {err}
           </div>
         )}
+
+        {/* Κάρτες */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {filteredSorted.map((m) => {
+            const { label } = m.prediction;
+            const setBadge =
+              m.isLive && m.setNum > 0
+                ? chip(`SET ${m.setNum}`, '#2e7d32')
+                : m.isUpcoming
+                ? chip('STARTS SOON', '#5c6770')
+                : null;
+
+            const dotColor = m.isLive ? '#1db954' : '#e53935';
+            const lbl = label.toUpperCase();
+            const aiPill =
+              lbl === 'SAFE' || lbl === 'RISKY' || lbl === 'AVOID'
+                ? chip(lbl, labelColor(lbl).bg, labelColor(lbl).fg)
+                : null;
+
+            return (
+              <div
+                key={m.id}
+                style={{
+                  background: '#151515',
+                  border: '1px solid #222',
+                  borderRadius: 18,
+                  padding: 14,
+                  boxShadow: '0 8px 22px rgba(0,0,0,0.35)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                }}
+              >
+                <span
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 999,
+                    background: dotColor,
+                    display: 'inline-block',
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 800,
+                      letterSpacing: 0.2,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {m.name1} <span style={{ opacity: 0.6, fontWeight: 600 }}>vs</span> {m.name2}
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 13, color: '#cfd3d7' }}>
+                    {m.date} {m.time} • {m.categoryName}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {setBadge}
+                  {aiPill}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

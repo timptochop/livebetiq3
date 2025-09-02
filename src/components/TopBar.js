@@ -2,11 +2,11 @@ import React from 'react';
 
 export default function TopBar({
   liveCount = 0,
-  aiOnly = false,
-  setAiOnly = () => {},
+  notificationsOn = true,
+  setNotificationsOn = () => {},
   onSettingsClick = () => {},
   onLoginClick = () => {},
-  logoSrc = '/logo.png', // άλλαξέ το σε '/logo192.png' αν προτιμάς
+  logoSrc = '/logo.png', // άλλαξέ το αν θέλεις π.χ. '/logo192.png'
 }) {
   const chip = (children, extra = {}) => (
     <div
@@ -66,11 +66,9 @@ export default function TopBar({
             alt="Logo"
             style={{ width: 26, height: 26, objectFit: 'contain', filter: 'brightness(1.05)' }}
             onError={(e) => {
-              // fallback αν λείπει το /logo.png
               e.currentTarget.style.display = 'none';
             }}
           />
-          {/* Αν δεν φορτώσει, κρατάμε ένα “LB” */}
           <span style={{ fontWeight: 800, color: '#e8f5e9', fontSize: 14 }}>LB</span>
         </div>
 
@@ -122,26 +120,26 @@ export default function TopBar({
           title="Settings"
         />
 
-        {/* AI toggle */}
+        {/* Notifications toggle */}
         <div
-          onClick={() => setAiOnly(!aiOnly)}
-          title={aiOnly ? 'AI ON (tap to turn OFF)' : 'AI OFF (tap to turn ON)'}
+          onClick={() => setNotificationsOn(!notificationsOn)}
+          title={notificationsOn ? 'Notifications ON (tap to turn OFF)' : 'Notifications OFF (tap to turn ON)'}
           style={{ cursor: 'pointer' }}
         >
           {chip(
             <>
-              <span style={{ fontWeight: 800 }}>AI</span>
+              <span role="img" aria-label="bell">🔔</span>
               <span
                 style={{
                   marginLeft: 4,
                   padding: '2px 8px',
                   borderRadius: 999,
-                  background: aiOnly ? '#1db954' : '#37474f',
-                  color: aiOnly ? '#001b06' : '#dfe5ea',
+                  background: notificationsOn ? '#1db954' : '#37474f',
+                  color: notificationsOn ? '#001b06' : '#dfe5ea',
                   fontWeight: 800,
                 }}
               >
-                {aiOnly ? 'ON' : 'OFF'}
+                {notificationsOn ? 'ON' : 'OFF'}
               </span>
             </>
           )}
