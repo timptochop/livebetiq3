@@ -1,70 +1,219 @@
-.live-tennis-container {
-  background-color: #121212; /* σκοτεινό φόντο */
-  color: #ffffff; /* όλα τα γράμματα άσπρα */
-  padding: 20px;
-  border-radius: 8px;
-  font-family: Arial, sans-serif;
+:root{
+  --bg:#0b0b0b;
+  --panel:#151515;
+  --border:#222;
+  --muted:#cfd3d7;
+  --text:#fff;
 }
 
-.live-tennis-container h2,
-.live-tennis-container h3,
-.live-tennis-container p,
-.live-tennis-container span,
-.live-tennis-container div {
-  color: #ffffff !important; /* σιγουριά ότι όλα θα είναι άσπρα */
+.lt-wrap{
+  padding:16px;
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
 }
 
-.match-row {
-  display: grid;
-  grid-template-columns: 100px 250px 200px 200px 150px;
-  align-items: center;
-  padding: 8px;
-  border-bottom: 1px solid #333;
+.lt-card{
+  margin:16px auto;
+  max-width:1100px;
+  background:var(--panel);
+  border-radius:10px;
+  box-shadow:0 6px 18px rgba(0,0,0,.35);
+  border:1px solid var(--border);
 }
 
-.match-row:nth-child(even) {
-  background-color: #1e1e1e;
+.lt-head{
+  padding:18px 20px;
+  border-bottom:1px solid var(--border);
+  color:var(--text);
+  display:flex;
+  flex-direction:column;
+  gap:12px;
 }
 
-.match-row:nth-child(odd) {
-  background-color: #2a2a2a;
+.lt-title{
+  margin:0;
+  color:var(--text);
+  font-size:24px;
+  font-weight:800;
+  letter-spacing:.2px;
 }
 
-.status-live {
-  color: #00e676; /* πράσινο για Live */
-  font-weight: bold;
+.lt-search{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  flex-wrap:wrap;
 }
 
-.status-upcoming {
-  color: #ffea00; /* κίτρινο για Not Started */
-  font-weight: bold;
+.lt-input{
+  padding:10px 12px;
+  min-width:280px;
+  background:#0f1113;
+  color:var(--text);
+  border:1px solid #333;
+  border-radius:8px;
+  outline:none;
+  width:100%;
+  max-width:420px;
 }
 
-.status-finished {
-  color: #ff1744; /* κόκκινο για Finished */
-  font-weight: bold;
+.lt-status{
+  color:var(--muted);
+  font-size:14px;
 }
 
-.label-safe {
-  background-color: #2e7d32; /* πράσινο σκούρο */
-  color: #ffffff;
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-weight: bold;
+.lt-body{
+  padding:6px 10px 16px 10px;
+  color:var(--text);
 }
 
-.label-risky {
-  background-color: #f9a825; /* κίτρινο/πορτοκαλί */
-  color: #000000;
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-weight: bold;
+.lt-table{
+  width:100%;
+  border-collapse:collapse;
+  color:var(--text);
 }
 
-.label-avoid {
-  background-color: #c62828; /* κόκκινο */
-  color: #ffffff;
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-weight: bold;
+.lt-th{
+  text-align:left;
+  border-bottom:1px solid var(--border);
+  padding:12px 10px;
+  color:var(--muted);
+  font-weight:600;
+  font-size:14px;
+}
+
+.lt-td{
+  padding:12px 10px;
+  border-bottom:1px solid #1f1f1f;
+  vertical-align:top;
+}
+
+.lt-vs{
+  color:#9aa0a6;
+  font-weight:400;
+  margin:0 4px;
+}
+
+.lt-pill{
+  background:#2962ff;
+  color:#fff;
+  border-radius:999px;
+  padding:4px 10px;
+  font-size:12px;
+  display:inline-block;
+  line-height:1;
+}
+
+.lt-badge{
+  display:inline-block;
+  border-radius:8px;
+  padding:2px 8px;
+  font-size:11px;
+  margin-left:8px;
+}
+
+.lt-sub{
+  font-size:12px;
+  color:var(--muted);
+  margin-bottom:6px;
+}
+
+.lt-pending{
+  font-size:13px;
+  color:#ffa726;
+}
+
+.lt-row-title{
+  font-weight:700;
+  color:var(--text);
+}
+
+.lt-empty{
+  color:var(--muted);
+  padding:16px;
+}
+
+/* MOBILE CARDS */
+.lt-cards{
+  display:none;
+  padding:8px 10px 18px 10px;
+}
+
+.lt-mcard{
+  background:#101010;
+  border:1px solid #1b1b1b;
+  border-radius:12px;
+  padding:12px;
+  margin:10px 0;
+  display:flex;
+  gap:10px;
+}
+
+.lt-mcol{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  flex:1;
+}
+
+.lt-mtop{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+}
+
+.lt-mtime{
+  font-size:13px;
+  color:#bfc5cc;
+  white-space:nowrap;
+}
+
+.lt-mstatus{ }
+
+.lt-mtitle{
+  font-weight:700;
+  line-height:1.25;
+}
+
+.lt-mcat{
+  font-size:13px;
+  color:#aeb4bb;
+}
+
+.lt-mpred{
+  font-size:13px;
+}
+
+.lt-mmeta{
+  font-size:12px;
+  color:#aeb4bb;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  margin-bottom:4px;
+}
+
+/* COLOR STATES */
+.lt-pill.upcoming{ background:#2e7d32; }
+.lt-pill.finished{ background:#8e24aa; }
+
+.lt-badge.safe{ background:#2e7d32; color:#fff; }
+.lt-badge.risky{ background:#ffb300; color:#000; }
+.lt-badge.avoid{ background:#c62828; color:#fff; }
+.lt-badge.pending{ background:#546e7a; color:#fff; }
+
+/* RESPONSIVE */
+@media (max-width:900px){
+  .lt-title{ font-size:20px; }
+  .lt-card{ border-radius:12px; }
+  .lt-table-wrap{ display:none; }
+  .lt-cards{ display:block; }
+  .lt-input{ max-width:100%; }
+}
+
+@media (min-width:901px){
+  .lt-table-wrap{ overflow-x:auto; }
+  .lt-cards{ display:none; }
 }

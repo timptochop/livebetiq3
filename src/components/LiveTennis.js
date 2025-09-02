@@ -1,6 +1,6 @@
-// src/components/LiveTennis.js
 import React, { useEffect, useMemo, useState } from 'react';
-import fetchTennisPredictions from '../utils/fetchTennisLive';
+import { fetchTennisPredictions } from '../utils/fetchTennisLive';
+import './LiveTennis.css';
 
 function parseDateTime(d, t) {
   const ds = String(d || '').trim();
@@ -22,45 +22,23 @@ function isUpcoming(s) {
 }
 function isFinishedLike(s) {
   const x = String(s || '').toLowerCase();
-  return (
-    x === 'finished' ||
-    x === 'cancelled' ||
-    x === 'retired' ||
-    x === 'abandoned' ||
-    x === 'postponed' ||
-    x === 'walk over'
-  );
+  return x === 'finished' || x === 'cancelled' || x === 'retired' || x === 'abandoned' || x === 'postponed' || x === 'walk over';
 }
 
-function labelColor(tag) {
+function labelToClass(tag) {
   const t = String(tag || '').toUpperCase();
-  if (t === 'SAFE') return { bg: '#2e7d32', fg: '#fff' };
-  if (t === 'RISKY') return { bg: '#ffb300', fg: '#000' };
-  if (t === 'AVOID') return { bg: '#c62828', fg: '#fff' };
-  if (t === 'PENDING') return { bg: '#546e7a', fg: '#fff' };
-  return { bg: '#546e7a', fg: '#fff' };
+  if (t === 'SAFE') return 'safe';
+  if (t === 'RISKY') return 'risky';
+  if (t === 'AVOID') return 'avoid';
+  return 'pending';
 }
 
-function statusPill(status) {
+function StatusPill({ status }) {
   const s = String(status || '');
-  let bg = '#2962ff';
-  if (isUpcoming(s)) bg = '#2e7d32';
-  if (isFinishedLike(s)) bg = '#8e24aa';
-  return (
-    <span
-      style={{
-        background: bg,
-        color: '#fff',
-        borderRadius: 999,
-        padding: '4px 10px',
-        fontSize: 12,
-        display: 'inline-block',
-        lineHeight: 1,
-      }}
-    >
-      {s}
-    </span>
-  );
+  let cls = '';
+  if (isUpcoming(s)) cls = 'upcoming';
+  if (isFinishedLike(s)) cls = 'finished';
+  return <span className={`lt-pill ${cls}`}>{s}</span>;
 }
 
 function num(v) {
@@ -180,98 +158,115 @@ export default function LiveTennis() {
   }, [normalized, q]);
 
   return (
-    <div style={{ padding: 16, background: '#0b0b0b', color: '#fff', minHeight: '100vh' }}>
-      <div
-        style={{
-          margin: '16px auto',
-          maxWidth: 1100,
-          background: '#151515',
-          borderRadius: 10,
-          boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
-          border: '1px solid #222',
-        }}
-      >
-        <div style={{ padding: '18px 20px', borderBottom: '1px solid #222', color: '#fff' }}>
-          <h2 style={{ margin: 0, color: '#fff' }}>Tennis — Live & Upcoming (AI Predictions)</h2>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 12, flexWrap: 'wrap' }}>
+    <div className="lt-wrap">
+      <div className="lt-card">
+        <div className="lt-head">
+          <h2 className="lt-title">Tennis — Live & Upcoming (AI Predictions)</h2>
+          <div className="lt-search">
             <input
+              className="lt-input"
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Αναζήτηση παίκτη ή διοργάνωσης…"
-              style={{
-                padding: '10px 12px',
-                minWidth: 280,
-                background: '#0f1113',
-                color: '#fff',
-                border: '1px solid #333',
-                borderRadius: 8,
-                outline: 'none',
-              }}
             />
-            {loading && <span style={{ color: '#cfd3d7' }}>Φόρτωση…</span>}
-            {err && <span style={{ color: '#ff8a80' }}>{err}</span>}
+            {loading && <span className="lt-status">Φόρτωση…</span>}
+            {err && <span className="lt-status" style={{ color: '#ff8a80' }}>{err}</span>}
           </div>
         </div>
 
-        <div style={{ padding: '6px 10px 16px 10px', color: '#fff' }}>
-          {filteredSorted.length === 0 ? (
-            <div style={{ color: '#cfd3d7', padding: 16 }}>Καμία εγγραφή.</div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', color: '#fff' }}>
-              <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '1px solid #222' }}>
-                  <th style={{ padding: '12px 10px', color: '#cfd3d7' }}>Ώρα</th>
-                  <th style={{ padding: '12px 10px', color: '#cfd3d7' }}>Αγώνας</th>
-                  <th style={{ padding: '12px 10px', color: '#cfd3d7' }}>Κατηγορία</th>
-                  <th style={{ padding: '12px 10px', color: '#cfd3d7' }}>AI Prediction</th>
-                  <th style={{ padding: '12px 10px', color: '#cfd3d7' }}>Κατάσταση</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredSorted.map((m) => {
-                  const { label, pick, confidence, source } = m.prediction;
-                  const { bg, fg } = labelColor(label);
-                  return (
-                    <tr key={m.id} style={{ borderBottom: '1px solid #1f1f1f' }}>
-                      <td style={{ padding: '12px 10px', whiteSpace: 'nowrap' }}>
-                        {m.date} {m.time}
-                      </td>
-                      <td style={{ padding: '12px 10px', fontWeight: 600, color: '#fff' }}>
-                        {m.name1} <span style={{ color: '#9aa0a6', fontWeight: 400 }}>vs</span> {m.name2}
-                      </td>
-                      <td style={{ padding: '12px 10px' }}>{m.categoryName}</td>
-                      <td style={{ padding: '12px 10px', minWidth: 320 }}>
-                        <div style={{ fontSize: 12, color: '#cfd3d7', marginBottom: 6 }}>
-                          source: {source} • set {m.setNum > 0 ? m.setNum : '—'}
-                          <span
-                            style={{
-                              background: bg,
-                              color: fg,
-                              borderRadius: 8,
-                              padding: '2px 8px',
-                              fontSize: 11,
-                              marginLeft: 8,
-                            }}
-                          >
-                            {label}
-                          </span>
-                        </div>
-                        {label === 'PENDING' ? (
-                          <div style={{ fontSize: 13, color: '#ffa726' }}>Pending…</div>
-                        ) : (
-                          <div style={{ fontSize: 13 }}>
-                            Pick: <strong>{pick || '—'}</strong>{' '}
-                            <span style={{ color: '#9aa0a6' }}>({confidence ?? 0}% confidence)</span>
+        <div className="lt-body">
+
+          <div className="lt-table-wrap">
+            {filteredSorted.length === 0 ? (
+              <div className="lt-empty">Καμία εγγραφή.</div>
+            ) : (
+              <table className="lt-table">
+                <thead>
+                  <tr>
+                    <th className="lt-th">Ώρα</th>
+                    <th className="lt-th">Αγώνας</th>
+                    <th className="lt-th">Κατηγορία</th>
+                    <th className="lt-th">AI Prediction</th>
+                    <th className="lt-th">Κατάσταση</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSorted.map((m) => {
+                    const { label, pick, confidence, source } = m.prediction;
+                    const cls = labelToClass(label);
+                    return (
+                      <tr key={m.id}>
+                        <td className="lt-td" style={{ whiteSpace: 'nowrap' }}>
+                          {m.date} {m.time}
+                        </td>
+                        <td className="lt-td">
+                          <span className="lt-row-title">{m.name1}</span>
+                          <span className="lt-vs">vs</span>
+                          <span className="lt-row-title">{m.name2}</span>
+                        </td>
+                        <td className="lt-td">{m.categoryName}</td>
+                        <td className="lt-td" style={{ minWidth: 320 }}>
+                          <div className="lt-sub">
+                            source: {source} • set {m.setNum > 0 ? m.setNum : '—'}
+                            <span className={`lt-badge ${cls}`}>{label}</span>
                           </div>
-                        )}
-                      </td>
-                      <td style={{ padding: '12px 10px' }}>{statusPill(m.status)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
+                          {label === 'PENDING' ? (
+                            <div className="lt-pending">Pending…</div>
+                          ) : (
+                            <div style={{ fontSize: 13 }}>
+                              Pick: <strong>{pick || '—'}</strong>{' '}
+                              <span style={{ color: '#9aa0a6' }}>({confidence ?? 0}% confidence)</span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="lt-td"><StatusPill status={m.status} /></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="lt-cards">
+            {filteredSorted.length === 0 ? (
+              <div className="lt-empty">Καμία εγγραφή.</div>
+            ) : (
+              filteredSorted.map((m) => {
+                const { label, pick, confidence, source } = m.prediction;
+                const cls = labelToClass(label);
+                return (
+                  <div className="lt-mcard" key={`m-${m.id}`}>
+                    <div className="lt-mcol">
+                      <div className="lt-mtop">
+                        <div className="lt-mtime">{m.date} {m.time}</div>
+                        <div className="lt-mstatus"><StatusPill status={m.status} /></div>
+                      </div>
+                      <div className="lt-mtitle">
+                        {m.name1} <span className="lt-vs">vs</span> {m.name2}
+                      </div>
+                      <div className="lt-mcat">{m.categoryName}</div>
+                      <div className="lt-mmeta">
+                        <span>source: {source}</span>
+                        <span>•</span>
+                        <span>set {m.setNum > 0 ? m.setNum : '—'}</span>
+                        <span className={`lt-badge ${cls}`}>{label}</span>
+                      </div>
+                      {label === 'PENDING' ? (
+                        <div className="lt-pending">Pending…</div>
+                      ) : (
+                        <div className="lt-mpred">
+                          Pick: <strong>{pick || '—'}</strong>{' '}
+                          <span style={{ color: '#9aa0a6' }}>({confidence ?? 0}% confidence)</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
         </div>
       </div>
     </div>
