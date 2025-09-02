@@ -1,112 +1,157 @@
 // src/components/TopBar.js
 import React from 'react';
 
-export default function TopBar({ liveCount, notificationsOn, onToggleNotifications }) {
+// Μικρά βοηθητικά "pill" κουμπάκια
+function Pill({ children, style }) {
   return (
     <div
       style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: 80,
-        background: '#000',
-        display: 'flex',
+        display: 'inline-flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 20px',
-        borderBottom: '1px solid #111',
-        zIndex: 1000,
+        gap: 8,
+        padding: '8px 14px',
+        background: '#121416',
+        border: '1px solid #24282d',
+        borderRadius: 22,
+        color: '#e6f6ee',
+        fontWeight: 700,
+        fontSize: 15,
+        boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.25)',
+        ...style,
       }}
     >
-      {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <img
-          src="/logo192.png"
-          alt="LiveBetIQ"
-          style={{ width: 64, height: 64, borderRadius: 12 }}
-        />
-      </div>
+      {children}
+    </div>
+  );
+}
 
-      {/* Live Counter */}
+export default function TopBar({
+  liveCount = 0,
+  notificationsOn = false,
+  onToggleNotifications = () => {},
+}) {
+  const SPACER_HEIGHT = 76; // κρατάμε reference και στο LiveTennis
+
+  return (
+    <div
+      style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 1000,
+        background: '#0b0d0f',
+        borderBottom: '1px solid #1a1e22',
+        boxShadow: '0 10px 24px rgba(0,0,0,0.45)',
+      }}
+    >
       <div
         style={{
-          background: '#111',
-          borderRadius: 30,
-          padding: '8px 18px',
+          // αυξήσαμε συνολικό ύψος μπάρας
+          minHeight: SPACER_HEIGHT,
           display: 'flex',
           alignItems: 'center',
-          gap: 10,
-          fontWeight: 600,
+          justifyContent: 'space-between',
+          gap: 12,
+          padding: '10px 14px',
+          maxWidth: 1100,
+          margin: '0 auto',
         }}
       >
-        <span
-          style={{
-            display: 'inline-block',
-            width: 10,
-            height: 10,
-            borderRadius: '50%',
-            background: liveCount > 0 ? '#00e676' : '#555',
-          }}
-        />
-        <span style={{ color: '#fff' }}>LIVE</span>
-        <span
-          style={{
-            background: '#00e676',
-            color: '#000',
-            borderRadius: 12,
-            padding: '2px 8px',
-            fontSize: 14,
-            minWidth: 24,
-            textAlign: 'center',
-          }}
-        >
-          {liveCount}
-        </span>
-      </div>
-
-      {/* Right icons */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-        {/* Bell icon toggle */}
+        {/* LOGO (μεγαλύτερο) */}
         <div
-          onClick={() => onToggleNotifications(!notificationsOn)}
           style={{
-            background: '#111',
-            borderRadius: 30,
-            padding: '8px 16px',
+            width: 64,
+            height: 64,
+            borderRadius: 14,
+            background: '#0f3d2b',
+            border: '1px solid #1b3f32',
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
-            cursor: 'pointer',
+            justifyContent: 'center',
+            overflow: 'hidden',
           }}
         >
-          <span style={{ fontSize: 18 }}>🔔</span>
-          <span
-            style={{
-              background: notificationsOn ? '#00e676' : '#555',
-              color: '#000',
-              borderRadius: 12,
-              padding: '2px 8px',
-              fontSize: 14,
-              fontWeight: 600,
-              minWidth: 36,
-              textAlign: 'center',
-            }}
-          >
-            {notificationsOn ? 'ON' : 'OFF'}
-          </span>
+          <img
+            src="/logo192.png"
+            alt="LiveBetIQ"
+            style={{ width: 46, height: 46, objectFit: 'contain' }}
+          />
         </div>
 
-        {/* Login icon */}
-        <div
-          style={{
-            background: '#111',
-            borderRadius: 30,
-            padding: '8px 16px',
-            cursor: 'pointer',
-          }}
-        >
-          <span style={{ fontSize: 20, color: '#9aa0a6' }}>👤</span>
+        {/* LIVE counter */}
+        <Pill>
+          <span
+            style={{
+              display: 'inline-block',
+              width: 10,
+              height: 10,
+              borderRadius: '50%',
+              background: '#1fdd73',
+              boxShadow: '0 0 6px rgba(31,221,115,.7)',
+            }}
+          />
+          <span style={{ letterSpacing: 0.5 }}>LIVE</span>
+          <div
+            style={{
+              marginLeft: 4,
+              minWidth: 40,
+              height: 28,
+              borderRadius: 14,
+              background: '#0fd35f',
+              color: '#062313',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 900,
+              fontSize: 16,
+              padding: '0 10px',
+            }}
+          >
+            {liveCount}
+          </div>
+        </Pill>
+
+        {/* Notifications bell + ON/OFF */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Pill>
+            <span style={{ fontSize: 20 }}>🔔</span>
+            <button
+              onClick={() => onToggleNotifications(!notificationsOn)}
+              style={{
+                cursor: 'pointer',
+                border: 'none',
+                background: notificationsOn ? '#0fd35f' : '#2a2f35',
+                color: notificationsOn ? '#062313' : '#c7d1dc',
+                minWidth: 64,
+                height: 32,
+                borderRadius: 16,
+                fontWeight: 900,
+                fontSize: 14,
+              }}
+              aria-label="Notifications toggle"
+            >
+              {notificationsOn ? 'ON' : 'OFF'}
+            </button>
+          </Pill>
+
+          {/* Login icon (placeholder) */}
+          <div
+            title="Login"
+            style={{
+              width: 60,
+              height: 44,
+              borderRadius: 22,
+              background: '#121416',
+              border: '1px solid #24282d',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#9fb6cc',
+              fontSize: 22,
+            }}
+          >
+            {/* απλό εικονίδιο χρήστη */}
+            <span style={{ transform: 'translateY(-1px)' }}>👤</span>
+          </div>
         </div>
       </div>
     </div>
