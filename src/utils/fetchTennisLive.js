@@ -1,13 +1,13 @@
 // src/utils/fetchTennisLive.js
-import axios from 'axios';
-
-export async function fetchTennisPredictions() {
+export default async function fetchTennisPredictions() {
   try {
-    const response = await axios.get('/api/predictions');
-    const data = response.data?.matches || [];
-    return Array.isArray(data) ? data : [];
-  } catch (error) {
-    console.error('❌ fetchTennisPredictions API error:', error.message);
+    const res = await fetch('/api/predictions', { method: 'GET' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const matches = Array.isArray(data?.matches) ? data.matches : [];
+    return matches;
+  } catch (err) {
+    console.error('fetchTennisPredictions error:', err?.message || err);
     return [];
   }
 }
