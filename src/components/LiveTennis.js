@@ -2,7 +2,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 
-// ------ helpers ------
 const parseDateTime = (d, t) => {
   const ds = String(d || '').trim();
   const ts = String(t || '').trim();
@@ -54,7 +53,6 @@ const labelColor = (tag) => {
   if (t === 'PENDING') return { bg: '#546e7a', fg: '#fff' };
   return { bg: '#546e7a', fg: '#fff' };
 };
-// ---------------------
 
 export default function LiveTennis({ onLiveCount = () => {} }) {
   const [rows, setRows] = useState([]);
@@ -65,7 +63,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     setLoading(true);
     setErr('');
     try {
-      // Δέχεται είτε array είτε {matches:[...]}
       const resp = await fetchTennisLive();
       const data = Array.isArray(resp) ? resp : resp?.matches || [];
       setRows(Array.isArray(data) ? data : []);
@@ -154,7 +151,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     });
   }, [normalized]);
 
-  // ενημέρωση μετρητή στο top bar
   useEffect(() => {
     const live = filteredSorted.filter((m) => !isUpcoming(m.status)).length;
     onLiveCount(live);
@@ -277,38 +273,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
           <Card key={m.id} m={m} />
         ))}
       </div>
-
-      {/* Μικρό empty state για να μη φαίνεται «μαύρη τρύπα» */}
-      {!loading && filteredSorted.length === 0 && (
-        <div
-          style={{
-            marginTop: 16,
-            color: '#cfd3d7',
-            background: '#141618',
-            border: '1px solid #222',
-            padding: 12,
-            borderRadius: 10,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <span>Δεν βρέθηκαν αγώνες (live ή upcoming).</span>
-          <button
-            onClick={load}
-            style={{
-              background: '#00cc66',
-              color: '#001d0e',
-              border: 'none',
-              padding: '8px 12px',
-              borderRadius: 8,
-              fontWeight: 800,
-            }}
-          >
-            Ανανέωση
-          </button>
-        </div>
-      )}
     </div>
   );
 }

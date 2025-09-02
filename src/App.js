@@ -6,14 +6,12 @@ import './App.css';
 
 export default function App() {
   const [liveCount, setLiveCount] = useState(0);
-  const [notificationsOn, setNotificationsOn] = useState(true);
 
   return (
     <div style={{ background: '#0b0b0b', minHeight: '100vh' }}>
       <TopBar
         liveCount={liveCount}
-        notificationsOn={notificationsOn}
-        onToggleNotifications={setNotificationsOn}
+        onBellClick={() => {}}
         onLoginClick={() => {}}
       />
       <LiveTennis onLiveCount={setLiveCount} />
