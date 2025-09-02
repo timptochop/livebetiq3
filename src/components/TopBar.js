@@ -1,156 +1,41 @@
 // src/components/TopBar.js
 import React from 'react';
 
-function Pill({ children, style }) {
-  return (
-    <div
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '8px 14px',
-        background: '#121416',
-        border: '1px solid #24282d',
-        borderRadius: 22,
-        color: '#e6f6ee',
-        fontWeight: 700,
-        fontSize: 15,
-        boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.25)',
-        ...style,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
 export default function TopBar({
   liveCount = 0,
   notificationsOn = false,
   onToggleNotifications = () => {},
 }) {
-  const SPACER_HEIGHT = 96; // ↑ κρατάμε sync με LiveTennis
-
   return (
-    <div
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 4000,
-        background: '#0b0d0f',
-        borderBottom: '1px solid #1a1e22',
-        boxShadow: '0 10px 24px rgba(0,0,0,0.45)',
-      }}
-    >
-      <div
-        style={{
-          minHeight: SPACER_HEIGHT,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          padding: '10px 14px',
-          maxWidth: 1100,
-          margin: '0 auto',
-        }}
-      >
-        {/* LOGO μεγαλύτερο */}
-        <div
-          style={{
-            width: 64,
-            height: 64,
-            borderRadius: 14,
-            background: '#0f3d2b',
-            border: '1px solid #1b3f32',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            overflow: 'hidden',
-          }}
-        >
-          <img
-            src="/logo192.png"
-            alt="LiveBetIQ"
-            style={{ width: 46, height: 46, objectFit: 'contain' }}
-          />
+    <header className="topbar" role="banner" aria-label="LiveBetIQ top bar">
+      <div className="tb-inner">
+        {/* Logo */}
+        <div className="tb-logo">
+          <img src="/logo192.png" alt="LiveBetIQ" />
         </div>
 
         {/* LIVE counter */}
-        <Pill>
-          <span
-            style={{
-              display: 'inline-block',
-              width: 10,
-              height: 10,
-              borderRadius: '50%',
-              background: '#1fdd73',
-              boxShadow: '0 0 6px rgba(31,221,115,.7)',
-            }}
-          />
-          <span style={{ letterSpacing: 0.5 }}>LIVE</span>
-          <div
-            style={{
-              marginLeft: 4,
-              minWidth: 40,
-              height: 28,
-              borderRadius: 14,
-              background: '#0fd35f',
-              color: '#062313',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 900,
-              fontSize: 16,
-              padding: '0 10px',
-            }}
-          >
-            {liveCount}
-          </div>
-        </Pill>
-
-        {/* Notifications ON/OFF */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Pill>
-            <span style={{ fontSize: 20 }}>🔔</span>
-            <button
-              onClick={() => onToggleNotifications(!notificationsOn)}
-              style={{
-                cursor: 'pointer',
-                border: 'none',
-                background: notificationsOn ? '#0fd35f' : '#2a2f35',
-                color: notificationsOn ? '#062313' : '#c7d1dc',
-                minWidth: 64,
-                height: 32,
-                borderRadius: 16,
-                fontWeight: 900,
-                fontSize: 14,
-              }}
-              aria-label="Notifications toggle"
-            >
-              {notificationsOn ? 'ON' : 'OFF'}
-            </button>
-          </Pill>
-
-          {/* Login icon (placeholder) */}
-          <div
-            title="Login"
-            style={{
-              width: 60,
-              height: 44,
-              borderRadius: 22,
-              background: '#121416',
-              border: '1px solid #24282d',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#9fb6cc',
-              fontSize: 22,
-            }}
-          >
-            👤
-          </div>
+        <div className="tb-badge">
+          <span className="dot" />
+          <span className="lbl">LIVE</span>
+          <span className="cnt">{liveCount}</span>
         </div>
+
+        {/* Notifications bell + ON/OFF */}
+        <button
+          className={`tb-toggle ${notificationsOn ? 'on' : 'off'}`}
+          onClick={() => onToggleNotifications(!notificationsOn)}
+          aria-label={`Notifications ${notificationsOn ? 'on' : 'off'}`}
+        >
+          <span className="bell" aria-hidden>🔔</span>
+          <span className="state">{notificationsOn ? 'ON' : 'OFF'}</span>
+        </button>
+
+        {/* Login icon (placeholder for later) */}
+        <button className="tb-icon" aria-label="Login">
+          <span className="avatar" />
+        </button>
       </div>
-    </div>
+    </header>
   );
 }
