@@ -1,113 +1,79 @@
 /* src/App.css */
-
-/* ====== Layout constants ====== */
 :root{
-  /* Double height compared to the earlier ~56px bar */
-  --topbar-h: 112px;     /* <— διπλάσιο ύψος */
-  --topbar-bg: #0c0f10cc;
+  /* σταθερό ύψος bar (κρατάμε μικρό – δεν το μεγαλώνουμε) */
+  --topbar-h: 64px;
+  --topbar-bg: #0c0f10f2;   /* αδιαφανές αρκετά ώστε να μη φαίνεται τίποτα από πίσω */
   --topbar-border: #1a1d20;
   --chip-bg: #101415;
   --chip-ring: #1f2427;
   --green: #1ad15a;
 }
 
-/* Reset/ambient */
 html, body, #root { height:100%; }
 body { margin:0; background:#0b0b0b; color:#fff; -webkit-font-smoothing:antialiased; }
 
-/* Content wrapper sits UNDER the sticky topbar */
-.page{
-  padding-top: var(--topbar-h);
-  /* extra safety so nothing slides under while scrolling bounce */
-  background: #0b0b0b;
-}
-
-/* ====== TopBar ====== */
+/* ====== FIX: Το header είναι fixed και το spacer κρατάει τον χώρο ====== */
 .topbar{
-  position: sticky;      /* stays under the iOS status bar while scrolling */
-  top: 0;
+  position: fixed;
+  top: 0; left: 0; right: 0;
   z-index: 1000;
   height: var(--topbar-h);
-  background: linear-gradient(180deg, #0c0f10, #0c0f10) padding-box;
+  background: var(--topbar-bg);
   border-bottom: 1px solid var(--topbar-border);
-  display: flex;
-  align-items: center;
+  display: flex; align-items: center;
+}
+.topbar-spacer{ height: var(--topbar-h); }  /* <— σπρώχνει περιεχόμενο προς τα κάτω */
+
+.page{
+  /* ΔΕΝ βάζουμε εδώ padding-top (το κάνει ο spacer) */
+  background:#0b0b0b;
 }
 
-/* inner row */
+/* ====== Το περιεχόμενο της μπάρας ====== */
 .tb-inner{
-  max-width: 1100px;
-  width: 100%;
-  margin: 0 auto;
-  padding: 12px 16px;            /* more breathing room because bar is taller */
-  display: grid;
-  grid-template-columns: auto 1fr auto auto;
-  grid-column-gap: 12px;
-  align-items: center;
+  max-width: 1100px; width:100%;
+  margin:0 auto; padding: 8px 12px;
+  display:grid; grid-template-columns: auto 1fr auto auto; gap:10px; align-items:center;
 }
 
-/* logo box (bigger to match new height) */
 .tb-logo{
-  width: 64px; height: 64px;       /* bigger logo */
-  background: #0e2a1a;
-  border-radius: 16px;
-  display:flex; align-items:center; justify-content:center;
+  width: 56px; height: 56px; border-radius: 14px;
+  background:#0e2a1a; display:flex; align-items:center; justify-content:center;
   box-shadow: inset 0 0 0 1px #12331f;
 }
-.tb-logo img{ width: 48px; height: 48px; display:block; }
+.tb-logo img{ width:42px; height:42px; display:block; }
 
-/* LIVE pill */
 .tb-badge{
-  justify-self: start;
-  height: 48px;
-  padding: 0 14px;
-  border-radius: 24px;
-  background: var(--chip-bg);
-  box-shadow: inset 0 0 0 1px var(--chip-ring);
+  justify-self:start; height:44px; padding:0 12px; border-radius:22px;
+  background:var(--chip-bg); box-shadow: inset 0 0 0 1px var(--chip-ring);
   display:flex; align-items:center; gap:10px;
 }
-.tb-badge .dot{
-  width: 10px; height: 10px; border-radius: 999px; background: var(--green);
-  box-shadow: 0 0 0 4px #0f1a12;
-}
+.tb-badge .dot{ width:10px; height:10px; border-radius:999px; background:var(--green); }
 .tb-badge .lbl{ font-weight:700; letter-spacing:.3px; }
 .tb-badge .cnt{
-  background:#0dbb4d; color:#05140b; font-weight:800;
-  min-width:40px; text-align:center; padding:6px 10px; border-radius:16px;
+  background:#0dbb4d; color:#05140b; font-weight:800; min-width:36px;
+  text-align:center; padding:6px 10px; border-radius:16px;
 }
 
-/* Notifications toggle */
 .tb-toggle{
-  height: 48px;
-  padding: 0 14px;
-  border-radius: 24px;
-  background: var(--chip-bg);
-  box-shadow: inset 0 0 0 1px var(--chip-ring);
-  color:#cbd5d9;
-  display:flex; align-items:center; gap:10px;
-  border:none; outline:none; cursor:pointer;
+  height:44px; padding:0 12px; border-radius:22px; background:var(--chip-bg);
+  box-shadow: inset 0 0 0 1px var(--chip-ring); color:#cbd5d9;
+  display:flex; align-items:center; gap:10px; border:none; cursor:pointer;
 }
-.tb-toggle .state{
-  font-weight:800;
-  background:#30363a; padding:6px 14px; border-radius:16px;
-}
+.tb-toggle .state{ font-weight:800; background:#30363a; padding:6px 12px; border-radius:16px; }
 .tb-toggle.on .state{ background:#16c05f; color:#052213; }
 
-/* Login icon button */
 .tb-icon{
-  height: 48px; width: 72px;
-  border-radius: 24px;
-  background: var(--chip-bg);
+  height:44px; width:68px; border-radius:22px; background:var(--chip-bg);
   box-shadow: inset 0 0 0 1px var(--chip-ring);
-  border:none; cursor:pointer;
-  display:flex; align-items:center; justify-content:center;
+  border:none; cursor:pointer; display:flex; align-items:center; justify-content:center;
 }
 .tb-icon .avatar{
-  width: 22px; height: 22px; border-radius:999px;
+  width:22px; height:22px; border-radius:999px;
   background: linear-gradient(#89a7c7, #38506b);
   box-shadow: inset 0 -2px 4px #284057, 0 0 0 2px #1a2230;
 }
 
-/* Smaller typography overall inside cards (helps density) */
-.card h3{ font-size: 18px; }
-.card .meta{ font-size: 13px; }
+/* Λίγο μικρότερα fonts στα cards για καλύτερη πυκνότητα */
+.card h3{ font-size:18px; }
+.card .meta{ font-size:13px; }
