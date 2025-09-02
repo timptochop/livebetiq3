@@ -1,3 +1,4 @@
+/* src/components/LiveTennis.css */
 .lt-page { padding:16px; background:#0b0b0b; color:#fff; min-height:100vh; }
 .lt-card {
   margin:16px auto; max-width:1100px; background:#151515; border-radius:12px;
@@ -34,7 +35,8 @@
 .badgeRisky{ background:#ffb300; color:#000; }    /* RISKY κίτρινο */
 .badgeAvoid{ background:#c62828; color:#fff; }    /* AVOID κόκκινο */
 .badgeSoon{ background:#546e7a; color:#fff; }     /* STARTS SOON γκρι */
-.badgeIdle{ background:#6d4c86; color:#fff; }     /* Σετ (μοβ) */
+.badgeIdle{ background:#6d4c86; color:#fff; }     /* Live χωρίς AI → SET N (μοβ) */
+.badgeHidden{ display:none; }
 
 @media (max-width:560px){
   .names{ font-size:15px; } .meta{ font-size:12px; }
