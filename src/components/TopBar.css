@@ -1,145 +1,32 @@
-/* TopBar.css — sticky, mobile-safe, με iOS fix */
-
-:root {
-  --topbar-height: 68px;
-  --topbar-bg: #1a1a1a;
-  --topbar-fg: #ffffff;
-  --divider: #2a2a2a;
+.tb-wrap{
+  position:sticky; top:0; z-index:10;
+  display:flex; align-items:center; justify-content:space-between;
+  gap:12px; padding:10px 12px; background:#0b0b0b; border-bottom:1px solid #1f1f1f;
+}
+.tb-left{ display:flex; align-items:center; gap:8px; }
+.tb-logo{
+  width:34px; height:34px; border-radius:8px; background:#16a34a; color:#fff;
+  display:flex; align-items:center; justify-content:center; font-weight:800;
 }
 
-/* container always sticks */
-.topbar-container {
-  position: sticky;
-  top: 0;
-  z-index: 1000;
-  width: 100%;
-  background-color: var(--topbar-bg);
-  /* τα εφέ είναι ΟΚ σε desktop/Android */
-  backdrop-filter: saturate(130%) blur(4px);
-  -webkit-backdrop-filter: saturate(130%) blur(4px);
-
-  height: var(--topbar-height);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  border-bottom: 1px solid var(--divider);
+.tb-center{ flex:1; display:flex; justify-content:center; }
+.tb-pill{
+  display:flex; align-items:center; gap:8px;
+  padding:6px 12px; border-radius:999px; border:1px solid #234;
+  background:#122; color:#9fe7c3; font-weight:800;
 }
+.tb-dot{ width:8px; height:8px; border-radius:50%; background:#16e06e; box-shadow:0 0 8px rgba(22,224,110,.8); }
+.tb-live{ letter-spacing:.5px; }
+.tb-num{ background:#0b3; color:#fff; padding:2px 8px; border-radius:999px; }
 
-/* ---- iOS Safari sticky + backdrop-filter bug fix ----
-   Σε iOS απενεργοποιούμε το backdrop-filter για να μη «μένει» δεύτερη λωρίδα. */
-@supports (-webkit-touch-callout: none) {
-  .topbar-container {
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    background-color: #121212 !important;
-    transform: translateZ(0);   /* νέο layer */
-    contain: paint;             /* απομόνωση repaint */
-  }
+.tb-right{ display:flex; align-items:center; gap:8px; }
+.tb-icon{
+  display:flex; align-items:center; gap:8px;
+  background:#151515; color:#e5e7eb; border:1px solid #262626; border-radius:10px;
+  padding:8px 10px; cursor:pointer;
 }
-
-.topbar-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: var(--topbar-height);
-  padding: 0 12px;
-  box-sizing: border-box;
-}
-
-/* brand/logo left */
-.topbar-logo {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  object-fit: cover;
-}
-
-/* digital clock */
-.topbar-time {
-  margin-left: 8px;
-  color: var(--topbar-fg);
-  font-size: 14px;
-  letter-spacing: 0.2px;
-  opacity: 0.95;
-  flex: 1; /* pushes icons to right */
-}
-
-/* icons area on the right with 44px tap targets */
-.topbar-icons {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.topbar-icon {
-  color: var(--topbar-fg);
-  font-size: 20px;
-  width: 44px;   /* touch target */
-  height: 44px;  /* touch target */
-  display: grid;
-  place-items: center;
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-.topbar-icon:active {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-/* optional divider (kept for compatibility) */
-.topbar-divider { display: none; }
-
-/* slide-in settings panel (non-fullscreen) */
-.settings-panel {
-  position: fixed;
-  right: 0;
-  top: var(--topbar-height);
-  width: min(420px, 92vw);
-  height: calc(100vh - var(--topbar-height));
-  background: #0e0e0e;
-  border-left: 1px solid #2a2a2a;
-  box-shadow: -12px 0 24px rgba(0, 0, 0, 0.35);
-  padding: 14px 14px 18px 14px;
-  z-index: 1200;
-  overflow-y: auto;
-}
-
-.setting-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-  color: #e6e6e6;
-  font-size: 14px;
-}
-
-.setting-row input[type="range"] { flex: 1; }
-
-.setting-row select {
-  flex: 1;
-  background: #141414;
-  border: 1px solid #2a2a2a;
-  color: #e6e6e6;
-  padding: 6px 8px;
-  border-radius: 6px;
-}
-
-.setting-row.checkbox { gap: 8px; }
-
-.close-btn {
-  width: 100%;
-  padding: 10px 12px;
-  border: none;
-  border-radius: 8px;
-  background: #e0e0e0;
-  color: #000;
-  font-weight: 600;
-  margin-top: 8px;
-  cursor: pointer;
-}
-
-@media (max-width: 420px) {
-  :root { --topbar-height: 66px; }
-  .topbar-time { font-size: 13px; }
-  .topbar-icon { width: 42px; height: 42px; }
+.tb-icon:hover{ background:#1b1b1b; }
+.tb-toggle{
+  font-size:12px; font-weight:800; letter-spacing:.4px;
+  padding:2px 6px; border-radius:999px; background:#243; color:#a7f3d0;
 }
