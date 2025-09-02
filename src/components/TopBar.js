@@ -6,26 +6,27 @@ export default function TopBar({
   notificationsOn = false,
   onToggleNotifications = () => {},
 }) {
-  const H = 72; // ύψος μπάρας (πρέπει να ταιριάζει με το spacer)
+  // Ύψος οπτικού τμήματος της μπάρας (χωρίς το safe-area)
+  const BAR_H = 64;
+  const safeTop = "env(safe-area-inset-top, 0px)";
+
   return (
     <header
       style={{
-        position: "fixed",
+        position: "sticky",
         top: 0,
-        left: 0,
-        right: 0,
-        height: H,
         zIndex: 1000,
+        // Συνολικό ύψος = safe-area-top + bar height
+        height: `calc(${safeTop} + ${BAR_H}px)`,
+        paddingTop: `calc(${safeTop})`,
         background: "rgba(12,15,16,0.98)",
         borderBottom: "1px solid #1a1d20",
-        display: "flex",
-        alignItems: "center",
+        backdropFilter: "blur(6px)",
       }}
       aria-label="LiveBetIQ top bar"
     >
       <div
         style={{
-          width: "100%",
           maxWidth: 1100,
           margin: "0 auto",
           padding: "8px 12px",
@@ -33,6 +34,7 @@ export default function TopBar({
           gridTemplateColumns: "auto 1fr auto auto",
           gap: 10,
           alignItems: "center",
+          height: BAR_H,
         }}
       >
         {/* Logo */}
@@ -111,9 +113,7 @@ export default function TopBar({
             cursor: "pointer",
           }}
         >
-          <span aria-hidden style={{ fontSize: 18, lineHeight: 1 }}>
-            🔔
-          </span>
+          <span aria-hidden style={{ fontSize: 18, lineHeight: 1 }}>🔔</span>
           <span
             style={{
               fontWeight: 800,
@@ -148,10 +148,8 @@ export default function TopBar({
               width: 22,
               height: 22,
               borderRadius: 999,
-              background:
-                "linear-gradient(#89a7c7, #38506b)",
-              boxShadow:
-                "inset 0 -2px 4px #284057, 0 0 0 2px #1a2230",
+              background: "linear-gradient(#89a7c7, #38506b)",
+              boxShadow: "inset 0 -2px 4px #284057, 0 0 0 2px #1a2230",
               display: "inline-block",
             }}
           />
