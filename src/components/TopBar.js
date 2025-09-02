@@ -1,7 +1,6 @@
 // src/components/TopBar.js
 import React from 'react';
 
-// Μικρά βοηθητικά "pill" κουμπάκια
 function Pill({ children, style }) {
   return (
     <div
@@ -30,14 +29,14 @@ export default function TopBar({
   notificationsOn = false,
   onToggleNotifications = () => {},
 }) {
-  const SPACER_HEIGHT = 76; // κρατάμε reference και στο LiveTennis
+  const SPACER_HEIGHT = 96; // ↑ κρατάμε sync με LiveTennis
 
   return (
     <div
       style={{
         position: 'sticky',
         top: 0,
-        zIndex: 1000,
+        zIndex: 4000,
         background: '#0b0d0f',
         borderBottom: '1px solid #1a1e22',
         boxShadow: '0 10px 24px rgba(0,0,0,0.45)',
@@ -45,7 +44,6 @@ export default function TopBar({
     >
       <div
         style={{
-          // αυξήσαμε συνολικό ύψος μπάρας
           minHeight: SPACER_HEIGHT,
           display: 'flex',
           alignItems: 'center',
@@ -56,7 +54,7 @@ export default function TopBar({
           margin: '0 auto',
         }}
       >
-        {/* LOGO (μεγαλύτερο) */}
+        {/* LOGO μεγαλύτερο */}
         <div
           style={{
             width: 64,
@@ -110,7 +108,7 @@ export default function TopBar({
           </div>
         </Pill>
 
-        {/* Notifications bell + ON/OFF */}
+        {/* Notifications ON/OFF */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Pill>
             <span style={{ fontSize: 20 }}>🔔</span>
@@ -149,8 +147,7 @@ export default function TopBar({
               fontSize: 22,
             }}
           >
-            {/* απλό εικονίδιο χρήστη */}
-            <span style={{ transform: 'translateY(-1px)' }}>👤</span>
+            👤
           </div>
         </div>
       </div>
