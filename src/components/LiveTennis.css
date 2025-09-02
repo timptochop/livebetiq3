@@ -1,105 +1,133 @@
 /* src/components/LiveTennis.css */
-.lt-root {
-  min-height: 100vh;
+.lt-page {
+  padding: 16px;
   background: #0b0b0b;
   color: #fff;
-  padding: 12px;
+  min-height: 100vh;
 }
-.lt-shell {
-  max-width: 900px;
-  margin: 0 auto;
-}
-.lt-top {
+
+.lt-card {
+  margin: 16px auto;
+  max-width: 1100px;
   background: #151515;
-  border: 1px solid #222;
   border-radius: 12px;
-  padding: 14px 14px 10px 14px;
-  margin-bottom: 10px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+  border: 1px solid #222;
 }
-.lt-title {
-  margin: 0;
+
+.lt-header {
+  padding: 18px 20px;
+  border-bottom: 1px solid #222;
+}
+.lt-header h2 {
+  margin: 0 0 12px 0;
+  color: #fff;
   font-size: 20px;
 }
-.lt-controls {
+
+.lt-searchrow {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
-  margin-top: 10px;
+  flex-wrap: wrap;
 }
-.lt-search {
-  flex: 1;
-  min-width: 180px;
+.lt-searchrow input {
   padding: 10px 12px;
+  min-width: 280px;
   background: #0f1113;
   color: #fff;
   border: 1px solid #333;
-  border-radius: 10px;
+  border-radius: 8px;
   outline: none;
 }
-.lt-hint { color: #cfd3d7; font-size: 13px; }
-.lt-err  { color: #ff8a80; font-size: 13px; }
+.muted { color: #cfd3d7; }
+.error { color: #ff8a80; }
 
-.lt-list { display: flex; flex-direction: column; gap: 12px; }
-.lt-empty { color: #cfd3d7; background:#151515; border:1px solid #222; border-radius:12px; padding:16px; }
+.lt-list { padding: 10px; }
+.empty {
+  color: #cfd3d7;
+  padding: 16px;
+}
 
-/* Card */
-.card {
+/* row */
+.matchRow {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
   gap: 12px;
-  padding: 14px;
-  background: #1a1a1a;
+  padding: 12px;
+  background: #1a1b1c;
   border: 1px solid #222;
   border-radius: 16px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  margin: 10px 0;
 }
-.left { display:flex; gap:12px; align-items:center; min-width:0; }
-.logo {
-  width: 32px; height: 32px; min-width: 32px;
-  border-radius: 8px;
-  background: #0e7a5f;
-  display: grid; place-items: center;
-  font-weight: 800; letter-spacing: 0.5px;
+
+/* status dot only (no logo) */
+.statusDot {
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(255,255,255,0.03) inset;
 }
-.names { min-width: 0; }
-.players {
+
+/* main body */
+.matchBody {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.names {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
   font-size: 16px;
-  line-height: 1.2;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-width: 56vw;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.25;
+  flex-wrap: wrap;
 }
-.vs { color:#9aa0a6; font-weight: 400; margin: 0 4px; }
-.meta { color:#9aa0a6; font-size:12px; margin-top:4px; }
+.pname {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.vs {
+  color: #9aa0a6;
+  font-weight: 500;
+}
+.meta {
+  color: #cfd3d7;
+  font-size: 13px;
+}
 
-.right { display:flex; flex-direction: column; align-items:flex-end; gap:8px; }
-.pick { font-size: 13px; }
-.conf { color:#9aa0a6; }
-
-/* badges */
+/* right badge */
 .badge {
-  padding: 6px 12px;
-  border-radius: 20px;
+  padding: 8px 12px;
+  border-radius: 18px;
   font-weight: 700;
   font-size: 12px;
-  letter-spacing: 0.3px;
-  border: 1px solid rgba(255,255,255,0.08);
+  letter-spacing: 0.4px;
+  white-space: nowrap;
 }
-.badge.safe   { background:#1a7f37; color:#fff; }
-.badge.risky  { background:#ffb300; color:#000; }
-.badge.avoid  { background:#c62828; color:#fff; }
-.badge.pending{ background:#6c757d; color:#fff; }
-
-/* status dot */
-.dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
-.dot.live { background:#10d876; }
-.dot.upcoming { background:#3fa7ff; }
-.dot.finished { background:#8e24aa; }
-.dot.idle { background:#555; }
+.badgeSoon {
+  background: #5f6b75;
+  color: #eaeff4;
+}
+.badgeLive {
+  background: #2f8d5b;
+  color: #ffffff;
+}
+.badgeDone {
+  background: #6d4c86;
+  color: #ffffff;
+}
 
 /* mobile tweaks */
-@media (max-width: 520px){
-  .card { padding: 12px; border-radius: 14px; }
-  .players { max-width: 52vw; font-size: 15px; }
-  .badge { padding: 6px 10px; font-size: 11px; }
-  .right { align-items: flex-start; }
+@media (max-width: 560px) {
+  .matchRow { padding: 10px; border-radius: 14px; }
+  .names { font-size: 15px; }
+  .meta { font-size: 12px; }
+  .badge { font-size: 11px; padding: 7px 10px; }
 }
