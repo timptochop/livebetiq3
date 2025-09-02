@@ -8,12 +8,13 @@ export default function TopBar({ liveCount, notificationsOn, onToggleNotificatio
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '10px 14px',
+        padding: '10px 16px',
         background: '#0b0b0b',
         borderBottom: '1px solid #1c1c1c',
         position: 'sticky',
         top: 0,
-        zIndex: 1000,
+        zIndex: 2000,
+        height: 64, // σταθερό ύψος για να μην “μπαίνει” από πίσω το περιεχόμενο
       }}
     >
       {/* Logo */}
@@ -21,9 +22,9 @@ export default function TopBar({ liveCount, notificationsOn, onToggleNotificatio
         src="/logo192.png"
         alt="LiveBet IQ"
         style={{
-          height: 36,
-          width: 36,
-          borderRadius: 8,
+          height: 48,
+          width: 48,
+          borderRadius: 10,
           objectFit: 'cover',
         }}
       />
@@ -34,30 +35,30 @@ export default function TopBar({ liveCount, notificationsOn, onToggleNotificatio
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          padding: '6px 14px',
-          borderRadius: 20,
+          padding: '8px 16px',
+          borderRadius: 24,
           background: '#111',
           border: '1px solid #222',
         }}
       >
         <span
           style={{
-            width: 10,
-            height: 10,
+            width: 12,
+            height: 12,
             borderRadius: '50%',
             background: liveCount > 0 ? '#24d06a' : '#5f6b75',
             boxShadow: liveCount > 0 ? '0 0 0 2px rgba(36,208,106,0.25)' : 'none',
           }}
         />
-        <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>LIVE</span>
+        <span style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>LIVE</span>
         <span
           style={{
             background: '#24d06a',
             color: '#fff',
-            borderRadius: 12,
-            padding: '2px 10px',
+            borderRadius: 14,
+            padding: '2px 12px',
             fontWeight: 700,
-            fontSize: 14,
+            fontSize: 15,
           }}
         >
           {liveCount}
@@ -65,7 +66,7 @@ export default function TopBar({ liveCount, notificationsOn, onToggleNotificatio
       </div>
 
       {/* Right side: Notifications + Login */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         {/* Notifications toggle */}
         <button
           onClick={() => onToggleNotifications(!notificationsOn)}
@@ -73,14 +74,14 @@ export default function TopBar({ liveCount, notificationsOn, onToggleNotificatio
             display: 'flex',
             alignItems: 'center',
             gap: 6,
-            padding: '6px 14px',
+            padding: '8px 14px',
             borderRadius: 20,
             border: '1px solid #222',
             background: '#111',
             cursor: 'pointer',
           }}
         >
-          <span role="img" aria-label="bell" style={{ fontSize: 16 }}>
+          <span role="img" aria-label="bell" style={{ fontSize: 18 }}>
             🔔
           </span>
           <span
@@ -97,9 +98,9 @@ export default function TopBar({ liveCount, notificationsOn, onToggleNotificatio
         {/* Login icon */}
         <div
           style={{
-            width: 32,
-            height: 32,
-            borderRadius: 16,
+            width: 36,
+            height: 36,
+            borderRadius: 18,
             background: '#222',
             display: 'flex',
             alignItems: 'center',
@@ -107,7 +108,7 @@ export default function TopBar({ liveCount, notificationsOn, onToggleNotificatio
             cursor: 'pointer',
           }}
         >
-          <span role="img" aria-label="user" style={{ fontSize: 18, color: '#9aa0a6' }}>
+          <span role="img" aria-label="user" style={{ fontSize: 20, color: '#9aa0a6' }}>
             👤
           </span>
         </div>
