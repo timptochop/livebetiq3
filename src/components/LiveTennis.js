@@ -1,8 +1,9 @@
+// src/components/LiveTennis.js
 import React, { useEffect, useMemo, useState } from 'react';
 import TopBar from './TopBar';
 import fetchTennisLive from '../utils/fetchTennisLive';
 
-// ---- helpers ----
+// helpers
 function parseDateTime(d, t) {
   const ds = String(d || '').trim();
   const ts = String(t || '').trim();
@@ -17,10 +18,8 @@ function parseDateTime(d, t) {
   const dt = new Date(yyyy || 1970, (mm || 1) - 1, dd || 1, HH, MM, 0, 0);
   return isNaN(dt.getTime()) ? null : dt;
 }
-function isUpcoming(s) {
-  return String(s || '').toLowerCase() === 'not started';
-}
-function isFinishedLike(s) {
+const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
+const isFinishedLike = (s) => {
   const x = String(s || '').toLowerCase();
   return (
     x === 'finished' ||
@@ -30,21 +29,14 @@ function isFinishedLike(s) {
     x === 'postponed' ||
     x === 'walk over'
   );
-}
-function isLive(s) {
-  if (!s) return false;
-  const low = String(s).toLowerCase();
-  if (isFinishedLike(low)) return false;
-  if (isUpcoming(low)) return false;
-  return true;
-}
-function num(v) {
+};
+const num = (v) => {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
   if (!s) return null;
   const x = parseInt(s.split(/[.:]/)[0], 10);
   return Number.isFinite(x) ? x : null;
-}
+};
 function currentSetFromScores(players) {
   const p = Array.isArray(players) ? players : [];
   const a = p[0] || {};
@@ -52,9 +44,7 @@ function currentSetFromScores(players) {
   const sA = [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)];
   const sB = [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)];
   let k = 0;
-  for (let i = 0; i < 5; i++) {
-    if (sA[i] !== null || sB[i] !== null) k = i + 1;
-  }
+  for (let i = 0; i < 5; i++) if (sA[i] !== null || sB[i] !== null) k = i + 1;
   return k;
 }
 function labelColor(tag) {
@@ -65,20 +55,21 @@ function labelColor(tag) {
   if (t === 'PENDING') return { bg: '#546e7a', fg: '#fff' };
   return { bg: '#546e7a', fg: '#fff' };
 }
-const AI_LABELS = new Set(['SAFE', 'RISKY', 'AVOID']);
 
 export default function LiveTennis() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
-  const [notificationsOn, setNotificationsOn] = useState(true);
+  const [liveCount, setLiveCount] = useState(0);
+  const [notificationsOn, setNotificationsOn] = useState(false); // μόνο για UI indicator
 
   const load = async () => {
     setLoading(true);
     setErr('');
     try {
-      const matches = await fetchTennisLive();
-      setRows(Array.isArray(matches) ? matches : []);
+      const matches = await fetchTennisLive(); // περιμένει {matches: [...] } ή [ ... ]
+      const data = Array.isArray(matches) ? matches : matches?.matches || [];
+      setRows(Array.isArray(data) ? data : []);
     } catch (e) {
       setErr(e.message || 'Failed to load');
       setRows([]);
@@ -113,7 +104,6 @@ export default function LiveTennis() {
       } else if (typeof pr.pick === 'string') {
         pickName = pr.pick;
       }
-      const label = (pr.label || 'PENDING').toUpperCase();
       return {
         id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
         date,
@@ -124,11 +114,8 @@ export default function LiveTennis() {
         categoryName: m.categoryName || m['@category'] || m.category || '',
         name1,
         name2,
-        isLive: isLive(status),
-        isUpcoming: isUpcoming(status),
-        isFinished: isFinishedLike(status),
         prediction: {
-          label,
+          label: (pr.label || 'PENDING').toUpperCase(),
           pick: pickName,
           confidence: pr.confidence ?? 0,
           source: pr.source || 'fallback',
@@ -138,21 +125,28 @@ export default function LiveTennis() {
     });
   }, [rows]);
 
-  const liveCount = useMemo(() => normalized.filter((m) => m.isLive).length, [normalized]);
-
-  // ταξινόμηση: live with AI -> live pending -> upcoming (χωρίς AI φίλτρο πλέον)
+  // Ταξινόμηση: Live με AI (SAFE/RISKY/AVOID) -> Live pending -> Upcoming; Finished φεύγουν
   const filteredSorted = useMemo(() => {
-    let keep = normalized.filter((m) => !m.isFinished);
-
-    const rank = (m) => {
-      if (m.isLive && AI_LABELS.has(m.prediction.label)) return 0;
-      if (m.isLive) return 1;
-      return 2;
+    const keep = normalized.filter((m) => !isFinishedLike(m.status));
+    const scoreRank = (m) => {
+      const live = !isUpcoming(m.status);
+      const hasAI = m.prediction && m.prediction.label !== 'PENDING';
+      if (live && hasAI) return 0;      // Live + AI
+      if (live && !hasAI) return 1;     // Live pending
+      return 2;                         // Upcoming
     };
-
+    const labelPriority = (lbl) => {
+      const t = String(lbl || '').toUpperCase();
+      if (t === 'SAFE') return 0;
+      if (t === 'RISKY') return 1;
+      if (t === 'AVOID') return 2;
+      return 3; // PENDING / other
+    };
     return [...keep].sort((a, b) => {
-      const r = rank(a) - rank(b);
+      const r = scoreRank(a) - scoreRank(b);
       if (r !== 0) return r;
+      const p = labelPriority(a.prediction.label) - labelPriority(b.prediction.label);
+      if (p !== 0) return p;
       const s = (b.setNum || 0) - (a.setNum || 0);
       if (s !== 0) return s;
       const ta = a.dt ? a.dt.getTime() : Number.POSITIVE_INFINITY;
@@ -161,114 +155,147 @@ export default function LiveTennis() {
     });
   }, [normalized]);
 
-  const chip = (text, bg = '#546e7a', fg = '#fff') => (
-    <span
-      style={{
-        background: bg,
-        color: fg,
-        borderRadius: 999,
-        padding: '6px 10px',
-        fontSize: 12,
-        fontWeight: 800,
-        boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
-      }}
-    >
-      {text}
-    </span>
-  );
+  // ενημέρωση live counter
+  useEffect(() => {
+    const live = filteredSorted.filter((m) => !isUpcoming(m.status)).length;
+    setLiveCount(live);
+  }, [filteredSorted]);
+
+  const Card = ({ m }) => {
+    const { label, pick, confidence, source } = m.prediction;
+    const { bg, fg } = labelColor(label);
+    const live = !isUpcoming(m.status);
+
+    // badge δεξιά: αν το ματς έχει ξεκινήσει, δείξε "SET X" με μοβ· αλλιώς "STARTS SOON" γκρι
+    const badge = live ? (
+      <div
+        style={{
+          background: '#6f42c1',
+          color: '#fff',
+          borderRadius: 14,
+          padding: '6px 10px',
+          fontWeight: 700,
+          fontSize: 12,
+          minWidth: 64,
+          textAlign: 'center',
+        }}
+      >
+        {`SET ${m.setNum || 1}`}
+      </div>
+    ) : (
+      <div
+        style={{
+          background: '#525b63',
+          color: '#e6edf3',
+          borderRadius: 14,
+          padding: '6px 10px',
+          fontWeight: 700,
+          fontSize: 12,
+          minWidth: 92,
+          textAlign: 'center',
+        }}
+      >
+        STARTS SOON
+      </div>
+    );
+
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          padding: 14,
+          background: '#17191b',
+          border: '1px solid #222',
+          borderRadius: 14,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+        }}
+      >
+        {/* live dot */}
+        <span
+          style={{
+            width: 10,
+            height: 10,
+            borderRadius: 999,
+            background: live ? '#2ee66b' : '#ff5757',
+          }}
+        />
+
+        {/* match info */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ color: '#fff', fontWeight: 800, fontSize: 16 }}>
+            {m.name1} <span style={{ color: '#9aa0a6', fontWeight: 400 }}>vs</span> {m.name2}
+          </div>
+          <div style={{ color: '#c9d1d9', fontSize: 12, marginTop: 4 }}>
+            {m.date} {m.time} • {m.categoryName}
+          </div>
+
+          {/* prediction pill */}
+          {label !== 'PENDING' && (
+            <div style={{ marginTop: 8, display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+              <span
+                style={{
+                  background: bg,
+                  color: fg,
+                  borderRadius: 999,
+                  padding: '4px 10px',
+                  fontWeight: 900,
+                  letterSpacing: 0.5,
+                  fontSize: 12,
+                }}
+              >
+                {label}
+              </span>
+              <span style={{ color: '#9aa0a6', fontSize: 12 }}>
+                Pick: <strong style={{ color: '#fff' }}>{pick || '—'}</strong> • {confidence ?? 0}%
+              </span>
+              <span style={{ color: '#667' }}>|</span>
+              <span style={{ color: '#8fa3ad', fontSize: 11 }}>src: {source}</span>
+            </div>
+          )}
+        </div>
+
+        {/* right badge */}
+        {badge}
+      </div>
+    );
+  };
 
   return (
     <div style={{ background: '#0b0b0b', color: '#fff', minHeight: '100vh' }}>
       <TopBar
         liveCount={liveCount}
         notificationsOn={notificationsOn}
-        setNotificationsOn={setNotificationsOn}
-        onSettingsClick={() => {}}
-        onLoginClick={() => {}}
-        logoSrc="/logo.png"
+        onToggleNotifications={setNotificationsOn}
       />
 
-      <div style={{ padding: 12, maxWidth: 1100, margin: '0 auto' }}>
-        {/* Καμία αναζήτηση, κανένα empty-state */}
-        {!loading && err && (
+      {/* body */}
+      <div style={{ padding: 12 }}>
+        {err && (
           <div
             style={{
-              margin: '12px 0',
-              background: '#2b1c1c',
-              border: '1px solid #4d2222',
-              borderRadius: 10,
-              padding: 12,
+              marginBottom: 12,
               color: '#ff8a80',
+              background: '#2a1111',
+              border: '1px solid #4a1a1a',
+              padding: 10,
+              borderRadius: 8,
             }}
           >
             {err}
           </div>
         )}
 
-        {/* Κάρτες */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {filteredSorted.map((m) => {
-            const { label } = m.prediction;
-            const setBadge =
-              m.isLive && m.setNum > 0
-                ? chip(`SET ${m.setNum}`, '#2e7d32')
-                : m.isUpcoming
-                ? chip('STARTS SOON', '#5c6770')
-                : null;
+        {loading && (
+          <div style={{ color: '#cfd3d7', padding: 12 }}>Φόρτωση…</div>
+        )}
 
-            const dotColor = m.isLive ? '#1db954' : '#e53935';
-            const lbl = label.toUpperCase();
-            const aiPill =
-              lbl === 'SAFE' || lbl === 'RISKY' || lbl === 'AVOID'
-                ? chip(lbl, labelColor(lbl).bg, labelColor(lbl).fg)
-                : null;
-
-            return (
-              <div
-                key={m.id}
-                style={{
-                  background: '#151515',
-                  border: '1px solid #222',
-                  borderRadius: 18,
-                  padding: 14,
-                  boxShadow: '0 8px 22px rgba(0,0,0,0.35)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                }}
-              >
-                <span
-                  style={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: 999,
-                    background: dotColor,
-                    display: 'inline-block',
-                  }}
-                />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontWeight: 800,
-                      letterSpacing: 0.2,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {m.name1} <span style={{ opacity: 0.6, fontWeight: 600 }}>vs</span> {m.name2}
-                  </div>
-                  <div style={{ marginTop: 4, fontSize: 13, color: '#cfd3d7' }}>
-                    {m.date} {m.time} • {m.categoryName}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {setBadge}
-                  {aiPill}
-                </div>
-              </div>
-            );
-          })}
+        {/* λίστα */}
+        <div style={{ display: 'grid', gap: 12 }}>
+          {filteredSorted.map((m) => (
+            <Card key={m.id} m={m} />
+          ))}
         </div>
       </div>
     </div>
