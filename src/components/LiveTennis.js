@@ -3,7 +3,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import './LiveTennis.css';
 
-// ---------- helpers ----------
 function parseDateTime(d, t) {
   const ds = String(d || '').trim();
   const ts = String(t || '').trim();
@@ -42,7 +41,6 @@ function currentSetFromScores(players) {
   return k;
 }
 
-// ---------- component ----------
 export default function LiveTennis() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -80,32 +78,27 @@ export default function LiveTennis() {
       const status = m.status || m['@status'] || '';
       const setNum = currentSetFromScores(players) || 0;
 
-      // συλλέγουμε ελαφριά info πρόβλεψης (αν υπάρχει)
       const pr = m.prediction || {};
       const label = String((pr.label || 'PENDING')).toUpperCase();
-      const aiActive = label !== 'PENDING'; // ενεργό όταν δεν είναι PENDING
 
       return {
         id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
         date, time, dt, status, setNum,
         categoryName: m.categoryName || m['@category'] || m.category || '',
-        name1, name2, aiActive
+        name1, name2,
+        label
       };
     });
   }, [rows]);
 
   const filteredSorted = useMemo(() => {
     const term = q.trim().toLowerCase();
-
-    // 1) ΦΙΛΤΡΟ: αφαιρούμε τα finished-like
     const keep = normalized.filter((m) => {
       if (isFinishedLike(m.status)) return false;
       if (!term) return true;
       const blob = `${m.name1} ${m.name2} ${m.categoryName}`.toLowerCase();
       return blob.includes(term);
     });
-
-    // 2) ΤΑΞΙΝΟΜΗΣΗ: live πρώτα, μετά set desc, μετά ώρα asc
     return [...keep].sort((a, b) => {
       const liveA = !isUpcoming(a.status) && !isFinishedLike(a.status);
       const liveB = !isUpcoming(b.status) && !isFinishedLike(b.status);
@@ -117,6 +110,24 @@ export default function LiveTennis() {
       return ta - tb;
     });
   }, [normalized, q]);
+
+  const badgeClass = (m) => {
+    if (isUpcoming(m.status)) return 'badgeSoon';
+    if (isFinishedLike(m.status)) return 'badgeHidden';
+
+    if (m.label === 'SAFE') return 'badgeSafe';
+    if (m.label === 'RISKY') return 'badgeRisky';
+    if (m.label === 'AVOID') return 'badgeAvoid';
+    return 'badgeIdle';
+  };
+
+  const badgeText = (m) => {
+    if (isUpcoming(m.status)) return 'STARTS SOON';
+    if (m.setNum > 0) return `SET ${m.setNum}`;
+    if (m.label === 'SAFE' || m.label === 'RISKY' || m.label === 'AVOID')
+      return m.label;
+    return 'LIVE';
+  };
 
   return (
     <div className="lt-page">
@@ -140,20 +151,10 @@ export default function LiveTennis() {
           ) : (
             filteredSorted.map((m) => {
               const live = !isUpcoming(m.status) && !isFinishedLike(m.status);
-
-              // badge λογική:
-              // πράσινο μόνο αν live ΚΑΙ AI ενεργό, αλλιώς μοβ (idle)
-              const badgeClass =
-                live && m.aiActive ? 'badgeActive' : 'badgeIdle';
-              const badgeText =
-                live ? (m.setNum > 0 ? `SET ${m.setNum}` : 'LIVE')
-                     : 'STARTS SOON';
-
               return (
                 <div key={m.id} className="matchRow">
                   <div
                     className="statusDot"
-                    aria-label={live ? 'live' : 'not-live'}
                     style={{ background: live ? '#2ecc71' : '#e53935' }}
                   />
                   <div className="matchBody">
@@ -166,7 +167,7 @@ export default function LiveTennis() {
                       {m.date} {m.time} • {m.categoryName}
                     </div>
                   </div>
-                  <div className={`badge ${badgeClass}`}>{badgeText}</div>
+                  <div className={`badge ${badgeClass(m)}`}>{badgeText(m)}</div>
                 </div>
               );
             })
