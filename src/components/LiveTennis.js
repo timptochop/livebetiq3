@@ -1,10 +1,9 @@
 // src/components/LiveTennis.js
 import React, { useEffect, useMemo, useState } from 'react';
-import TopBar from './TopBar';
 import fetchTennisLive from '../utils/fetchTennisLive';
 
-// helpers
-function parseDateTime(d, t) {
+// ------ helpers ------
+const parseDateTime = (d, t) => {
   const ds = String(d || '').trim();
   const ts = String(t || '').trim();
   if (!ds) return null;
@@ -17,7 +16,7 @@ function parseDateTime(d, t) {
   }
   const dt = new Date(yyyy || 1970, (mm || 1) - 1, dd || 1, HH, MM, 0, 0);
   return isNaN(dt.getTime()) ? null : dt;
-}
+};
 const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
 const isFinishedLike = (s) => {
   const x = String(s || '').toLowerCase();
@@ -30,45 +29,45 @@ const isFinishedLike = (s) => {
     x === 'walk over'
   );
 };
-const num = (v) => {
+const n = (v) => {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
   if (!s) return null;
   const x = parseInt(s.split(/[.:]/)[0], 10);
   return Number.isFinite(x) ? x : null;
 };
-function currentSetFromScores(players) {
+const currentSetFromScores = (players) => {
   const p = Array.isArray(players) ? players : [];
   const a = p[0] || {};
   const b = p[1] || {};
-  const sA = [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)];
-  const sB = [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)];
+  const sA = [n(a.s1), n(a.s2), n(a.s3), n(a.s4), n(a.s5)];
+  const sB = [n(b.s1), n(b.s2), n(b.s3), n(b.s4), n(b.s5)];
   let k = 0;
   for (let i = 0; i < 5; i++) if (sA[i] !== null || sB[i] !== null) k = i + 1;
   return k;
-}
-function labelColor(tag) {
+};
+const labelColor = (tag) => {
   const t = String(tag || '').toUpperCase();
   if (t === 'SAFE') return { bg: '#2e7d32', fg: '#fff' };
   if (t === 'RISKY') return { bg: '#ffb300', fg: '#000' };
   if (t === 'AVOID') return { bg: '#c62828', fg: '#fff' };
   if (t === 'PENDING') return { bg: '#546e7a', fg: '#fff' };
   return { bg: '#546e7a', fg: '#fff' };
-}
+};
+// ---------------------
 
-export default function LiveTennis() {
+export default function LiveTennis({ onLiveCount = () => {} }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
-  const [liveCount, setLiveCount] = useState(0);
-  const [notificationsOn, setNotificationsOn] = useState(false); // μόνο για UI indicator
 
   const load = async () => {
     setLoading(true);
     setErr('');
     try {
-      const matches = await fetchTennisLive(); // περιμένει {matches: [...] } ή [ ... ]
-      const data = Array.isArray(matches) ? matches : matches?.matches || [];
+      // Δέχεται είτε array είτε {matches:[...]}
+      const resp = await fetchTennisLive();
+      const data = Array.isArray(resp) ? resp : resp?.matches || [];
       setRows(Array.isArray(data) ? data : []);
     } catch (e) {
       setErr(e.message || 'Failed to load');
@@ -84,68 +83,68 @@ export default function LiveTennis() {
     return () => clearInterval(t);
   }, []);
 
-  const normalized = useMemo(() => {
-    return rows.map((m) => {
-      const players =
-        Array.isArray(m.players) ? m.players : Array.isArray(m.player) ? m.player : [];
-      const p1 = players[0] || {};
-      const p2 = players[1] || {};
-      const name1 = p1.name || p1['@name'] || '';
-      const name2 = p2.name || p2['@name'] || '';
-      const date = m.date || m['@date'] || '';
-      const time = m.time || m['@time'] || '';
-      const dt = parseDateTime(date, time);
-      const status = m.status || m['@status'] || '';
-      const setNum = currentSetFromScores(players) || 0;
-      const pr = m.prediction || {};
-      let pickName = null;
-      if (typeof pr.pick === 'number') {
-        pickName = pr.pick === 0 ? name1 : pr.pick === 1 ? name2 : null;
-      } else if (typeof pr.pick === 'string') {
-        pickName = pr.pick;
-      }
-      return {
-        id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
-        date,
-        time,
-        dt,
-        status,
-        setNum,
-        categoryName: m.categoryName || m['@category'] || m.category || '',
-        name1,
-        name2,
-        prediction: {
-          label: (pr.label || 'PENDING').toUpperCase(),
-          pick: pickName,
-          confidence: pr.confidence ?? 0,
-          source: pr.source || 'fallback',
-          detail: pr.detail || '',
-        },
-      };
-    });
-  }, [rows]);
+  const normalized = useMemo(
+    () =>
+      rows.map((m) => {
+        const players =
+          Array.isArray(m.players) ? m.players : Array.isArray(m.player) ? m.player : [];
+        const p1 = players[0] || {};
+        const p2 = players[1] || {};
+        const name1 = p1.name || p1['@name'] || '';
+        const name2 = p2.name || p2['@name'] || '';
+        const date = m.date || m['@date'] || '';
+        const time = m.time || m['@time'] || '';
+        const dt = parseDateTime(date, time);
+        const status = m.status || m['@status'] || '';
+        const setNum = currentSetFromScores(players) || 0;
+        const pr = m.prediction || {};
+        let pickName = null;
+        if (typeof pr.pick === 'number') pickName = pr.pick === 0 ? name1 : pr.pick === 1 ? name2 : null;
+        else if (typeof pr.pick === 'string') pickName = pr.pick;
 
-  // Ταξινόμηση: Live με AI (SAFE/RISKY/AVOID) -> Live pending -> Upcoming; Finished φεύγουν
+        return {
+          id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
+          date,
+          time,
+          dt,
+          status,
+          setNum,
+          categoryName: m.categoryName || m['@category'] || m.category || '',
+          name1,
+          name2,
+          prediction: {
+            label: (pr.label || 'PENDING').toUpperCase(),
+            pick: pickName,
+            confidence: pr.confidence ?? 0,
+            source: pr.source || 'fallback',
+            detail: pr.detail || '',
+          },
+        };
+      }),
+    [rows]
+  );
+
+  // ταξινόμηση: live+AI -> live pending -> upcoming, κρύψε finished
   const filteredSorted = useMemo(() => {
     const keep = normalized.filter((m) => !isFinishedLike(m.status));
-    const scoreRank = (m) => {
+    const rank = (m) => {
       const live = !isUpcoming(m.status);
-      const hasAI = m.prediction && m.prediction.label !== 'PENDING';
-      if (live && hasAI) return 0;      // Live + AI
-      if (live && !hasAI) return 1;     // Live pending
-      return 2;                         // Upcoming
+      const hasAI = m.prediction?.label && m.prediction.label !== 'PENDING';
+      if (live && hasAI) return 0;
+      if (live && !hasAI) return 1;
+      return 2;
     };
-    const labelPriority = (lbl) => {
+    const prio = (lbl) => {
       const t = String(lbl || '').toUpperCase();
       if (t === 'SAFE') return 0;
       if (t === 'RISKY') return 1;
       if (t === 'AVOID') return 2;
-      return 3; // PENDING / other
+      return 3;
     };
     return [...keep].sort((a, b) => {
-      const r = scoreRank(a) - scoreRank(b);
+      const r = rank(a) - rank(b);
       if (r !== 0) return r;
-      const p = labelPriority(a.prediction.label) - labelPriority(b.prediction.label);
+      const p = prio(a.prediction.label) - prio(b.prediction.label);
       if (p !== 0) return p;
       const s = (b.setNum || 0) - (a.setNum || 0);
       if (s !== 0) return s;
@@ -155,19 +154,17 @@ export default function LiveTennis() {
     });
   }, [normalized]);
 
-  // ενημέρωση live counter
+  // ενημέρωση μετρητή στο top bar
   useEffect(() => {
     const live = filteredSorted.filter((m) => !isUpcoming(m.status)).length;
-    setLiveCount(live);
-  }, [filteredSorted]);
+    onLiveCount(live);
+  }, [filteredSorted, onLiveCount]);
 
   const Card = ({ m }) => {
     const { label, pick, confidence, source } = m.prediction;
     const { bg, fg } = labelColor(label);
     const live = !isUpcoming(m.status);
-
-    // badge δεξιά: αν το ματς έχει ξεκινήσει, δείξε "SET X" με μοβ· αλλιώς "STARTS SOON" γκρι
-    const badge = live ? (
+    const rightBadge = live ? (
       <div
         style={{
           background: '#6f42c1',
@@ -212,7 +209,6 @@ export default function LiveTennis() {
           boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
         }}
       >
-        {/* live dot */}
         <span
           style={{
             width: 10,
@@ -221,8 +217,6 @@ export default function LiveTennis() {
             background: live ? '#2ee66b' : '#ff5757',
           }}
         />
-
-        {/* match info */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ color: '#fff', fontWeight: 800, fontSize: 16 }}>
             {m.name1} <span style={{ color: '#9aa0a6', fontWeight: 400 }}>vs</span> {m.name2}
@@ -231,7 +225,6 @@ export default function LiveTennis() {
             {m.date} {m.time} • {m.categoryName}
           </div>
 
-          {/* prediction pill */}
           {label !== 'PENDING' && (
             <div style={{ marginTop: 8, display: 'inline-flex', gap: 8, alignItems: 'center' }}>
               <span
@@ -255,49 +248,67 @@ export default function LiveTennis() {
             </div>
           )}
         </div>
-
-        {/* right badge */}
-        {badge}
+        {rightBadge}
       </div>
     );
   };
 
   return (
-    <div style={{ background: '#0b0b0b', color: '#fff', minHeight: '100vh' }}>
-      <TopBar
-        liveCount={liveCount}
-        notificationsOn={notificationsOn}
-        onToggleNotifications={setNotificationsOn}
-      />
+    <div style={{ padding: 12 }}>
+      {err && (
+        <div
+          style={{
+            marginBottom: 12,
+            color: '#ff8a80',
+            background: '#2a1111',
+            border: '1px solid #4a1a1a',
+            padding: 10,
+            borderRadius: 8,
+          }}
+        >
+          {err}
+        </div>
+      )}
 
-      {/* body */}
-      <div style={{ padding: 12 }}>
-        {err && (
-          <div
+      {loading && <div style={{ color: '#cfd3d7', padding: 12 }}>Φόρτωση…</div>}
+
+      <div style={{ display: 'grid', gap: 12 }}>
+        {filteredSorted.map((m) => (
+          <Card key={m.id} m={m} />
+        ))}
+      </div>
+
+      {/* Μικρό empty state για να μη φαίνεται «μαύρη τρύπα» */}
+      {!loading && filteredSorted.length === 0 && (
+        <div
+          style={{
+            marginTop: 16,
+            color: '#cfd3d7',
+            background: '#141618',
+            border: '1px solid #222',
+            padding: 12,
+            borderRadius: 10,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <span>Δεν βρέθηκαν αγώνες (live ή upcoming).</span>
+          <button
+            onClick={load}
             style={{
-              marginBottom: 12,
-              color: '#ff8a80',
-              background: '#2a1111',
-              border: '1px solid #4a1a1a',
-              padding: 10,
+              background: '#00cc66',
+              color: '#001d0e',
+              border: 'none',
+              padding: '8px 12px',
               borderRadius: 8,
+              fontWeight: 800,
             }}
           >
-            {err}
-          </div>
-        )}
-
-        {loading && (
-          <div style={{ color: '#cfd3d7', padding: 12 }}>Φόρτωση…</div>
-        )}
-
-        {/* λίστα */}
-        <div style={{ display: 'grid', gap: 12 }}>
-          {filteredSorted.map((m) => (
-            <Card key={m.id} m={m} />
-          ))}
+            Ανανέωση
+          </button>
         </div>
-      </div>
+      )}
     </div>
   );
 }
