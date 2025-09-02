@@ -1,4 +1,4 @@
-// src/components/LiveTennis.js
+ // src/components/LiveTennis.js
 import React, { useEffect, useMemo, useState } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import './LiveTennis.css';
@@ -17,28 +17,40 @@ function parseDateTime(d, t) {
   const dt = new Date(yyyy || 1970, (mm || 1) - 1, dd || 1, HH, MM, 0, 0);
   return isNaN(dt.getTime()) ? null : dt;
 }
-function isUpcoming(s) { return String(s || '').toLowerCase() === 'not started'; }
+
+function isUpcoming(s) {
+  return String(s || '').toLowerCase() === 'not started';
+}
 function isFinishedLike(s) {
   const x = String(s || '').toLowerCase();
   return (
-    x === 'finished' || x === 'cancelled' || x === 'retired' ||
-    x === 'abandoned' || x === 'postponed' || x === 'walk over'
+    x === 'finished' ||
+    x === 'cancelled' ||
+    x === 'retired' ||
+    x === 'abandoned' ||
+    x === 'postponed' ||
+    x === 'walk over'
   );
 }
+
 function num(v) {
   if (v === null || v === undefined) return null;
-  const s = String(v).trim(); if (!s) return null;
+  const s = String(v).trim();
+  if (!s) return null;
   const x = parseInt(s.split(/[.:]/)[0], 10);
   return Number.isFinite(x) ? x : null;
 }
 function currentSetFromScores(players) {
   const p = Array.isArray(players) ? players : [];
-  const a = p[0] || {}, b = p[1] || {};
+  const a = p[0] || {};
+  const b = p[1] || {};
   const sA = [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)];
   const sB = [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)];
   let k = 0;
-  for (let i = 0; i < 5; i++) if (sA[i] !== null || sB[i] !== null) k = i + 1;
-  return k;
+  for (let i = 0; i < 5; i++) {
+    if (sA[i] !== null || sB[i] !== null) k = i + 1;
+  }
+  return k; // 0 = δεν ξεκίνησε, 1..5 = ενεργό/τελευταίο set
 }
 
 export default function LiveTennis() {
@@ -48,13 +60,17 @@ export default function LiveTennis() {
   const [q, setQ] = useState('');
 
   const load = async () => {
-    setLoading(true); setErr('');
+    setLoading(true);
+    setErr('');
     try {
       const matches = await fetchTennisLive();
       setRows(Array.isArray(matches) ? matches : []);
     } catch (e) {
-      setErr(e.message || 'Failed to load'); setRows([]);
-    } finally { setLoading(false); }
+      setErr(e.message || 'Failed to load');
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -80,53 +96,81 @@ export default function LiveTennis() {
 
       const pr = m.prediction || {};
       const label = String((pr.label || 'PENDING')).toUpperCase();
+      const hasAI = label === 'SAFE' || label === 'RISKY' || label === 'AVOID';
 
       return {
         id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
         date, time, dt, status, setNum,
         categoryName: m.categoryName || m['@category'] || m.category || '',
         name1, name2,
-        label
+        label, hasAI
       };
     });
   }, [rows]);
 
   const filteredSorted = useMemo(() => {
     const term = q.trim().toLowerCase();
+
+    // Φιλτράρουμε: όχι finished
     const keep = normalized.filter((m) => {
       if (isFinishedLike(m.status)) return false;
       if (!term) return true;
       const blob = `${m.name1} ${m.name2} ${m.categoryName}`.toLowerCase();
       return blob.includes(term);
     });
+
+    // Bucket: 0 = Live + AI, 1 = Live pending, 2 = Upcoming
+    const bucket = (m) => {
+      const live = !isUpcoming(m.status) && !isFinishedLike(m.status);
+      if (live && m.hasAI) return 0;
+      if (live && !m.hasAI) return 1;
+      return 2; // upcoming
+    };
+
     return [...keep].sort((a, b) => {
-      const liveA = !isUpcoming(a.status) && !isFinishedLike(a.status);
-      const liveB = !isUpcoming(b.status) && !isFinishedLike(b.status);
-      if (liveA !== liveB) return liveA ? -1 : 1;
-      const s = (b.setNum || 0) - (a.setNum || 0);
-      if (s !== 0) return s;
+      const ba = bucket(a), bb = bucket(b);
+      if (ba !== bb) return ba - bb;
+
+      // Δεύτερο κριτήριο: για live → μεγαλύτερο set πρώτο, για upcoming → πιο κοντινή ώρα
+      const liveA = ba !== 2, liveB = bb !== 2;
+      if (liveA && liveB) {
+        const s = (b.setNum || 0) - (a.setNum || 0);
+        if (s !== 0) return s;
+      }
+
       const ta = a.dt ? a.dt.getTime() : Number.POSITIVE_INFINITY;
       const tb = b.dt ? b.dt.getTime() : Number.POSITIVE_INFINITY;
       return ta - tb;
     });
   }, [normalized, q]);
 
+  // Badge rules:
+  // - Upcoming → STARTS SOON (γκρι)
+  // - Live + AI → SAFE/RISKY/AVOID (πράσινο/κίτρινο/κόκκινο)
+  // - Live χωρίς AI → SET {setNum} (μοβ)
   const badgeClass = (m) => {
     if (isUpcoming(m.status)) return 'badgeSoon';
-    if (isFinishedLike(m.status)) return 'badgeHidden';
-
-    if (m.label === 'SAFE') return 'badgeSafe';
-    if (m.label === 'RISKY') return 'badgeRisky';
-    if (m.label === 'AVOID') return 'badgeAvoid';
-    return 'badgeIdle';
+    if (!isUpcoming(m.status) && !isFinishedLike(m.status)) {
+      if (m.hasAI) {
+        if (m.label === 'SAFE') return 'badgeSafe';
+        if (m.label === 'RISKY') return 'badgeRisky';
+        if (m.label === 'AVOID') return 'badgeAvoid';
+      }
+      return 'badgeIdle'; // live pending → μοβ
+    }
+    return 'badgeHidden';
   };
 
   const badgeText = (m) => {
     if (isUpcoming(m.status)) return 'STARTS SOON';
-    if (m.setNum > 0) return `SET ${m.setNum}`;
-    if (m.label === 'SAFE' || m.label === 'RISKY' || m.label === 'AVOID')
-      return m.label;
-    return 'LIVE';
+    if (!isUpcoming(m.status) && !isFinishedLike(m.status)) {
+      if (m.hasAI && (m.label === 'SAFE' || m.label === 'RISKY' || m.label === 'AVOID')) {
+        return m.label;
+      }
+      const n = m.setNum > 0 ? m.setNum : 1;
+      return `SET ${n}`;
+    }
+    return '';
   };
 
   return (
