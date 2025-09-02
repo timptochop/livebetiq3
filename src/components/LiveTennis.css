@@ -1,219 +1,105 @@
-:root{
-  --bg:#0b0b0b;
-  --panel:#151515;
-  --border:#222;
-  --muted:#cfd3d7;
-  --text:#fff;
+/* src/components/LiveTennis.css */
+.lt-root {
+  min-height: 100vh;
+  background: #0b0b0b;
+  color: #fff;
+  padding: 12px;
 }
-
-.lt-wrap{
-  padding:16px;
-  background:var(--bg);
-  color:var(--text);
-  min-height:100vh;
+.lt-shell {
+  max-width: 900px;
+  margin: 0 auto;
 }
-
-.lt-card{
-  margin:16px auto;
-  max-width:1100px;
-  background:var(--panel);
-  border-radius:10px;
-  box-shadow:0 6px 18px rgba(0,0,0,.35);
-  border:1px solid var(--border);
+.lt-top {
+  background: #151515;
+  border: 1px solid #222;
+  border-radius: 12px;
+  padding: 14px 14px 10px 14px;
+  margin-bottom: 10px;
 }
-
-.lt-head{
-  padding:18px 20px;
-  border-bottom:1px solid var(--border);
-  color:var(--text);
-  display:flex;
-  flex-direction:column;
-  gap:12px;
+.lt-title {
+  margin: 0;
+  font-size: 20px;
 }
-
-.lt-title{
-  margin:0;
-  color:var(--text);
-  font-size:24px;
-  font-weight:800;
-  letter-spacing:.2px;
+.lt-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
 }
-
-.lt-search{
-  display:flex;
-  gap:10px;
-  align-items:center;
-  flex-wrap:wrap;
+.lt-search {
+  flex: 1;
+  min-width: 180px;
+  padding: 10px 12px;
+  background: #0f1113;
+  color: #fff;
+  border: 1px solid #333;
+  border-radius: 10px;
+  outline: none;
 }
+.lt-hint { color: #cfd3d7; font-size: 13px; }
+.lt-err  { color: #ff8a80; font-size: 13px; }
 
-.lt-input{
-  padding:10px 12px;
-  min-width:280px;
-  background:#0f1113;
-  color:var(--text);
-  border:1px solid #333;
-  border-radius:8px;
-  outline:none;
-  width:100%;
-  max-width:420px;
+.lt-list { display: flex; flex-direction: column; gap: 12px; }
+.lt-empty { color: #cfd3d7; background:#151515; border:1px solid #222; border-radius:12px; padding:16px; }
+
+/* Card */
+.card {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  background: #1a1a1a;
+  border: 1px solid #222;
+  border-radius: 16px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
 }
-
-.lt-status{
-  color:var(--muted);
-  font-size:14px;
+.left { display:flex; gap:12px; align-items:center; min-width:0; }
+.logo {
+  width: 32px; height: 32px; min-width: 32px;
+  border-radius: 8px;
+  background: #0e7a5f;
+  display: grid; place-items: center;
+  font-weight: 800; letter-spacing: 0.5px;
 }
-
-.lt-body{
-  padding:6px 10px 16px 10px;
-  color:var(--text);
+.names { min-width: 0; }
+.players {
+  font-size: 16px;
+  line-height: 1.2;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 56vw;
 }
+.vs { color:#9aa0a6; font-weight: 400; margin: 0 4px; }
+.meta { color:#9aa0a6; font-size:12px; margin-top:4px; }
 
-.lt-table{
-  width:100%;
-  border-collapse:collapse;
-  color:var(--text);
+.right { display:flex; flex-direction: column; align-items:flex-end; gap:8px; }
+.pick { font-size: 13px; }
+.conf { color:#9aa0a6; }
+
+/* badges */
+.badge {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  border: 1px solid rgba(255,255,255,0.08);
 }
+.badge.safe   { background:#1a7f37; color:#fff; }
+.badge.risky  { background:#ffb300; color:#000; }
+.badge.avoid  { background:#c62828; color:#fff; }
+.badge.pending{ background:#6c757d; color:#fff; }
 
-.lt-th{
-  text-align:left;
-  border-bottom:1px solid var(--border);
-  padding:12px 10px;
-  color:var(--muted);
-  font-weight:600;
-  font-size:14px;
-}
+/* status dot */
+.dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+.dot.live { background:#10d876; }
+.dot.upcoming { background:#3fa7ff; }
+.dot.finished { background:#8e24aa; }
+.dot.idle { background:#555; }
 
-.lt-td{
-  padding:12px 10px;
-  border-bottom:1px solid #1f1f1f;
-  vertical-align:top;
-}
-
-.lt-vs{
-  color:#9aa0a6;
-  font-weight:400;
-  margin:0 4px;
-}
-
-.lt-pill{
-  background:#2962ff;
-  color:#fff;
-  border-radius:999px;
-  padding:4px 10px;
-  font-size:12px;
-  display:inline-block;
-  line-height:1;
-}
-
-.lt-badge{
-  display:inline-block;
-  border-radius:8px;
-  padding:2px 8px;
-  font-size:11px;
-  margin-left:8px;
-}
-
-.lt-sub{
-  font-size:12px;
-  color:var(--muted);
-  margin-bottom:6px;
-}
-
-.lt-pending{
-  font-size:13px;
-  color:#ffa726;
-}
-
-.lt-row-title{
-  font-weight:700;
-  color:var(--text);
-}
-
-.lt-empty{
-  color:var(--muted);
-  padding:16px;
-}
-
-/* MOBILE CARDS */
-.lt-cards{
-  display:none;
-  padding:8px 10px 18px 10px;
-}
-
-.lt-mcard{
-  background:#101010;
-  border:1px solid #1b1b1b;
-  border-radius:12px;
-  padding:12px;
-  margin:10px 0;
-  display:flex;
-  gap:10px;
-}
-
-.lt-mcol{
-  display:flex;
-  flex-direction:column;
-  gap:6px;
-  flex:1;
-}
-
-.lt-mtop{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  gap:10px;
-}
-
-.lt-mtime{
-  font-size:13px;
-  color:#bfc5cc;
-  white-space:nowrap;
-}
-
-.lt-mstatus{ }
-
-.lt-mtitle{
-  font-weight:700;
-  line-height:1.25;
-}
-
-.lt-mcat{
-  font-size:13px;
-  color:#aeb4bb;
-}
-
-.lt-mpred{
-  font-size:13px;
-}
-
-.lt-mmeta{
-  font-size:12px;
-  color:#aeb4bb;
-  display:flex;
-  align-items:center;
-  gap:6px;
-  margin-bottom:4px;
-}
-
-/* COLOR STATES */
-.lt-pill.upcoming{ background:#2e7d32; }
-.lt-pill.finished{ background:#8e24aa; }
-
-.lt-badge.safe{ background:#2e7d32; color:#fff; }
-.lt-badge.risky{ background:#ffb300; color:#000; }
-.lt-badge.avoid{ background:#c62828; color:#fff; }
-.lt-badge.pending{ background:#546e7a; color:#fff; }
-
-/* RESPONSIVE */
-@media (max-width:900px){
-  .lt-title{ font-size:20px; }
-  .lt-card{ border-radius:12px; }
-  .lt-table-wrap{ display:none; }
-  .lt-cards{ display:block; }
-  .lt-input{ max-width:100%; }
-}
-
-@media (min-width:901px){
-  .lt-table-wrap{ overflow-x:auto; }
-  .lt-cards{ display:none; }
+/* mobile tweaks */
+@media (max-width: 520px){
+  .card { padding: 12px; border-radius: 14px; }
+  .players { max-width: 52vw; font-size: 15px; }
+  .badge { padding: 6px 10px; font-size: 11px; }
+  .right { align-items: flex-start; }
 }

@@ -1,7 +1,9 @@
 // src/components/LiveTennis.js
 import React, { useEffect, useMemo, useState } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
+import './LiveTennis.css';
 
+// ---------- helpers ----------
 function parseDateTime(d, t) {
   const ds = String(d || '').trim();
   const ts = String(t || '').trim();
@@ -9,80 +11,45 @@ function parseDateTime(d, t) {
   const [dd, mm, yyyy] = ds.split('.').map(Number);
   let HH = 0, MM = 0;
   if (ts.includes(':')) {
-    const parts = ts.split(':').map(Number);
-    HH = parts[0] || 0;
-    MM = parts[1] || 0;
+    const [h, m] = ts.split(':').map(Number);
+    HH = h || 0; MM = m || 0;
   }
   const dt = new Date(yyyy || 1970, (mm || 1) - 1, dd || 1, HH, MM, 0, 0);
-  return isNaN(dt.getTime()) ? null : dt;
+  return Number.isFinite(dt.getTime()) ? dt : null;
 }
-
-function isUpcoming(s) {
-  return String(s || '').toLowerCase() === 'not started';
-}
-function isFinishedLike(s) {
-  const x = String(s || '').toLowerCase();
-  return (
-    x === 'finished' ||
-    x === 'cancelled' ||
-    x === 'retired' ||
-    x === 'abandoned' ||
-    x === 'postponed' ||
-    x === 'walk over'
-  );
-}
-
-function labelColor(tag) {
-  const t = String(tag || '').toUpperCase();
-  if (t === 'SAFE') return { bg: '#2e7d32', fg: '#fff' };
-  if (t === 'RISKY') return { bg: '#ffb300', fg: '#000' };
-  if (t === 'AVOID') return { bg: '#c62828', fg: '#fff' };
-  if (t === 'PENDING') return { bg: '#546e7a', fg: '#fff' };
-  return { bg: '#546e7a', fg: '#fff' };
-}
-
-function statusPill(status) {
-  const s = String(status || '');
-  let bg = '#2962ff';
-  if (isUpcoming(s)) bg = '#2e7d32';
-  if (isFinishedLike(s)) bg = '#8e24aa';
-  return (
-    <span
-      style={{
-        background: bg,
-        color: '#fff',
-        borderRadius: 999,
-        padding: '4px 10px',
-        fontSize: 12,
-        display: 'inline-block',
-        lineHeight: 1,
-      }}
-    >
-      {s}
-    </span>
-  );
-}
-
-function num(v) {
+const isUpcoming = s => String(s || '').toLowerCase() === 'not started';
+const isFinishedLike = s => ['finished','cancelled','retired','abandoned','postponed','walk over']
+  .includes(String(s || '').toLowerCase());
+const num = v => {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
   if (!s) return null;
   const x = parseInt(s.split(/[.:]/)[0], 10);
   return Number.isFinite(x) ? x : null;
-}
-
+};
 function currentSetFromScores(players) {
   const p = Array.isArray(players) ? players : [];
-  const a = p[0] || {};
-  const b = p[1] || {};
+  const a = p[0] || {}, b = p[1] || {};
   const sA = [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)];
   const sB = [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)];
-  let k = 0;
-  for (let i = 0; i < 5; i++) {
-    if (sA[i] !== null || sB[i] !== null) k = i + 1;
-  }
+  let k = 0; for (let i=0;i<5;i++) if (sA[i] !== null || sB[i] !== null) k = i+1;
   return k;
 }
+function labelClass(tag) {
+  const t = String(tag || '').toUpperCase();
+  if (t === 'SAFE') return 'badge safe';
+  if (t === 'RISKY') return 'badge risky';
+  if (t === 'AVOID') return 'badge avoid';
+  return 'badge pending';
+}
+function statusDotClass(status) {
+  const s = String(status || '').toLowerCase();
+  if (s === 'live' || s === 'in progress') return 'dot live';
+  if (isUpcoming(s)) return 'dot upcoming';
+  if (isFinishedLike(s)) return 'dot finished';
+  return 'dot idle';
+}
+// ---------- /helpers ----------
 
 export default function LiveTennis() {
   const [rows, setRows] = useState([]);
@@ -110,64 +77,52 @@ export default function LiveTennis() {
     return () => clearInterval(t);
   }, []);
 
-  const normalized = useMemo(() => {
-    return rows.map((m) => {
-      const players =
-        Array.isArray(m.players) ? m.players : Array.isArray(m.player) ? m.player : [];
-      const p1 = players[0] || {};
-      const p2 = players[1] || {};
-      const name1 = p1.name || p1['@name'] || '';
-      const name2 = p2.name || p2['@name'] || '';
-      const date = m.date || m['@date'] || '';
-      const time = m.time || m['@time'] || '';
-      const dt = parseDateTime(date, time);
-      const status = m.status || m['@status'] || '';
-      const setNum = currentSetFromScores(players) || 0;
-      const pr = m.prediction || {};
-      let pickName = null;
-      if (typeof pr.pick === 'number') {
-        pickName = pr.pick === 0 ? name1 : pr.pick === 1 ? name2 : null;
-      } else if (typeof pr.pick === 'string') {
-        pickName = pr.pick;
-      }
-      return {
-        id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
-        date,
-        time,
-        dt,
-        status,
-        setNum,
-        categoryName: m.categoryName || m['@category'] || m.category || '',
-        name1,
-        name2,
-        prediction: {
-          label: (pr.label || 'PENDING').toUpperCase(),
-          pick: pickName,
-          confidence: pr.confidence ?? 0,
-          source: pr.source || 'fallback',
-          detail: pr.detail || '',
-        },
-      };
-    });
-  }, [rows]);
+  // Normalization
+  const normalized = useMemo(() => rows.map((m) => {
+    const players = Array.isArray(m.players) ? m.players
+      : Array.isArray(m.player) ? m.player : [];
+    const p1 = players[0] || {}, p2 = players[1] || {};
+    const name1 = p1.name || p1['@name'] || '';
+    const name2 = p2.name || p2['@name'] || '';
+    const date = m.date || m['@date'] || '';
+    const time = m.time || m['@time'] || '';
+    const dt = parseDateTime(date, time);
+    const status = m.status || m['@status'] || '';
+    const setNum = currentSetFromScores(players) || 0;
+    const pr = m.prediction || {};
+    let pickName = null;
+    if (typeof pr.pick === 'number') pickName = pr.pick === 0 ? name1 : pr.pick === 1 ? name2 : null;
+    else if (typeof pr.pick === 'string') pickName = pr.pick;
+    return {
+      id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
+      date, time, dt, status, setNum,
+      categoryName: m.categoryName || m['@category'] || m.category || '',
+      name1, name2,
+      prediction: {
+        label: (pr.label || 'PENDING').toUpperCase(),
+        pick: pickName,
+        confidence: pr.confidence ?? 0,
+        source: pr.source || 'fallback',
+        detail: pr.detail || '',
+      },
+    };
+  }), [rows]);
 
-  const filteredSorted = useMemo(() => {
+  // Filter + sort
+  const list = useMemo(() => {
     const term = q.trim().toLowerCase();
-    const keep = normalized.filter((m) => {
+    const keep = normalized.filter(m => {
       if (isFinishedLike(m.status)) return false;
       if (!term) return true;
-      const blob = `${m.name1} ${m.name2} ${m.categoryName}`.toLowerCase();
-      return blob.includes(term);
+      return (`${m.name1} ${m.name2} ${m.categoryName}`).toLowerCase().includes(term);
     });
-
     const priority = (lbl) => {
       const t = String(lbl || '').toUpperCase();
       if (t === 'SAFE') return 0;
       if (t === 'RISKY') return 1;
       if (t === 'AVOID') return 2;
-      return 3;
+      return 3; // PENDING/other
     };
-
     return [...keep].sort((a, b) => {
       const p = priority(a.prediction.label) - priority(b.prediction.label);
       if (p !== 0) return p;
@@ -180,97 +135,59 @@ export default function LiveTennis() {
   }, [normalized, q]);
 
   return (
-    <div style={{ padding: 16, background: '#0b0b0b', color: '#fff', minHeight: '100vh' }}>
-      <div
-        style={{
-          margin: '16px auto',
-          maxWidth: 1100,
-          background: '#151515',
-          borderRadius: 10,
-          boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
-          border: '1px solid #222',
-        }}
-      >
-        <div style={{ padding: '18px 20px', borderBottom: '1px solid #222', color: '#fff' }}>
-          <h2 style={{ margin: 0, color: '#fff' }}>Tennis — Live & Upcoming (AI Predictions)</h2>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 12, flexWrap: 'wrap' }}>
+    <div className="lt-root">
+      <div className="lt-shell">
+        <div className="lt-top">
+          <h2 className="lt-title">Tennis — Live &amp; Upcoming (AI Predictions)</h2>
+          <div className="lt-controls">
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Αναζήτηση παίκτη ή διοργάνωσης…"
-              style={{
-                padding: '10px 12px',
-                minWidth: 280,
-                background: '#0f1113',
-                color: '#fff',
-                border: '1px solid #333',   // fixed quote
-                borderRadius: 8,
-                outline: 'none',
-              }}
+              className="lt-search"
             />
-            {loading && <span style={{ color: '#cfd3d7' }}>Φόρτωση…</span>}
-            {err && <span style={{ color: '#ff8a80' }}>{err}</span>}
+            {loading && <span className="lt-hint">Φόρτωση…</span>}
+            {err && <span className="lt-err">HTTP 500</span>}
           </div>
         </div>
 
-        <div style={{ padding: '6px 10px 16px 10px', color: '#fff' }}>
-          {filteredSorted.length === 0 ? (
-            <div style={{ color: '#cfd3d7', padding: 16 }}>Καμία εγγραφή.</div>
+        <div className="lt-list">
+          {list.length === 0 ? (
+            <div className="lt-empty">Καμία εγγραφή.</div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', color: '#fff' }}>
-              <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '1px solid #222' }}>
-                  <th style={{ padding: '12px 10px', color: '#cfd3d7' }}>Ώρα</th>
-                  <th style={{ padding: '12px 10px', color: '#cfd3d7' }}>Αγώνας</th>
-                  <th style={{ padding: '12px 10px', color: '#cfd3d7' }}>Κατηγορία</th>
-                  <th style={{ padding: '12px 10px', color: '#cfd3d7' }}>AI Prediction</th>
-                  <th style={{ padding: '12px 10px', color: '#cfd3d7' }}>Κατάσταση</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredSorted.map((m) => {
-                  const { label, pick, confidence, source } = m.prediction;
-                  const { bg, fg } = labelColor(label);
-                  return (
-                    <tr key={m.id} style={{ borderBottom: '1px solid #1f1f1f' }}>
-                      <td style={{ padding: '12px 10px', whiteSpace: 'nowrap' }}>
-                        {m.date} {m.time}
-                      </td>
-                      <td style={{ padding: '12px 10px', fontWeight: 600, color: '#fff' }}>
-                        {m.name1} <span style={{ color: '#9aa0a6', fontWeight: 400 }}>vs</span> {m.name2}
-                      </td>
-                      <td style={{ padding: '12px 10px' }}>{m.categoryName}</td>
-                      <td style={{ padding: '12px 10px', minWidth: 320 }}>
-                        <div style={{ fontSize: 12, color: '#cfd3d7', marginBottom: 6 }}>
-                          source: {source} • set {m.setNum > 0 ? m.setNum : '—'}
-                          <span
-                            style={{
-                              background: bg,
-                              color: fg,
-                              borderRadius: 8,
-                              padding: '2px 8px',
-                              fontSize: 11,
-                              marginLeft: 8,
-                            }}
-                          >
-                            {label}
-                          </span>
-                        </div>
-                        {label === 'PENDING' ? (
-                          <div style={{ fontSize: 13, color: '#ffa726' }}>Pending…</div>
-                        ) : (
-                          <div style={{ fontSize: 13 }}>
-                            Pick: <strong>{pick || '—'}</strong>{' '}
-                            <span style={{ color: '#9aa0a6' }}>({confidence ?? 0}% confidence)</span>
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: '12px 10px' }}>{statusPill(m.status)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            list.map((m) => {
+              const { label, pick, confidence } = m.prediction;
+              return (
+                <div key={m.id} className="card">
+                  <div className="left">
+                    <span className={statusDotClass(m.status)} />
+                    <div className="logo">LB</div>
+                    <div className="names">
+                      <div className="players">
+                        <strong>{m.name1}</strong>
+                        <span className="vs"> vs </span>
+                        <strong>{m.name2}</strong>
+                      </div>
+                      <div className="meta">
+                        {m.date} {m.time} • {m.categoryName}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="right">
+                    <span className={labelClass(label)}>
+                      {label === 'PENDING' ? 'STARTS SOON' : label}
+                    </span>
+                    {label !== 'PENDING' && (
+                      <div className="pick">
+                        Pick: <strong>{pick || '—'}</strong>
+                        <span className="conf"> ({confidence ?? 0}% confidence)</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       </div>
