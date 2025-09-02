@@ -1,6 +1,6 @@
 // src/components/LiveTennis.js
 import React, { useEffect, useMemo, useState } from 'react';
-import fetchTennisPredictions from '../utils/fetchTennisLive'; // ✅ default import
+import fetchTennisPredictions from '../utils/fetchTennisLive';
 
 function parseDateTime(d, t) {
   const ds = String(d || '').trim();
@@ -94,7 +94,7 @@ export default function LiveTennis() {
     setLoading(true);
     setErr('');
     try {
-      const matches = await fetchTennisPredictions(); // ✅ uses default export
+      const matches = await fetchTennisPredictions();
       setRows(Array.isArray(matches) ? matches : []);
     } catch (e) {
       setErr(e.message || 'Failed to load');
