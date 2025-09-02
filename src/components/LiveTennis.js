@@ -18,40 +18,27 @@ function parseDateTime(d, t) {
   const dt = new Date(yyyy || 1970, (mm || 1) - 1, dd || 1, HH, MM, 0, 0);
   return isNaN(dt.getTime()) ? null : dt;
 }
-
-function isUpcoming(s) {
-  return String(s || '').toLowerCase() === 'not started';
-}
+function isUpcoming(s) { return String(s || '').toLowerCase() === 'not started'; }
 function isFinishedLike(s) {
   const x = String(s || '').toLowerCase();
   return (
-    x === 'finished' ||
-    x === 'cancelled' ||
-    x === 'retired' ||
-    x === 'abandoned' ||
-    x === 'postponed' ||
-    x === 'walk over'
+    x === 'finished' || x === 'cancelled' || x === 'retired' ||
+    x === 'abandoned' || x === 'postponed' || x === 'walk over'
   );
 }
-
 function num(v) {
   if (v === null || v === undefined) return null;
-  const s = String(v).trim();
-  if (!s) return null;
+  const s = String(v).trim(); if (!s) return null;
   const x = parseInt(s.split(/[.:]/)[0], 10);
   return Number.isFinite(x) ? x : null;
 }
-
 function currentSetFromScores(players) {
   const p = Array.isArray(players) ? players : [];
-  const a = p[0] || {};
-  const b = p[1] || {};
+  const a = p[0] || {}, b = p[1] || {};
   const sA = [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)];
   const sB = [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)];
   let k = 0;
-  for (let i = 0; i < 5; i++) {
-    if (sA[i] !== null || sB[i] !== null) k = i + 1;
-  }
+  for (let i = 0; i < 5; i++) if (sA[i] !== null || sB[i] !== null) k = i + 1;
   return k;
 }
 
@@ -63,17 +50,13 @@ export default function LiveTennis() {
   const [q, setQ] = useState('');
 
   const load = async () => {
-    setLoading(true);
-    setErr('');
+    setLoading(true); setErr('');
     try {
       const matches = await fetchTennisLive();
       setRows(Array.isArray(matches) ? matches : []);
     } catch (e) {
-      setErr(e.message || 'Failed to load');
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
+      setErr(e.message || 'Failed to load'); setRows([]);
+    } finally { setLoading(false); }
   };
 
   useEffect(() => {
@@ -85,7 +68,8 @@ export default function LiveTennis() {
   const normalized = useMemo(() => {
     return rows.map((m) => {
       const players =
-        Array.isArray(m.players) ? m.players : Array.isArray(m.player) ? m.player : [];
+        Array.isArray(m.players) ? m.players :
+        Array.isArray(m.player)  ? m.player  : [];
       const p1 = players[0] || {};
       const p2 = players[1] || {};
       const name1 = p1.name || p1['@name'] || '';
@@ -95,25 +79,34 @@ export default function LiveTennis() {
       const dt = parseDateTime(date, time);
       const status = m.status || m['@status'] || '';
       const setNum = currentSetFromScores(players) || 0;
+
+      // συλλέγουμε ελαφριά info πρόβλεψης (αν υπάρχει)
+      const pr = m.prediction || {};
+      const label = String((pr.label || 'PENDING')).toUpperCase();
+      const aiActive = label !== 'PENDING'; // ενεργό όταν δεν είναι PENDING
+
       return {
         id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
         date, time, dt, status, setNum,
         categoryName: m.categoryName || m['@category'] || m.category || '',
-        name1, name2,
+        name1, name2, aiActive
       };
     });
   }, [rows]);
 
   const filteredSorted = useMemo(() => {
     const term = q.trim().toLowerCase();
+
+    // 1) ΦΙΛΤΡΟ: αφαιρούμε τα finished-like
     const keep = normalized.filter((m) => {
+      if (isFinishedLike(m.status)) return false;
       if (!term) return true;
       const blob = `${m.name1} ${m.name2} ${m.categoryName}`.toLowerCase();
       return blob.includes(term);
     });
 
+    // 2) ΤΑΞΙΝΟΜΗΣΗ: live πρώτα, μετά set desc, μετά ώρα asc
     return [...keep].sort((a, b) => {
-      // live first, then by set desc, then by time asc
       const liveA = !isUpcoming(a.status) && !isFinishedLike(a.status);
       const liveB = !isUpcoming(b.status) && !isFinishedLike(b.status);
       if (liveA !== liveB) return liveA ? -1 : 1;
@@ -147,15 +140,17 @@ export default function LiveTennis() {
           ) : (
             filteredSorted.map((m) => {
               const live = !isUpcoming(m.status) && !isFinishedLike(m.status);
-              const badgeText = isFinishedLike(m.status)
-                ? 'FINISHED'
-                : m.setNum > 0
-                ? `SET ${m.setNum}`
-                : 'STARTS SOON';
+
+              // badge λογική:
+              // πράσινο μόνο αν live ΚΑΙ AI ενεργό, αλλιώς μοβ (idle)
+              const badgeClass =
+                live && m.aiActive ? 'badgeActive' : 'badgeIdle';
+              const badgeText =
+                live ? (m.setNum > 0 ? `SET ${m.setNum}` : 'LIVE')
+                     : 'STARTS SOON';
 
               return (
                 <div key={m.id} className="matchRow">
-                  {/* status dot ONLY (no logo) */}
                   <div
                     className="statusDot"
                     aria-label={live ? 'live' : 'not-live'}
@@ -171,17 +166,7 @@ export default function LiveTennis() {
                       {m.date} {m.time} • {m.categoryName}
                     </div>
                   </div>
-                  <div
-                    className={`badge ${
-                      isFinishedLike(m.status)
-                        ? 'badgeDone'
-                        : m.setNum > 0
-                        ? 'badgeLive'
-                        : 'badgeSoon'
-                    }`}
-                  >
-                    {badgeText}
-                  </div>
+                  <div className={`badge ${badgeClass}`}>{badgeText}</div>
                 </div>
               );
             })
