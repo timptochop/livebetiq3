@@ -5,84 +5,108 @@ export default function TopBar({ liveCount, notificationsOn, onToggleNotificatio
   return (
     <div
       style={{
-        position: 'sticky',
+        position: 'fixed',
         top: 0,
-        zIndex: 2000,
-        height: 64,
+        left: 0,
+        right: 0,
+        height: 80,
+        background: '#000',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '10px 16px',
-        background: '#0b0b0b',
-        borderBottom: '1px solid #1c1c1c',
+        padding: '0 20px',
+        borderBottom: '1px solid #111',
+        zIndex: 1000,
       }}
     >
-      {/* Logo λίγο μεγαλύτερο */}
-      <img
-        src="/logo192.png"
-        alt="LiveBet IQ"
-        style={{ width: 48, height: 48, borderRadius: 10, objectFit: 'cover' }}
-      />
+      {/* Logo */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <img
+          src="/logo192.png"
+          alt="LiveBetIQ"
+          style={{ width: 64, height: 64, borderRadius: 12 }}
+        />
+      </div>
 
-      {/* LIVE counter */}
+      {/* Live Counter */}
       <div
         style={{
+          background: '#111',
+          borderRadius: 30,
+          padding: '8px 18px',
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
-          padding: '8px 16px',
-          borderRadius: 24,
-          background: '#111',
-          border: '1px solid #222',
+          gap: 10,
+          fontWeight: 600,
         }}
       >
         <span
           style={{
-            width: 12, height: 12, borderRadius: '50%',
-            background: liveCount > 0 ? '#24d06a' : '#5f6b75',
-            boxShadow: liveCount > 0 ? '0 0 0 2px rgba(36,208,106,0.25)' : 'none',
+            display: 'inline-block',
+            width: 10,
+            height: 10,
+            borderRadius: '50%',
+            background: liveCount > 0 ? '#00e676' : '#555',
           }}
         />
-        <span style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>LIVE</span>
+        <span style={{ color: '#fff' }}>LIVE</span>
         <span
           style={{
-            background: '#24d06a', color: '#fff', borderRadius: 14,
-            padding: '2px 12px', fontWeight: 700, fontSize: 15,
+            background: '#00e676',
+            color: '#000',
+            borderRadius: 12,
+            padding: '2px 8px',
+            fontSize: 14,
+            minWidth: 24,
+            textAlign: 'center',
           }}
         >
           {liveCount}
         </span>
       </div>
 
-      {/* Notifications toggle + Login icon */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        <button
+      {/* Right icons */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+        {/* Bell icon toggle */}
+        <div
           onClick={() => onToggleNotifications(!notificationsOn)}
           style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '8px 14px', borderRadius: 20,
-            border: '1px solid #222', background: '#111', cursor: 'pointer',
+            background: '#111',
+            borderRadius: 30,
+            padding: '8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            cursor: 'pointer',
           }}
         >
-          <span role="img" aria-label="bell" style={{ fontSize: 18 }}>🔔</span>
+          <span style={{ fontSize: 18 }}>🔔</span>
           <span
             style={{
-              fontWeight: 700, fontSize: 14,
-              color: notificationsOn ? '#24d06a' : '#aaa',
+              background: notificationsOn ? '#00e676' : '#555',
+              color: '#000',
+              borderRadius: 12,
+              padding: '2px 8px',
+              fontSize: 14,
+              fontWeight: 600,
+              minWidth: 36,
+              textAlign: 'center',
             }}
           >
             {notificationsOn ? 'ON' : 'OFF'}
           </span>
-        </button>
+        </div>
 
+        {/* Login icon */}
         <div
-          title="Login (coming soon)"
           style={{
-            width: 36, height: 36, borderRadius: 18, background: '#222',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: '#111',
+            borderRadius: 30,
+            padding: '8px 16px',
+            cursor: 'pointer',
           }}
         >
-          <span role="img" aria-label="user" style={{ fontSize: 20, color: '#9aa0a6' }}>👤</span>
+          <span style={{ fontSize: 20, color: '#9aa0a6' }}>👤</span>
         </div>
       </div>
     </div>

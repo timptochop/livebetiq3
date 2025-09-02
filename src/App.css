@@ -1,4 +1,20 @@
-.App {
-  min-height: 100vh;
-  background: #121212;
+/* src/App.css */
+:root {
+  --topbar-h: 64px; /* ενημερώνεται και από το TopBar inline */
+}
+
+html, body, #root {
+  height: 100%;
+  background: #0b0b0b;
+}
+
+.page {
+  min-height: 100%;
+  background: #0b0b0b;
+}
+
+.content {
+  padding-top: var(--topbar-h);
+  max-width: 1100px;
+  margin: 0 auto;
 }
