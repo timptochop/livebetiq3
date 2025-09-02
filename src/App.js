@@ -1,23 +1,9 @@
-import React, { useState } from 'react';
-import TopBar from './components/TopBar';
+// src/App.js
+import React from 'react';
 import LiveTennis from './components/LiveTennis';
 import './App.css';
 
 export default function App() {
-  const [showAIBadges, setShowAIBadges] = useState(true);
-  const [liveCount, setLiveCount] = useState(0); // ενημερώνεται από το LiveTennis
-
-  return (
-    <div>
-      <TopBar
-        liveCount={liveCount}
-        showAIBadges={showAIBadges}
-        onToggleAIBadges={setShowAIBadges}
-      />
-      <LiveTennis
-        showAIBadges={showAIBadges}
-        onLiveCount={setLiveCount}
-      />
-    </div>
-  );
+  // Το TopBar γίνεται render μέσα στο LiveTennis — δεν το βάζουμε εδώ δεύτερη φορά.
+  return <LiveTennis />;
 }
