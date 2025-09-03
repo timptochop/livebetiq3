@@ -1,4 +1,4 @@
-// LiveTennis.js v0.96.2-ai-polished
+// LiveTennis.js v0.96.3-colors
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
@@ -19,8 +19,7 @@ const num = (v) => {
 
 function currentSetFromScores(players) {
   const p = Array.isArray(players) ? players : [];
-  const a = p[0] || {};
-  const b = p[1] || {};
+  const a = p[0] || {}, b = p[1] || {};
   const sA = [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)];
   const sB = [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)];
   let k = 0;
@@ -30,9 +29,7 @@ function currentSetFromScores(players) {
 
 function setFromStatus(status) {
   const s = String(status || '').toLowerCase().replace(/\s+/g, '');
-  const patterns = [
-    /set(\d)/i, /(\d)(?:st|nd|rd|th)?set/, /s(?:e?t)?(\d)/i, /set[-_#]?(\d)/i
-  ];
+  const patterns = [/set(\d)/i, /(\d)(?:st|nd|rd|th)?set/, /s(?:e?t)?(\d)/i, /set[-_#]?(\d)/i];
   for (const pattern of patterns) {
     const match = s.match(pattern);
     if (match) return parseInt(match[1], 10);
@@ -73,8 +70,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
 
   const normalized = useMemo(() => rows.map((m) => {
     const players = Array.isArray(m.players) ? m.players : (Array.isArray(m.player) ? m.player : []);
-    const p1 = players[0] || {};
-    const p2 = players[1] || {};
+    const p1 = players[0] || {}, p2 = players[1] || {};
     const name1 = p1.name || p1['@name'] || '';
     const name2 = p2.name || p2['@name'] || '';
     const date = m.date || m['@date'] || '';
@@ -90,26 +86,36 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     const setByStatus = setFromStatus(status);
     const setByScores = currentSetFromScores(players);
     const setNum = setByStatus || setByScores || (isUpcoming(status) ? 1 : null);
-    const ai = analyzeMatch(m);
 
-    let label = ai.label;
-    if (isUpcoming(status) && dt && dt > now) {
+    let label = null;
+    let pick = null;
+    let reason = '';
+    const ai = analyzeMatch(m);
+    label = ai.label;
+    pick = ai.pick;
+    reason = ai.reason;
+
+    if (isLive && setNum < 3) label = 'SOON';
+    if (!isLive && dt && dt > now) {
       const diffMin = Math.round((dt - now) / 60000);
       label = `STARTS IN ${diffMin} MIN`;
     }
 
     return {
       id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
-      name1, name2, date, time, dt,
-      status, setNum, isLive,
+      name1, name2, date, time, dt, isLive,
       categoryName: m.categoryName || m['@category'] || m.category || '',
-      ...ai,
-      displayLabel: label
+      setNum, pick, reason,
+      label,
+      displayLabel: label,
     };
   }), [rows]);
 
   const labelPriority = {
-    SAFE: 1, RISKY: 2, AVOID: 3, PENDING: 4
+    SAFE: 1,
+    RISKY: 2,
+    AVOID: 3,
+    SOON: 4
   };
 
   const list = useMemo(() => {
@@ -118,7 +124,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
       const la = labelPriority[a.label] || 5;
       const lb = labelPriority[b.label] || 5;
       if (la !== lb) return la - lb;
-
       if (a.isLive !== b.isLive) return a.isLive ? -1 : 1;
       const ta = a.dt?.getTime() ?? Infinity;
       const tb = b.dt?.getTime() ?? Infinity;
@@ -142,9 +147,9 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
 
   const badgeColors = {
     SAFE: '#1fdd73',
-    RISKY: '#f5d743',
-    AVOID: '#b06c3b',
-    PENDING: '#9370DB',
+    RISKY: '#ff9900',
+    AVOID: '#ff2e2e',
+    SOON: '#9370DB',
     DEFAULT: '#5a5f68'
   };
 
@@ -152,7 +157,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     const label = m.displayLabel;
     const baseLabel = (label || '').toUpperCase();
     let bg = badgeColors[m.label] || badgeColors.DEFAULT;
-
     if (baseLabel.startsWith('STARTS IN')) {
       bg = '#5a5f68';
     }
