@@ -178,14 +178,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
   };
 
   return (
-    <div style={{
-      paddingTop: "calc(env(safe-area-inset-top, 0px) + 64px)",
-      background: "#0a0c0e",
-      minHeight: "100vh",
-      paddingLeft: 14,
-      paddingRight: 14,
-      paddingBottom: 24
-    }}>
+    <div style={{ background: "#0a0c0e", minHeight: "100vh", padding: "76px 14px 24px" }}>
       <div style={{ maxWidth: 1100, margin: "0 auto" }}>
         {filtered.map((m) => (
           <div key={m.id} style={{
