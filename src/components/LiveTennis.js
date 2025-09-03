@@ -1,3 +1,4 @@
+// LiveTennis.js v0.96.2-ai-polished
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
@@ -68,6 +69,8 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     return () => clearInterval(t);
   }, []);
 
+  const now = new Date();
+
   const normalized = useMemo(() => rows.map((m) => {
     const players = Array.isArray(m.players) ? m.players : (Array.isArray(m.player) ? m.player : []);
     const p1 = players[0] || {};
@@ -89,16 +92,25 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     const setNum = setByStatus || setByScores || (isUpcoming(status) ? 1 : null);
     const ai = analyzeMatch(m);
 
+    let label = ai.label;
+    if (isUpcoming(status) && dt && dt > now) {
+      const diffMin = Math.round((dt - now) / 60000);
+      label = `STARTS IN ${diffMin} MIN`;
+    }
+
     return {
       id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
       name1, name2, date, time, dt,
       status, setNum, isLive,
       categoryName: m.categoryName || m['@category'] || m.category || '',
-      ...ai
+      ...ai,
+      displayLabel: label
     };
   }), [rows]);
 
-  const labelPriority = { SAFE: 1, RISKY: 2, AVOID: 3, PENDING: 4 };
+  const labelPriority = {
+    SAFE: 1, RISKY: 2, AVOID: 3, PENDING: 4
+  };
 
   const list = useMemo(() => {
     const active = normalized.filter((m) => !isFinishedLike(m.status));
@@ -108,7 +120,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
       if (la !== lb) return la - lb;
 
       if (a.isLive !== b.isLive) return a.isLive ? -1 : 1;
-      if (a.isLive) return (b.setNum || 0) - (a.setNum || 0);
       const ta = a.dt?.getTime() ?? Infinity;
       const tb = b.dt?.getTime() ?? Infinity;
       return ta - tb;
@@ -127,24 +138,31 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
 
   const titleStyle = { fontSize: 16, fontWeight: 800, color: '#f2f6f9', lineHeight: 1.12 };
   const detailsStyle = { marginTop: 6, fontSize: 12, color: '#c7d1dc', lineHeight: 1.35 };
-  const pickStyle = { marginTop: 6, fontSize: 13, fontWeight: 700, color: '#1fdd73' };
+  const tipStyle = { marginTop: 6, fontSize: 13, fontWeight: 700, color: '#1fdd73' };
 
   const badgeColors = {
     SAFE: '#1fdd73',
     RISKY: '#f5d743',
     AVOID: '#b06c3b',
     PENDING: '#9370DB',
+    DEFAULT: '#5a5f68'
   };
 
   const setBadge = (m) => {
-    if (!m.label) return null;
-    const bg = badgeColors[m.label] || '#6a3bd8';
+    const label = m.displayLabel;
+    const baseLabel = (label || '').toUpperCase();
+    let bg = badgeColors[m.label] || badgeColors.DEFAULT;
+
+    if (baseLabel.startsWith('STARTS IN')) {
+      bg = '#5a5f68';
+    }
+
     return (
       <div
         title={m.reason || ''}
         style={{
           background: bg,
-          color: '#0a0c0e',
+          color: '#ffffff',
           borderRadius: 16,
           padding: '6px 12px',
           fontWeight: 900,
@@ -154,7 +172,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
           textAlign: 'center'
         }}
       >
-        {m.label}
+        {baseLabel}
       </div>
     );
   };
@@ -186,7 +204,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
                     {m.date} {m.time} • {m.categoryName}
                   </div>
                   {['SAFE', 'RISKY'].includes(m.label) && m.pick && (
-                    <div style={pickStyle}>Πρόταση: {m.pick}</div>
+                    <div style={tipStyle}>TIP: {m.pick}</div>
                   )}
                 </div>
               </div>
