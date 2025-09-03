@@ -98,9 +98,15 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     };
   }), [rows]);
 
+  const labelPriority = { SAFE: 1, RISKY: 2, AVOID: 3, PENDING: 4 };
+
   const list = useMemo(() => {
     const active = normalized.filter((m) => !isFinishedLike(m.status));
     return active.sort((a, b) => {
+      const la = labelPriority[a.label] || 5;
+      const lb = labelPriority[b.label] || 5;
+      if (la !== lb) return la - lb;
+
       if (a.isLive !== b.isLive) return a.isLive ? -1 : 1;
       if (a.isLive) return (b.setNum || 0) - (a.setNum || 0);
       const ta = a.dt?.getTime() ?? Infinity;
@@ -121,6 +127,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
 
   const titleStyle = { fontSize: 16, fontWeight: 800, color: '#f2f6f9', lineHeight: 1.12 };
   const detailsStyle = { marginTop: 6, fontSize: 12, color: '#c7d1dc', lineHeight: 1.35 };
+  const pickStyle = { marginTop: 6, fontSize: 13, fontWeight: 700, color: '#1fdd73' };
 
   const badgeColors = {
     SAFE: '#1fdd73',
@@ -178,6 +185,9 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
                   <div style={detailsStyle}>
                     {m.date} {m.time} • {m.categoryName}
                   </div>
+                  {['SAFE', 'RISKY'].includes(m.label) && m.pick && (
+                    <div style={pickStyle}>Πρόταση: {m.pick}</div>
+                  )}
                 </div>
               </div>
               {setBadge(m)}
