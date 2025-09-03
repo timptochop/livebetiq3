@@ -6,19 +6,20 @@ export default function TopBar({
   notificationsOn = false,
   onToggleNotifications = () => {},
 }) {
-  // Ύψος οπτικού τμήματος της μπάρας (χωρίς το safe-area)
-  const BAR_H = 64;
+  const BAR_H = 64; // οπτικό ύψος μπάρας (χωρίς safe-area)
   const safeTop = "env(safe-area-inset-top, 0px)";
 
   return (
     <header
+      // FIXED (όχι sticky) για να μην επηρεάζεται από γονείς/overflow
       style={{
-        position: "sticky",
+        position: "fixed",
+        left: 0,
+        right: 0,
         top: 0,
-        zIndex: 1000,
-        // Συνολικό ύψος = safe-area-top + bar height
+        zIndex: 9999,
         height: `calc(${safeTop} + ${BAR_H}px)`,
-        paddingTop: `calc(${safeTop})`,
+        paddingTop: safeTop,
         background: "rgba(12,15,16,0.98)",
         borderBottom: "1px solid #1a1d20",
         backdropFilter: "blur(6px)",

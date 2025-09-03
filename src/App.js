@@ -4,7 +4,6 @@ import TopBar from "./components/TopBar";
 import LiveTennis from "./components/LiveTennis";
 import "./App.css";
 
-// Μικρός ErrorBoundary για να μη μένει μαύρη οθόνη αν κάτι κρασάρει
 class ErrorBoundary extends React.Component {
   constructor(p){ super(p); this.state = { hasError:false, err:null }; }
   static getDerivedStateFromError(err){ return { hasError:true, err }; }
@@ -27,12 +26,10 @@ class ErrorBoundary extends React.Component {
 export default function App() {
   const [liveCount, setLiveCount] = useState(0);
   const [notificationsOn, setNotificationsOn] = useState(false);
-
   const handleLiveCount = useCallback((n) => {
     if (Number.isFinite(n)) setLiveCount(n);
   }, []);
 
-  // Το ύψος του οπτικού τμήματος της μπάρας (ίδιο με TopBar BAR_H)
   const BAR_H = 64;
   const safeTop = "env(safe-area-inset-top, 0px)";
 
@@ -43,9 +40,9 @@ export default function App() {
         notificationsOn={notificationsOn}
         onToggleNotifications={setNotificationsOn}
       />
-
-      {/* padding-top στο main = bar height + safe-area */}
       <main
+        id="app-main"
+        // ΟΛΟ το περιεχόμενο σπρώχνεται κάτω από τη fixed μπάρα
         style={{
           minHeight: "100vh",
           background: "#0b0b0b",

@@ -1,79 +1,17 @@
 /* src/App.css */
-:root{
-  /* σταθερό ύψος bar (κρατάμε μικρό – δεν το μεγαλώνουμε) */
-  --topbar-h: 64px;
-  --topbar-bg: #0c0f10f2;   /* αδιαφανές αρκετά ώστε να μη φαίνεται τίποτα από πίσω */
-  --topbar-border: #1a1d20;
-  --chip-bg: #101415;
-  --chip-ring: #1f2427;
-  --green: #1ad15a;
-}
 
-html, body, #root { height:100%; }
-body { margin:0; background:#0b0b0b; color:#fff; -webkit-font-smoothing:antialiased; }
+/* reset για να μην μπαίνει default margin */
+html, body, #root {
+  height: 100%;
+  background: #0b0b0b;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, Roboto, "Segoe UI", "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; color: #e7ecef; }
 
-/* ====== FIX: Το header είναι fixed και το spacer κρατάει τον χώρο ====== */
-.topbar{
-  position: fixed;
-  top: 0; left: 0; right: 0;
-  z-index: 1000;
-  height: var(--topbar-h);
-  background: var(--topbar-bg);
-  border-bottom: 1px solid var(--topbar-border);
-  display: flex; align-items: center;
+/* μικρότερες γραμματοσειρές σε κινητά */
+@media (max-width: 480px) {
+  body { font-size: 14px; }
+  h1,h2,h3 { margin: 0; }
+  .card-title { font-size: 18px !important; }
+  .card-subtitle { font-size: 13px !important; }
 }
-.topbar-spacer{ height: var(--topbar-h); }  /* <— σπρώχνει περιεχόμενο προς τα κάτω */
-
-.page{
-  /* ΔΕΝ βάζουμε εδώ padding-top (το κάνει ο spacer) */
-  background:#0b0b0b;
-}
-
-/* ====== Το περιεχόμενο της μπάρας ====== */
-.tb-inner{
-  max-width: 1100px; width:100%;
-  margin:0 auto; padding: 8px 12px;
-  display:grid; grid-template-columns: auto 1fr auto auto; gap:10px; align-items:center;
-}
-
-.tb-logo{
-  width: 56px; height: 56px; border-radius: 14px;
-  background:#0e2a1a; display:flex; align-items:center; justify-content:center;
-  box-shadow: inset 0 0 0 1px #12331f;
-}
-.tb-logo img{ width:42px; height:42px; display:block; }
-
-.tb-badge{
-  justify-self:start; height:44px; padding:0 12px; border-radius:22px;
-  background:var(--chip-bg); box-shadow: inset 0 0 0 1px var(--chip-ring);
-  display:flex; align-items:center; gap:10px;
-}
-.tb-badge .dot{ width:10px; height:10px; border-radius:999px; background:var(--green); }
-.tb-badge .lbl{ font-weight:700; letter-spacing:.3px; }
-.tb-badge .cnt{
-  background:#0dbb4d; color:#05140b; font-weight:800; min-width:36px;
-  text-align:center; padding:6px 10px; border-radius:16px;
-}
-
-.tb-toggle{
-  height:44px; padding:0 12px; border-radius:22px; background:var(--chip-bg);
-  box-shadow: inset 0 0 0 1px var(--chip-ring); color:#cbd5d9;
-  display:flex; align-items:center; gap:10px; border:none; cursor:pointer;
-}
-.tb-toggle .state{ font-weight:800; background:#30363a; padding:6px 12px; border-radius:16px; }
-.tb-toggle.on .state{ background:#16c05f; color:#052213; }
-
-.tb-icon{
-  height:44px; width:68px; border-radius:22px; background:var(--chip-bg);
-  box-shadow: inset 0 0 0 1px var(--chip-ring);
-  border:none; cursor:pointer; display:flex; align-items:center; justify-content:center;
-}
-.tb-icon .avatar{
-  width:22px; height:22px; border-radius:999px;
-  background: linear-gradient(#89a7c7, #38506b);
-  box-shadow: inset 0 -2px 4px #284057, 0 0 0 2px #1a2230;
-}
-
-/* Λίγο μικρότερα fonts στα cards για καλύτερη πυκνότητα */
-.card h3{ font-size:18px; }
-.card .meta{ font-size:13px; }
