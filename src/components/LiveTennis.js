@@ -1,4 +1,3 @@
-// LiveTennis.js v0.96.2-ai-polished-fixed
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
@@ -19,7 +18,8 @@ const num = (v) => {
 
 function currentSetFromScores(players) {
   const p = Array.isArray(players) ? players : [];
-  const a = p[0] || {}, b = p[1] || {};
+  const a = p[0] || {};
+  const b = p[1] || {};
   const sA = [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)];
   const sB = [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)];
   let k = 0;
@@ -29,7 +29,9 @@ function currentSetFromScores(players) {
 
 function setFromStatus(status) {
   const s = String(status || '').toLowerCase().replace(/\s+/g, '');
-  const patterns = [/set(\d)/i, /(\d)(?:st|nd|rd|th)?set/, /s(?:e?t)?(\d)/i, /set[-_#]?(\d)/i];
+  const patterns = [
+    /set(\d)/i, /(\d)(?:st|nd|rd|th)?set/, /s(?:e?t)?(\d)/i, /set[-_#]?(\d)/i
+  ];
   for (const pattern of patterns) {
     const match = s.match(pattern);
     if (match) return parseInt(match[1], 10);
@@ -41,7 +43,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const notifiedRef = useRef(new Set());
-  const now = new Date();
 
   const playNotification = () => {
     const audio = new Audio('/notify.mp3');
@@ -67,60 +68,67 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     return () => clearInterval(t);
   }, []);
 
-  const normalized = useMemo(() =>
-    rows.map((m) => {
-      const players = Array.isArray(m.players) ? m.players : (Array.isArray(m.player) ? m.player : []);
-      const p1 = players[0] || {}, p2 = players[1] || {};
-      const name1 = p1.name || p1['@name'] || '';
-      const name2 = p2.name || p2['@name'] || '';
-      const date = m.date || m['@date'] || '';
-      const time = m.time || m['@time'] || '';
-      const status = m.status || m['@status'] || '';
-      const category = m.categoryName || m['@category'] || m.category || '';
-      const dt = (() => {
-        const [dd, mm, yyyy] = date.split('.').map(Number);
-        const [HH = 0, MM = 0] = String(time || '').split(':').map(Number);
-        const d = new Date(yyyy, (mm || 1) - 1, dd, HH, MM);
-        return isNaN(d.getTime()) ? null : d;
-      })();
+  const now = new Date();
 
-      const isLive = !isUpcoming(status) && !isFinishedLike(status);
-      const setByStatus = setFromStatus(status);
-      const setByScores = currentSetFromScores(players);
-      const setNum = setByStatus || setByScores || (isUpcoming(status) ? 1 : null);
+  const normalized = useMemo(() => rows.map((m) => {
+    const players = Array.isArray(m.players) ? m.players : (Array.isArray(m.player) ? m.player : []);
+    const p1 = players[0] || {};
+    const p2 = players[1] || {};
+    const name1 = p1.name || p1['@name'] || '';
+    const name2 = p2.name || p2['@name'] || '';
+    const date = m.date || m['@date'] || '';
+    const time = m.time || m['@time'] || '';
+    const dt = (() => {
+      const [dd, mm, yyyy] = date.split('.').map(Number);
+      const [HH = 0, MM = 0] = String(time || '').split(':').map(Number);
+      const d = new Date(yyyy, (mm || 1) - 1, dd, HH, MM);
+      return isNaN(d.getTime()) ? null : d;
+    })();
+    const status = m.status || m['@status'] || '';
+    const isLive = !isUpcoming(status) && !isFinishedLike(status);
+    const setByStatus = setFromStatus(status);
+    const setByScores = currentSetFromScores(players);
+    const setNum = setByStatus || setByScores || (isUpcoming(status) ? 1 : null);
+    const ai = analyzeMatch(m);
 
-      const ai = analyzeMatch(m);
-      let label = ai.label;
+    let displayLabel = null;
 
-      if (isLive && setNum < 3) label = `SET ${setNum}`;
-      if (!isLive && dt && dt > now) {
-        const diffMin = Math.round((dt - now) / 60000);
-        label = `STARTS IN ${diffMin} MIN`;
-      }
+    if (isLive && setNum >= 3 && ai?.label) {
+      displayLabel = ai.label;
+    } else if (isLive && setNum >= 1 && setNum < 3) {
+      displayLabel = `SET ${setNum}`;
+    } else if (isUpcoming(status) && dt && dt > now) {
+      const diffMin = Math.round((dt - now) / 60000);
+      displayLabel = `STARTS IN ${diffMin} MIN`;
+    }
 
-      return {
-        id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
-        name1, name2, date, time, dt, status, isLive,
-        categoryName: category,
-        setNum, pick: ai.pick, reason: ai.reason,
-        label,
-        displayLabel: label
-      };
-    })
-  , [rows]);
+    return {
+      id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
+      name1, name2, date, time, dt,
+      status, setNum, isLive,
+      categoryName: m.categoryName || m['@category'] || m.category || '',
+      ...ai,
+      displayLabel
+    };
+  }), [rows]);
 
   const labelPriority = {
-    SAFE: 1, RISKY: 2, AVOID: 3,
-    'SET 1': 4, 'SET 2': 4, 'SET 3': 4,
-    STARTS: 5
+    SAFE: 1,
+    RISKY: 2,
+    AVOID: 3,
+    'SET 1': 4,
+    'SET 2': 5,
+    'SET 3': 6,
+    STARTS: 7
   };
 
   const list = useMemo(() => {
     const active = normalized.filter((m) => !isFinishedLike(m.status));
     return active.sort((a, b) => {
-      const la = labelPriority[a.label?.split(' ')[0]] || 6;
-      const lb = labelPriority[b.label?.split(' ')[0]] || 6;
+      const la = labelPriority[a.displayLabel?.split(' ')[0]] || 99;
+      const lb = labelPriority[b.displayLabel?.split(' ')[0]] || 99;
       if (la !== lb) return la - lb;
+
       if (a.isLive !== b.isLive) return a.isLive ? -1 : 1;
       const ta = a.dt?.getTime() ?? Infinity;
       const tb = b.dt?.getTime() ?? Infinity;
@@ -131,33 +139,33 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
   useEffect(() => {
     onLiveCount(list.filter(x => x.isLive).length);
     list.forEach((m) => {
-      if (m.label === 'SAFE' && !notifiedRef.current.has(m.id)) {
+      if (m.displayLabel === 'SAFE' && !notifiedRef.current.has(m.id)) {
         playNotification();
         notifiedRef.current.add(m.id);
       }
     });
   }, [list, onLiveCount]);
 
+  const badgeColors = {
+    SAFE: '#1fdd73',
+    RISKY: '#f5a623',
+    AVOID: '#ff5d5d',
+    'SET 1': '#9370DB',
+    'SET 2': '#9370DB',
+    'SET 3': '#9370DB',
+    DEFAULT: '#5a5f68'
+  };
+
   const titleStyle = { fontSize: 16, fontWeight: 800, color: '#f2f6f9', lineHeight: 1.12 };
   const detailsStyle = { marginTop: 6, fontSize: 12, color: '#c7d1dc', lineHeight: 1.35 };
   const tipStyle = { marginTop: 6, fontSize: 13, fontWeight: 700, color: '#1fdd73' };
 
-  const badgeColors = {
-    SAFE: '#1fdd73',
-    RISKY: '#ff9900',
-    AVOID: '#ff2e2e',
-    DEFAULT: '#9370DB',
-    STARTS: '#5a5f68'
-  };
-
   const setBadge = (m) => {
-    const label = (m.displayLabel || '').toUpperCase();
-    const isStartSoon = label.startsWith('STARTS IN');
-    const isSet = label.startsWith('SET');
+    const label = m.displayLabel || '';
+    const baseLabel = label.toUpperCase();
+    let bg = badgeColors[baseLabel] || badgeColors.DEFAULT;
 
-    const bg = isStartSoon
-      ? badgeColors.STARTS
-      : badgeColors[m.label] || (isSet ? badgeColors.DEFAULT : badgeColors.DEFAULT);
+    if (baseLabel.startsWith('STARTS IN')) bg = '#5a5f68';
 
     return (
       <div
@@ -174,7 +182,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
           textAlign: 'center'
         }}
       >
-        {label}
+        {baseLabel}
       </div>
     );
   };
@@ -197,7 +205,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
                   display: 'inline-block', width: 12, height: 12, borderRadius: '50%',
                   background: m.isLive ? '#1fdd73' : '#ff5d5d',
                   boxShadow: m.isLive ? '0 0 10px rgba(31,221,115,.8)' : '0 0 8px rgba(255,93,93,.6)',
-                }} />
+                }}/>
                 <div>
                   <div style={titleStyle}>
                     {m.name1} <span style={{ color: '#96a5b4', fontWeight: 600 }}>vs</span> {m.name2}
@@ -205,7 +213,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
                   <div style={detailsStyle}>
                     {m.date} {m.time} • {m.categoryName}
                   </div>
-                  {['SAFE', 'RISKY'].includes(m.label) && m.pick && (
+                  {['SAFE', 'RISKY'].includes(m.displayLabel) && m.pick && (
                     <div style={tipStyle}>TIP: {m.pick}</div>
                   )}
                 </div>
