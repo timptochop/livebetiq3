@@ -3,7 +3,58 @@ import React, { useEffect, useMemo, useState, useRef } from "react";
 import fetchTennisLive from "../utils/fetchTennisLive";
 import analyzeMatch from "../utils/analyzeMatch";
 
-// ... [όλες οι συναρτήσεις setFromStatus, isUpcoming, κ.λπ. παραμένουν ίδιες]
+const isUpcoming = (s) => String(s || "").toLowerCase() === "not started";
+const isFinishedLike = (s) => {
+  const x = String(s || "").toLowerCase();
+  return ["finished", "cancelled", "retired", "abandoned", "postponed", "walk over"].includes(x);
+};
+
+const num = (v) => {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const x = parseInt(s.split(/[.:]/)[0], 10);
+  return Number.isFinite(x) ? x : null;
+};
+
+function setFromStatus(status) {
+  const s = String(status || "");
+  let m = s.match(/set\s*([1-5])/i);
+  if (m) return parseInt(m[1], 10);
+  m = s.match(/([1-5])\s*(?:st|nd|rd|th)?\s*set/i);
+  if (m) return parseInt(m[1], 10);
+  m = s.match(/\bS\s*E?\s*T?\s*([1-5])\b/i);
+  if (m) return parseInt(m[1], 10);
+  return null;
+}
+
+function currentSetFromScores(players) {
+  const p = Array.isArray(players) ? players : [];
+  const a = p[0] || {};
+  const b = p[1] || {};
+  const sA = [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)];
+  const sB = [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)];
+  let k = 0;
+  for (let i = 0; i < 5; i++) {
+    if (sA[i] !== null || sB[i] !== null) k = i + 1;
+  }
+  return k || null;
+}
+
+function parseDateTime(d, t) {
+  const ds = String(d || "").trim();
+  const ts = String(t || "").trim();
+  if (!ds) return null;
+  const [dd, mm, yyyy] = ds.split(".").map(Number);
+  let HH = 0, MM = 0;
+  if (ts.includes(":")) {
+    const parts = ts.split(":").map(Number);
+    HH = parts[0] || 0;
+    MM = parts[1] || 0;
+  }
+  const dt = new Date(yyyy || 1970, (mm || 1) - 1, dd || 1, HH, MM, 0, 0);
+  return isNaN(dt.getTime()) ? null : dt;
+}
 
 export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = true }) {
   const [rows, setRows] = useState([]);
@@ -50,7 +101,8 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
       const setByScores = currentSetFromScores(players);
       const setNum = setByStatus || setByScores || (isUpcoming(status) ? 1 : null);
       const isLive = !isUpcoming(status) && !isFinishedLike(status);
-      const ai = analyzeMatch(m);
+
+      const ai = analyzeMatch(m); // your full logic
       const { label, confidence, reason } = ai || {};
 
       return {
@@ -64,6 +116,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
 
   const filtered = useMemo(() => {
     const visible = normalized.filter((m) => !isFinishedLike(m.status));
+
     visible.forEach((m) => {
       if (notificationsOn && m.label === "SAFE" && m.confidence > 60 && !notifiedRef.current.has(m.id)) {
         notifiedRef.current.add(m.id);
@@ -71,6 +124,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
         playNotify();
       }
     });
+
     return visible;
   }, [normalized, notificationsOn]);
 
@@ -125,7 +179,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
   };
 
   return (
-    <div style={{ background: "#0a0c0e", minHeight: "100vh", padding: "80px 16px 24px" }}>
+    <div style={{ background: "#0a0c0e", minHeight: "100vh", padding: "14px 16px 24px" }}>
       <div style={{ maxWidth: 1100, margin: "0 auto" }}>
         {filtered.map((m) => (
           <div key={m.id} style={{
