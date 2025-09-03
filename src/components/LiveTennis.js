@@ -1,12 +1,12 @@
-import React, { useEffect, useMemo, useState, useRef } from "react";
-import fetchTennisLive from "../utils/fetchTennisLive";
-import analyzeMatch from "../utils/analyzeMatch";
+// LiveTennis.js v0.96.4
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import fetchTennisLive from '../utils/fetchTennisLive';
+import analyzeMatch from '../utils/analyzeMatch';
 
-const isUpcoming = (status) =>
-  String(status || "").toLowerCase() === "not started";
+const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
 const isFinishedLike = (s) => {
-  const x = String(s || "").toLowerCase();
-  return ["finished", "cancelled", "retired", "abandoned", "postponed", "walk over"].includes(x);
+  const x = String(s || '').toLowerCase();
+  return ['finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over'].includes(x);
 };
 
 const num = (v) => {
@@ -17,164 +17,219 @@ const num = (v) => {
   return Number.isFinite(x) ? x : null;
 };
 
-function getSetFromStatus(status) {
-  const str = String(status || "").toLowerCase();
-  const m = str.match(/set\s*([1-5])/);
-  if (m) return `SET ${m[1]}`;
-  if (str.includes("1st")) return "SET 1";
-  if (str.includes("2nd")) return "SET 2";
-  if (str.includes("3rd")) return "SET 3";
+function currentSetFromScores(players) {
+  const p = Array.isArray(players) ? players : [];
+  const a = p[0] || {}, b = p[1] || {};
+  const sA = [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)];
+  const sB = [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)];
+  let k = 0;
+  for (let i = 0; i < 5; i++) if (sA[i] !== null || sB[i] !== null) k = i + 1;
+  return k || null;
+}
+
+function setFromStatus(status) {
+  const s = String(status || '').toLowerCase().replace(/\s+/g, '');
+  const patterns = [/set(\d)/i, /(\d)(?:st|nd|rd|th)?set/, /s(?:e?t)?(\d)/i, /set[-_#]?(\d)/i];
+  for (const pattern of patterns) {
+    const match = s.match(pattern);
+    if (match) return parseInt(match[1], 10);
+  }
   return null;
 }
 
-function currentSetFromScores(score) {
-  const sets = score?.split?.(" ") || [];
-  return sets.length ? `SET ${sets.length}` : null;
-}
-
-function LiveTennis() {
-  const [matches, setMatches] = useState([]);
-  const notifiedRef = useRef({});
-
-  useEffect(() => {
-    const load = async () => {
-      const { matches } = await fetchTennisLive();
-      setMatches(matches || []);
-    };
-    load();
-    const interval = setInterval(load, 15000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const filtered = useMemo(() => {
-    const normalized = matches
-      .filter((m) => !isFinishedLike(m.status))
-      .map((match) => {
-        const { label, ev, confidence, tip, note } = analyzeMatch(match);
-        const isLive = !isUpcoming(match.status);
-        const statusLower = (match.status || "").toLowerCase();
-        const currentSet =
-          getSetFromStatus(match.status) || currentSetFromScores(match.score) || null;
-
-        let displayLabel = "";
-        let sortPriority = 99;
-
-        if (label) {
-          displayLabel = label;
-          sortPriority = {
-            SAFE: 1,
-            RISKY: 2,
-            AVOID: 3,
-          }[label] || 99;
-        } else if (isLive && currentSet) {
-          displayLabel = currentSet;
-          sortPriority = 4;
-        } else {
-          displayLabel = "STARTS SOON";
-          sortPriority = 5;
-        }
-
-        return {
-          ...match,
-          label: displayLabel,
-          ev,
-          confidence,
-          tip,
-          note,
-          isLive,
-          sortPriority,
-        };
-      });
-
-    return normalized.sort((a, b) => a.sortPriority - b.sortPriority);
-  }, [matches]);
+export default function LiveTennis({ onLiveCount = () => {} }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const notifiedRef = useRef(new Set());
 
   const playNotification = () => {
-    const audio = new Audio("/notify.mp3");
+    const audio = new Audio('/notify.mp3');
     audio.play().catch(() => {});
   };
 
+  const load = async () => {
+    setLoading(true);
+    try {
+      const matches = await fetchTennisLive();
+      setRows(Array.isArray(matches) ? matches : []);
+    } catch (e) {
+      console.warn('Failed to fetch matches:', e);
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    filtered.forEach((m) => {
-      if (m.label === "SAFE" && !notifiedRef.current[m.id]) {
-        notifiedRef.current[m.id] = true;
+    load();
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
+  }, []);
+
+  const now = new Date();
+
+  const normalized = useMemo(() => rows.map((m) => {
+    const players = Array.isArray(m.players) ? m.players : (Array.isArray(m.player) ? m.player : []);
+    const p1 = players[0] || {}, p2 = players[1] || {};
+    const name1 = p1.name || p1['@name'] || '';
+    const name2 = p2.name || p2['@name'] || '';
+    const date = m.date || m['@date'] || '';
+    const time = m.time || m['@time'] || '';
+    const dt = (() => {
+      const [dd, mm, yyyy] = date.split('.').map(Number);
+      const [HH = 0, MM = 0] = String(time || '').split(':').map(Number);
+      const d = new Date(yyyy, (mm || 1) - 1, dd, HH, MM);
+      return isNaN(d.getTime()) ? null : d;
+    })();
+    const status = m.status || m['@status'] || '';
+    const isLive = !isUpcoming(status) && !isFinishedLike(status);
+    const setByStatus = setFromStatus(status);
+    const setByScores = currentSetFromScores(players);
+    const setNum = setByStatus || setByScores || (isUpcoming(status) ? 1 : null);
+
+    let label = null;
+    let pick = null;
+    let reason = '';
+    const ai = analyzeMatch(m);
+    label = ai.label;
+    pick = ai.pick;
+    reason = ai.reason;
+
+    if (isLive && setNum < 3 && !['SAFE', 'RISKY', 'AVOID'].includes(label)) {
+      label = `SET ${setNum}`;
+    }
+    if (!isLive && dt && dt > now) {
+      const diffMin = Math.round((dt - now) / 60000);
+      label = `STARTS SOON`;
+    }
+
+    return {
+      id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
+      name1, name2, date, time, dt, isLive,
+      categoryName: m.categoryName || m['@category'] || m.category || '',
+      setNum, pick, reason,
+      label,
+      displayLabel: label,
+    };
+  }), [rows]);
+
+  const labelPriority = {
+    SAFE: 1,
+    RISKY: 2,
+    AVOID: 3,
+    'SET 1': 4,
+    'SET 2': 4,
+    'SET 3': 4,
+    'STARTS SOON': 5
+  };
+
+  const list = useMemo(() => {
+    const active = normalized.filter((m) => m.label);
+    return active.sort((a, b) => {
+      const la = labelPriority[a.label] || 99;
+      const lb = labelPriority[b.label] || 99;
+      return la - lb;
+    });
+  }, [normalized]);
+
+  useEffect(() => {
+    onLiveCount(list.filter(x => x.isLive).length);
+    list.forEach((m) => {
+      if (m.label === 'SAFE' && !notifiedRef.current.has(m.id)) {
         playNotification();
+        notifiedRef.current.add(m.id);
       }
     });
-  }, [filtered]);
+  }, [list, onLiveCount]);
+
+  const titleStyle = { fontSize: 16, fontWeight: 800, color: '#f2f6f9', lineHeight: 1.12 };
+  const detailsStyle = { marginTop: 6, fontSize: 12, color: '#c7d1dc', lineHeight: 1.35 };
+  const tipStyle = { marginTop: 6, fontSize: 13, fontWeight: 700, color: '#1fdd73' };
+
+  const badgeColors = {
+    SAFE: '#1fdd73',
+    RISKY: '#ff9900',
+    AVOID: '#ff2e2e',
+    'SET 1': '#9370DB',
+    'SET 2': '#9370DB',
+    'SET 3': '#9370DB',
+    'STARTS SOON': '#5a5f68',
+    DEFAULT: '#5a5f68'
+  };
+
+  const setBadge = (m) => {
+    const label = m.displayLabel;
+    let bg = badgeColors[label] || badgeColors.DEFAULT;
+
+    return (
+      <div
+        title={m.reason || ''}
+        style={{
+          background: bg,
+          color: '#ffffff',
+          borderRadius: 16,
+          padding: '6px 12px',
+          fontWeight: 900,
+          fontSize: 13,
+          boxShadow: '0 8px 18px rgba(0,0,0,0.28)',
+          minWidth: 64,
+          textAlign: 'center'
+        }}
+      >
+        {label}
+      </div>
+    );
+  };
 
   return (
-    <main style={{ paddingBottom: "40px" }}>
-      {filtered.map((m) => {
-        const { id, player1, player2, status, country, category, label, tip, isLive, note } = m;
-
-        const labelColors = {
-          SAFE: "#22c55e",
-          RISKY: "#f59e0b",
-          AVOID: "#ef4444",
-          "SET 1": "#a855f7",
-          "SET 2": "#a855f7",
-          "SET 3": "#a855f7",
-          "STARTS SOON": "#9ca3af",
-        };
-
-        return (
-          <div
-            key={id}
-            style={{
-              background: "#1e1e1e",
-              borderRadius: 16,
-              padding: 16,
-              margin: "8px 16px",
-              color: "#fff",
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span
-                  style={{
-                    height: 10,
-                    width: 10,
-                    borderRadius: "50%",
-                    background: isLive ? "#22c55e" : "#ef4444",
-                    display: "inline-block",
-                  }}
-                />
-                <strong>{player1} vs {player2}</strong>
+    <div style={{ background: '#0a0c0e', minHeight: '100vh' }}>
+      <div style={{ maxWidth: 1100, margin: '12px auto 40px', padding: '0 14px' }}>
+        {list.map((m) => (
+          <div key={m.id} style={{
+            borderRadius: 18,
+            background: '#121416',
+            border: '1px solid #1d2126',
+            boxShadow: '0 14px 28px rgba(0,0,0,0.45)',
+            padding: 16,
+            marginBottom: 12,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span title={m.isLive ? 'Live' : 'Upcoming'} style={{
+                  display: 'inline-block', width: 12, height: 12, borderRadius: '50%',
+                  background: m.isLive ? '#1fdd73' : '#ff5d5d',
+                  boxShadow: m.isLive ? '0 0 10px rgba(31,221,115,.8)' : '0 0 8px rgba(255,93,93,.6)',
+                }}/>
+                <div>
+                  <div style={titleStyle}>
+                    {m.name1} <span style={{ color: '#96a5b4', fontWeight: 600 }}>vs</span> {m.name2}
+                  </div>
+                  <div style={detailsStyle}>
+                    {m.date} {m.time} â¢ {m.categoryName}
+                  </div>
+                  {['SAFE', 'RISKY'].includes(m.label) && m.pick && (
+                    <div style={tipStyle}>TIP: {m.pick}</div>
+                  )}
+                </div>
               </div>
-              <div
-                style={{
-                  background: labelColors[label] || "#6b7280",
-                  color: "#fff",
-                  borderRadius: 12,
-                  padding: "4px 10px",
-                  fontWeight: "bold",
-                  fontSize: 13,
-                  minWidth: 80,
-                  textAlign: "center",
-                }}
-              >
-                {label}
-              </div>
-            </div>
-
-            {tip && (
-              <div style={{ color: "#22c55e", fontWeight: 500, fontSize: 14 }}>
-                TIP: {tip}
-              </div>
-            )}
-
-            <div style={{ fontSize: 13, color: "#d1d5db" }}>
-              {m.date} • {category} • {country} • {status}
+              {setBadge(m)}
             </div>
           </div>
-        );
-      })}
-    </main>
+        ))}
+        {list.length === 0 && !loading && (
+          <div style={{
+            marginTop: 12,
+            padding: '14px 16px',
+            borderRadius: 12,
+            background: '#121416',
+            border: '1px solid #22272c',
+            color: '#c7d1dc',
+            fontSize: 13,
+          }}>
+            ÎÎµÎ½ Î²ÏÎ­Î¸Î·ÎºÎ±Î½ Î±Î³ÏÎ½ÎµÏ (live Î® upcoming).
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
-
-export default LiveTennis;
