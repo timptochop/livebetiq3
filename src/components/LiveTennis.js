@@ -1,3 +1,4 @@
+// src/components/LiveTennis.js
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import fetchTennisLive from "../utils/fetchTennisLive";
 import analyzeMatch from "../utils/analyzeMatch";
@@ -101,7 +102,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
       const setNum = setByStatus || setByScores || (isUpcoming(status) ? 1 : null);
       const isLive = !isUpcoming(status) && !isFinishedLike(status);
 
-      const ai = analyzeMatch(m);
+      const ai = analyzeMatch(m); // your full logic
       const { label, confidence, reason } = ai || {};
 
       return {
@@ -178,12 +179,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
   };
 
   return (
-    <div style={{
-      background: "#0a0c0e",
-      minHeight: "100vh",
-      padding: "12px 14px 24px",
-      paddingTop: "calc(env(safe-area-inset-top, 0px) + 64px)"
-    }}>
+    <div style={{ background: "#0a0c0e", minHeight: "100vh", padding: "14px 16px 24px" }}>
       <div style={{ maxWidth: 1100, margin: "0 auto" }}>
         {filtered.map((m) => (
           <div key={m.id} style={{
