@@ -6,12 +6,11 @@ export default function TopBar({
   notificationsOn = false,
   onToggleNotifications = () => {},
 }) {
-  const BAR_H = 64; // οπτικό ύψος μπάρας (χωρίς safe-area)
+  const BAR_H = 64;
   const safeTop = "env(safe-area-inset-top, 0px)";
 
   return (
     <header
-      // FIXED (όχι sticky) για να μην επηρεάζεται από γονείς/overflow
       style={{
         position: "fixed",
         left: 0,
@@ -24,7 +23,6 @@ export default function TopBar({
         borderBottom: "1px solid #1a1d20",
         backdropFilter: "blur(6px)",
       }}
-      aria-label="LiveBetIQ top bar"
     >
       <div
         style={{
@@ -128,7 +126,7 @@ export default function TopBar({
           </span>
         </button>
 
-        {/* Login icon (placeholder) */}
+        {/* Login placeholder */}
         <button
           aria-label="Login"
           style={{
