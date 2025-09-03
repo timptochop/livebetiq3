@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState, useRef } from "react";
 import fetchTennisLive from "../utils/fetchTennisLive";
 import analyzeMatch from "../utils/analyzeMatch";
 
-// ... [όλα τα helpers όπως στο δικό σου]
+// ... [όλες οι συναρτήσεις setFromStatus, isUpcoming, κ.λπ. παραμένουν ίδιες]
 
 export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = true }) {
   const [rows, setRows] = useState([]);
@@ -50,8 +50,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
       const setByScores = currentSetFromScores(players);
       const setNum = setByStatus || setByScores || (isUpcoming(status) ? 1 : null);
       const isLive = !isUpcoming(status) && !isFinishedLike(status);
-
-      const ai = analyzeMatch(m); // your full logic
+      const ai = analyzeMatch(m);
       const { label, confidence, reason } = ai || {};
 
       return {
@@ -65,7 +64,6 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
 
   const filtered = useMemo(() => {
     const visible = normalized.filter((m) => !isFinishedLike(m.status));
-
     visible.forEach((m) => {
       if (notificationsOn && m.label === "SAFE" && m.confidence > 60 && !notifiedRef.current.has(m.id)) {
         notifiedRef.current.add(m.id);
@@ -73,7 +71,6 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
         playNotify();
       }
     });
-
     return visible;
   }, [normalized, notificationsOn]);
 
