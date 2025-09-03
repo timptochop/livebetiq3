@@ -102,7 +102,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
       const setNum = setByStatus || setByScores || (isUpcoming(status) ? 1 : null);
       const isLive = !isUpcoming(status) && !isFinishedLike(status);
 
-      const ai = analyzeMatch(m); // your full logic
+      const ai = analyzeMatch(m);
       const { label, confidence, reason } = ai || {};
 
       return {
@@ -116,7 +116,6 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
 
   const filtered = useMemo(() => {
     const visible = normalized.filter((m) => !isFinishedLike(m.status));
-
     visible.forEach((m) => {
       if (notificationsOn && m.label === "SAFE" && m.confidence > 60 && !notifiedRef.current.has(m.id)) {
         notifiedRef.current.add(m.id);
@@ -124,7 +123,6 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
         playNotify();
       }
     });
-
     return visible;
   }, [normalized, notificationsOn]);
 
@@ -179,7 +177,12 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
   };
 
   return (
-    <div style={{ background: "#0a0c0e", minHeight: "100vh", padding: "14px 16px 24px" }}>
+    <div style={{
+      background: "#0a0c0e",
+      padding: "14px 16px 24px",
+      paddingTop: 64,
+      minHeight: "100vh"
+    }}>
       <div style={{ maxWidth: 1100, margin: "0 auto" }}>
         {filtered.map((m) => (
           <div key={m.id} style={{
