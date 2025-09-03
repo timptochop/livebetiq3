@@ -1,13 +1,13 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
-import fetchTennisLive from '../utils/fetchTennisLive';
-import analyzeMatch from '../utils/analyzeMatch';
+// src/components/LiveTennis.js
+import React, { useEffect, useMemo, useState, useRef } from "react";
+import fetchTennisLive from "../utils/fetchTennisLive";
+import analyzeMatch from "../utils/analyzeMatch";
 
-const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
+const isUpcoming = (s) => String(s || "").toLowerCase() === "not started";
 const isFinishedLike = (s) => {
-  const x = String(s || '').toLowerCase();
-  return ['finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over'].includes(x);
+  const x = String(s || "").toLowerCase();
+  return ["finished", "cancelled", "retired", "abandoned", "postponed", "walk over"].includes(x);
 };
-
 const num = (v) => {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
@@ -16,226 +16,150 @@ const num = (v) => {
   return Number.isFinite(x) ? x : null;
 };
 
-function currentSetFromScores(players) {
-  const p = Array.isArray(players) ? players : [];
-  const a = p[0] || {};
-  const b = p[1] || {};
-  const sA = [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)];
-  const sB = [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)];
-  let k = 0;
-  for (let i = 0; i < 5; i++) if (sA[i] !== null || sB[i] !== null) k = i + 1;
-  return k || null;
-}
-
 function setFromStatus(status) {
-  const s = String(status || '').toLowerCase().replace(/\s+/g, '');
-  const patterns = [
-    /set(\d)/i, /(\d)(?:st|nd|rd|th)?set/, /s(?:e?t)?(\d)/i, /set[-_#]?(\d)/i
-  ];
-  for (const pattern of patterns) {
-    const match = s.match(pattern);
-    if (match) return parseInt(match[1], 10);
-  }
+  const s = String(status || "");
+  let m = s.match(/set\s*([1-5])/i);
+  if (m) return parseInt(m[1]);
+  if (/2nd/i.test(s)) return 2;
+  if (/3rd/i.test(s)) return 3;
+  if (/1st/i.test(s)) return 1;
   return null;
 }
 
-export default function LiveTennis({ onLiveCount = () => {} }) {
+function currentSetFromScores(score1, score2) {
+  const a = num(score1);
+  const b = num(score2);
+  if (a === null || b === null) return null;
+  return Math.max(a, b);
+}
+
+export default function LiveTennis() {
   const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(false);
   const notifiedRef = useRef(new Set());
 
-  const playNotification = () => {
-    const audio = new Audio('/notify.mp3');
-    audio.play().catch(() => {});
-  };
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const matches = await fetchTennisLive();
-      setRows(Array.isArray(matches) ? matches : []);
-    } catch (e) {
-      console.warn('Failed to fetch matches:', e);
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetchTennisLive();
+        const liveRows = (res?.matches || []).filter(
+          (r) => !isFinishedLike(r?.status)
+        );
+        setRows(liveRows);
+      } catch (err) {
+        console.error("Fetch error:", err);
+      }
+    };
     load();
-    const t = setInterval(load, 15000);
-    return () => clearInterval(t);
+    const id = setInterval(load, 15000);
+    return () => clearInterval(id);
   }, []);
 
-  const now = new Date();
+  const matches = useMemo(() => {
+    return rows.map((match) => {
+      const setNum =
+        setFromStatus(match.status) ||
+        currentSetFromScores(match.score1, match.score2);
 
-  const normalized = useMemo(() => rows.map((m) => {
-    const players = Array.isArray(m.players) ? m.players : (Array.isArray(m.player) ? m.player : []);
-    const p1 = players[0] || {};
-    const p2 = players[1] || {};
-    const name1 = p1.name || p1['@name'] || '';
-    const name2 = p2.name || p2['@name'] || '';
-    const date = m.date || m['@date'] || '';
-    const time = m.time || m['@time'] || '';
-    const dt = (() => {
-      const [dd, mm, yyyy] = date.split('.').map(Number);
-      const [HH = 0, MM = 0] = String(time || '').split(':').map(Number);
-      const d = new Date(yyyy, (mm || 1) - 1, dd, HH, MM);
-      return isNaN(d.getTime()) ? null : d;
-    })();
-    const status = m.status || m['@status'] || '';
-    const isLive = !isUpcoming(status) && !isFinishedLike(status);
-    const setByStatus = setFromStatus(status);
-    const setByScores = currentSetFromScores(players);
-    const setNum = setByStatus || setByScores || (isUpcoming(status) ? 1 : null);
-    const ai = analyzeMatch(m);
+      const { label, ev, confidence, tip } =
+        analyzeMatch(match, setNum) || {};
 
-    let displayLabel = null;
+      let statusLabel = null;
+      let color = null;
 
-    if (isLive && setNum >= 3 && ai?.label) {
-      displayLabel = ai.label;
-    } else if (isLive && setNum >= 1 && setNum < 3) {
-      displayLabel = `SET ${setNum}`;
-    } else if (isUpcoming(status) && dt && dt > now) {
-      const diffMin = Math.round((dt - now) / 60000);
-      displayLabel = `STARTS IN ${diffMin} MIN`;
-    }
-
-    return {
-      id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
-      name1, name2, date, time, dt,
-      status, setNum, isLive,
-      categoryName: m.categoryName || m['@category'] || m.category || '',
-      ...ai,
-      displayLabel
-    };
-  }), [rows]);
-
-  const labelPriority = {
-    SAFE: 1,
-    RISKY: 2,
-    AVOID: 3,
-    'SET 1': 4,
-    'SET 2': 5,
-    'SET 3': 6,
-    STARTS: 7
-  };
-
-  const list = useMemo(() => {
-    const active = normalized.filter((m) => !isFinishedLike(m.status));
-    return active.sort((a, b) => {
-      const la = labelPriority[a.displayLabel?.split(' ')[0]] || 99;
-      const lb = labelPriority[b.displayLabel?.split(' ')[0]] || 99;
-      if (la !== lb) return la - lb;
-
-      if (a.isLive !== b.isLive) return a.isLive ? -1 : 1;
-      const ta = a.dt?.getTime() ?? Infinity;
-      const tb = b.dt?.getTime() ?? Infinity;
-      return ta - tb;
-    });
-  }, [normalized]);
-
-  useEffect(() => {
-    onLiveCount(list.filter(x => x.isLive).length);
-    list.forEach((m) => {
-      if (m.displayLabel === 'SAFE' && !notifiedRef.current.has(m.id)) {
-        playNotification();
-        notifiedRef.current.add(m.id);
+      if (label === "SAFE") {
+        statusLabel = "SAFE";
+        color = "green";
+      } else if (label === "RISKY") {
+        statusLabel = "RISKY";
+        color = "orange";
+      } else if (label === "AVOID") {
+        statusLabel = "AVOID";
+        color = "red";
+      } else if (!isUpcoming(match.status)) {
+        const s = setNum || 1;
+        statusLabel = `SET ${s}`;
+        color = "purple";
+      } else {
+        const mins = match.startsInMins || 0;
+        statusLabel = `STARTS IN ${mins} MIN`;
+        color = "gray";
       }
+
+      return {
+        ...match,
+        label: statusLabel,
+        labelColor: color,
+        ev,
+        confidence,
+        tip,
+        sortIndex: {
+          SAFE: 1,
+          RISKY: 2,
+          AVOID: 3,
+        }[label] || (isUpcoming(match.status) ? 5 : 4),
+      };
     });
-  }, [list, onLiveCount]);
+  }, [rows]);
 
-  const badgeColors = {
-    SAFE: '#1fdd73',
-    RISKY: '#f5a623',
-    AVOID: '#ff5d5d',
-    'SET 1': '#9370DB',
-    'SET 2': '#9370DB',
-    'SET 3': '#9370DB',
-    DEFAULT: '#5a5f68'
-  };
-
-  const titleStyle = { fontSize: 16, fontWeight: 800, color: '#f2f6f9', lineHeight: 1.12 };
-  const detailsStyle = { marginTop: 6, fontSize: 12, color: '#c7d1dc', lineHeight: 1.35 };
-  const tipStyle = { marginTop: 6, fontSize: 13, fontWeight: 700, color: '#1fdd73' };
-
-  const setBadge = (m) => {
-    const label = m.displayLabel || '';
-    const baseLabel = label.toUpperCase();
-    let bg = badgeColors[baseLabel] || badgeColors.DEFAULT;
-
-    if (baseLabel.startsWith('STARTS IN')) bg = '#5a5f68';
-
-    return (
-      <div
-        title={m.reason || ''}
-        style={{
-          background: bg,
-          color: '#ffffff',
-          borderRadius: 16,
-          padding: '6px 12px',
-          fontWeight: 900,
-          fontSize: 13,
-          boxShadow: '0 8px 18px rgba(0,0,0,0.28)',
-          minWidth: 64,
-          textAlign: 'center'
-        }}
-      >
-        {baseLabel}
-      </div>
-    );
-  };
+  const sorted = useMemo(() => {
+    return matches.sort((a, b) => a.sortIndex - b.sortIndex);
+  }, [matches]);
 
   return (
-    <div style={{ background: '#0a0c0e', minHeight: '100vh' }}>
-      <div style={{ maxWidth: 1100, margin: '12px auto 40px', padding: '0 14px' }}>
-        {list.map((m) => (
-          <div key={m.id} style={{
-            borderRadius: 18,
-            background: '#121416',
-            border: '1px solid #1d2126',
-            boxShadow: '0 14px 28px rgba(0,0,0,0.45)',
-            padding: 16,
-            marginBottom: 12,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span title={m.isLive ? 'Live' : 'Upcoming'} style={{
-                  display: 'inline-block', width: 12, height: 12, borderRadius: '50%',
-                  background: m.isLive ? '#1fdd73' : '#ff5d5d',
-                  boxShadow: m.isLive ? '0 0 10px rgba(31,221,115,.8)' : '0 0 8px rgba(255,93,93,.6)',
-                }}/>
-                <div>
-                  <div style={titleStyle}>
-                    {m.name1} <span style={{ color: '#96a5b4', fontWeight: 600 }}>vs</span> {m.name2}
-                  </div>
-                  <div style={detailsStyle}>
-                    {m.date} {m.time} • {m.categoryName}
-                  </div>
-                  {['SAFE', 'RISKY'].includes(m.displayLabel) && m.pick && (
-                    <div style={tipStyle}>TIP: {m.pick}</div>
-                  )}
-                </div>
+    <main style={{ padding: "16px", paddingBottom: "80px", background: "#111", color: "#fff" }}>
+      {sorted.map((m, i) => (
+        <div
+          key={i}
+          style={{
+            background: "#1a1a1a",
+            marginBottom: "12px",
+            borderRadius: "12px",
+            padding: "12px 16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div
+              style={{
+                width: "10px",
+                height: "10px",
+                borderRadius: "50%",
+                background: isUpcoming(m.status) ? "red" : "limegreen",
+              }}
+            />
+            <div>
+              <div style={{ fontWeight: 600 }}>
+                {m.player1} vs {m.player2}
               </div>
-              {setBadge(m)}
+              <div style={{ fontSize: "12px", opacity: 0.7 }}>
+                {m.date} • {m.category}
+              </div>
+              {m.tip && (
+                <div style={{ fontSize: "13px", color: "#9f9", marginTop: "4px" }}>
+                  TIP: {m.tip}
+                </div>
+              )}
             </div>
           </div>
-        ))}
-        {list.length === 0 && !loading && (
-          <div style={{
-            marginTop: 12,
-            padding: '14px 16px',
-            borderRadius: 12,
-            background: '#121416',
-            border: '1px solid #22272c',
-            color: '#c7d1dc',
-            fontSize: 13,
-          }}>
-            Δεν βρέθηκαν αγώνες (live ή upcoming).
+          <div
+            style={{
+              background: m.labelColor,
+              color: "#fff",
+              padding: "4px 12px",
+              borderRadius: "999px",
+              fontWeight: 700,
+              fontSize: "13px",
+              whiteSpace: "nowrap",
+              minWidth: "88px",
+              textAlign: "center",
+            }}
+          >
+            {m.label}
           </div>
-        )}
-      </div>
-    </div>
+        </div>
+      ))}
+    </main>
   );
 }
