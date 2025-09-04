@@ -1,4 +1,4 @@
-// LiveTennis.js v0.96.3-labels-fix
+// LiveTennis.js v0.96.6-patched
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
@@ -92,14 +92,17 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     const setNum = setByStatus || setByScores || (isUpcoming(status) ? 1 : null);
 
     const ai = analyzeMatch(m);
-    let label = ai.label;
+    let label = ai.label || '';
 
     if (isUpcoming(status) && dt && dt > now) {
       const diffMin = Math.round((dt - now) / 60000);
       label = `STARTS IN ${diffMin} MIN`;
-    } else if (!label || ['PENDING', null].includes(label.toUpperCase())) {
+    } else if (!['SAFE', 'RISKY', 'AVOID'].includes(label.toUpperCase())) {
       if (isLive && setNum) {
         label = `SET ${setNum}`;
+      } else {
+        const diffMin = dt ? Math.round((dt - now) / 60000) : null;
+        label = diffMin ? `STARTS IN ${diffMin} MIN` : 'STARTS SOON';
       }
     }
 
@@ -190,7 +193,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
   };
 
   return (
-    <div style={{ background: '#0a0c0e', minHeight: '100vh' }}>
+    <div style={{ background: '#0a0c0e', minHeight: '100vh', paddingTop: 104 }}>
       <div style={{ maxWidth: 1100, margin: '12px auto 40px', padding: '0 14px' }}>
         {list.map((m) => (
           <div key={m.id} style={{
@@ -215,7 +218,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
                   <div style={detailsStyle}>
                     {m.date} {m.time} • {m.categoryName}
                   </div>
-                  {['SAFE', 'RISKY'].includes(m.displayLabel) && m.pick && (
+                  {['SAFE', 'RISKY'].includes(m.displayLabel.toUpperCase()) && m.pick && (
                     <div style={tipStyle}>TIP: {m.pick}</div>
                   )}
                 </div>
