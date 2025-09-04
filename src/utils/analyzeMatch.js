@@ -1,51 +1,79 @@
-// analyzeMatch.js v1.2.0
-import { calculateEV, estimateConfidence, generateLabel, generateNote, calculateKelly } from './aiPredictionEngine';
+// src/utils/analyzeMatch.js v0.97.0-full
+import calculateEV from './aiPredictionEngineModules/calculateEV';
+import estimateConfidence from './aiPredictionEngineModules/estimateConfidence';
+import calculateKelly from './aiPredictionEngineModules/calculateKelly';
+import detectLineMovement from './aiPredictionEngineModules/detectLineMovement';
+import surfaceAdjustment from './aiPredictionEngineModules/surfaceAdjustment';
 
-export default function analyzeMatch(match) {
-  if (!match || typeof match !== 'object') return {};
+export default function analyzeMatch(match = {}) {
+  const now = new Date().toISOString();
+  const id = match.id || match['@id'] || 'unknown';
+  const players = Array.isArray(match.players) ? match.players : match.player || [];
+  const player1 = players[0] || {}, player2 = players[1] || {}, p1 = player1.name || player1['@name'], p2 = player2.name || player2['@name'];
 
-  const players = Array.isArray(match.players)
-    ? match.players
-    : Array.isArray(match.player)
-    ? match.player
-    : [];
+  const odds = match.odds || match['@odds'] || {}, prob1 = Number(odds.prob1), prob2 = Number(odds.prob2);
+  const surface = String(match.surface || match['@surface'] || '').toLowerCase();
+  const playerStats = match.playerStats || match.stats1 || {}, opponentStats = match.opponentStats || match.stats2 || {};
 
-  const p1 = players[0] || {};
-  const p2 = players[1] || {};
+  let {
+    ev: baseEV,
+    pick,
+    reason: evReason
+  } = calculateEV(prob1, prob2);
 
-  const odds1 = parseFloat(p1.odds || p1['@odds'] || '');
-  const odds2 = parseFloat(p2.odds || p2['@odds'] || '');
+  let confidence = estimateConfidence(match, pick);
+  const momentumBoost = (() => {
+    const prevSet = match.prevSet || '';
+    if (typeof prevSet === 'string' && prevSet.toLowerCase().includes(pick?.toLowerCase())) return 5;
+    return 0;
+  })();
 
-  const prob1 = parseFloat(p1.prob || p1['@prob'] || '');
-  const prob2 = parseFloat(p2.prob || p2['@prob'] || '');
+  const { drift, driftDirection } = detectLineMovement(match);
+  const { evBoost, confidenceBoost } = surfaceAdjustment(surface, playerStats, opponentStats);
 
-  if (!odds1 || !odds2 || !prob1 || !prob2) return {};
+  const ev = Number((baseEV + evBoost).toFixed(4));
+  confidence = Math.max(0, Math.min(100, confidence + momentumBoost + confidenceBoost));
 
-  const fair = prob1 + prob2;
-  const implied1 = prob1 / fair;
-  const implied2 = prob2 / fair;
+  const kelly = calculateKelly(ev, confidence / 100);
 
-  const ev1 = calculateEV(implied1, odds1);
-  const ev2 = calculateEV(implied2, odds2);
+  let label = '';
+  let reason = '';
 
-  const betterIndex = ev1 > ev2 ? 0 : 1;
-  const better = betterIndex === 0 ? p1 : p2;
-  const worse = betterIndex === 0 ? p2 : p1;
+  if (ev >= 0.025 && confidence >= 58) {
+    label = 'SAFE';
+    reason = 'High EV & Confidence';
+  } else if (ev > 0.015 && confidence > 52) {
+    label = 'RISKY';
+    reason = 'Moderate EV & Confidence';
+  } else if (ev < 0.005 || confidence < 49) {
+    label = 'AVOID';
+    reason = 'Low EV or Confidence';
+  } else {
+    label = ''; // fallback handled in LiveTennis.js
+  }
 
-  const pick = better.name || better['@name'] || '';
-  const ev = Math.max(ev1, ev2);
-  const confidence = estimateConfidence(ev, better, worse);
-  const kelly = calculateKelly(ev, confidence);
-
-  const label = generateLabel(ev, confidence); // returns 'SAFE', 'RISKY', 'AVOID' or null
-  const reason = generateNote(label, ev, confidence, pick);
+  console.table([{
+    now,
+    id,
+    match: `${p1} vs ${p2}`,
+    label,
+    pick,
+    ev,
+    confidence,
+    kelly: kelly.toFixed(3),
+    momentumBoost,
+    drift,
+    driftDirection,
+    evBoost,
+    confidenceBoost
+  }]);
 
   return {
-    ev: ev.toFixed(3),
-    confidence: Math.round(confidence),
-    kelly: kelly.toFixed(3),
-    pick,
     label,
-    reason,
+    pick,
+    ev,
+    confidence,
+    kelly,
+    reason
   };
 }
