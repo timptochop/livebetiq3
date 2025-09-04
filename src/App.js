@@ -1,4 +1,3 @@
-// src/App.js
 import React, { useState } from 'react';
 import TopBar from './components/TopBar';
 import LiveTennis from './components/LiveTennis';
@@ -15,7 +14,7 @@ export default function App() {
         notificationsOn={notificationsOn}
         onToggleNotifications={() => setNotificationsOn(v => !v)}
       />
-      <main className="main-wrapper">
+      <main className="page-content">
         <LiveTennis onLiveCount={setLiveCount} />
       </main>
     </div>
