@@ -1,4 +1,4 @@
-// LiveTennis.js v0.96.6-final-fixed
+// src/components/LiveTennis.js v0.96.7-labelpatch
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
@@ -40,7 +40,6 @@ function setFromStatus(status) {
 
 export default function LiveTennis({ onLiveCount = () => {} }) {
   const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(false);
   const notifiedRef = useRef(new Set());
 
   const playNotification = () => {
@@ -49,15 +48,12 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
   };
 
   const load = async () => {
-    setLoading(true);
     try {
       const matches = await fetchTennisLive();
       setRows(Array.isArray(matches) ? matches : []);
     } catch (e) {
       console.warn('Failed to fetch matches:', e);
       setRows([]);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -90,18 +86,17 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     const setNum = setByStatus || setByScores || (isUpcoming(status) ? 1 : null);
 
     const ai = analyzeMatch(m);
-    let label = ai.label || '';
+    let label = (ai.label || '').toUpperCase();
 
-    if (isUpcoming(status) && dt && dt > now) {
+    if (['SAFE', 'RISKY', 'AVOID'].includes(label)) {
+      // valid label, do nothing
+    } else if (isLive && setNum) {
+      label = `SET ${setNum}`;
+    } else if (isUpcoming(status) && dt && dt > now) {
       const diffMin = Math.round((dt - now) / 60000);
       label = `STARTS IN ${diffMin} MIN`;
-    } else if (!['SAFE', 'RISKY', 'AVOID'].includes(label.toUpperCase())) {
-      if (isLive && setNum) {
-        label = `SET ${setNum}`;
-      } else {
-        const diffMin = dt ? Math.round((dt - now) / 60000) : null;
-        label = diffMin ? `STARTS IN ${diffMin} MIN` : 'STARTS SOON';
-      }
+    } else {
+      label = 'STARTS SOON';
     }
 
     return {
@@ -115,13 +110,14 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
   }), [rows]);
 
   const labelPriority = {
-    SAFE: 1,
-    RISKY: 2,
-    AVOID: 3,
+    'SAFE': 1,
+    'RISKY': 2,
+    'AVOID': 3,
     'SET 3': 4,
     'SET 2': 5,
     'SET 1': 6,
-    DEFAULT: 9
+    'STARTS SOON': 7,
+    'DEFAULT': 99
   };
 
   const list = useMemo(() => {
@@ -136,7 +132,8 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
       return ta - tb;
     });
   }, [normalized]);
-    useEffect(() => {
+
+  useEffect(() => {
     onLiveCount(list.filter(x => x.isLive).length);
     list.forEach((m) => {
       if (m.displayLabel === 'SAFE' && !notifiedRef.current.has(m.id)) {
@@ -144,49 +141,24 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
         notifiedRef.current.add(m.id);
       }
     });
-  }, [list, onLiveCount]);
-
-  const titleStyle = { fontSize: 16, fontWeight: 800, color: '#f2f6f9', lineHeight: 1.12 };
-  const detailsStyle = { marginTop: 6, fontSize: 12, color: '#c7d1dc', lineHeight: 1.35 };
-  const tipStyle = { marginTop: 6, fontSize: 13, fontWeight: 700, color: '#1fdd73' };
+  }, [list]);
 
   const badgeColors = {
     SAFE: '#1fdd73',
     RISKY: '#f5d743',
-    AVOID: '#b06c3b',
+    AVOID: '#ff4c4c',
     SET: '#9370DB',
     DEFAULT: '#5a5f68'
   };
 
-  const setBadge = (m) => {
-    const label = m.displayLabel || '';
+  const setBadge = (label = '') => {
     const base = label.toUpperCase();
-
     let bg = badgeColors.DEFAULT;
     if (base.startsWith('SAFE')) bg = badgeColors.SAFE;
     else if (base.startsWith('RISKY')) bg = badgeColors.RISKY;
     else if (base.startsWith('AVOID')) bg = badgeColors.AVOID;
     else if (base.startsWith('SET')) bg = badgeColors.SET;
-    else if (base.startsWith('STARTS')) bg = badgeColors.DEFAULT;
-
-    return (
-      <div
-        title={m.reason || ''}
-        style={{
-          background: bg,
-          color: '#ffffff',
-          borderRadius: 16,
-          padding: '6px 12px',
-          fontWeight: 900,
-          fontSize: 13,
-          boxShadow: '0 8px 18px rgba(0,0,0,0.28)',
-          minWidth: 64,
-          textAlign: 'center'
-        }}
-      >
-        {label}
-      </div>
-    );
+    return bg;
   };
 
   return (
@@ -210,22 +182,36 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
                   boxShadow: m.isLive ? '0 0 10px rgba(31,221,115,.8)' : '0 0 8px rgba(255,93,93,.6)',
                 }}/>
                 <div>
-                  <div style={titleStyle}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: '#f2f6f9' }}>
                     {m.name1} <span style={{ color: '#96a5b4', fontWeight: 600 }}>vs</span> {m.name2}
                   </div>
-                  <div style={detailsStyle}>
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#c7d1dc' }}>
                     {m.date} {m.time} • {m.categoryName}
                   </div>
                   {['SAFE', 'RISKY'].includes(m.displayLabel.toUpperCase()) && m.pick && (
-                    <div style={tipStyle}>TIP: {m.pick}</div>
+                    <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700, color: '#1fdd73' }}>
+                      TIP: {m.pick}
+                    </div>
                   )}
                 </div>
               </div>
-              {setBadge(m)}
+              <div style={{
+                background: setBadge(m.displayLabel),
+                color: '#fff',
+                borderRadius: 16,
+                padding: '6px 12px',
+                fontWeight: 900,
+                fontSize: 13,
+                minWidth: 64,
+                textAlign: 'center',
+                boxShadow: '0 8px 18px rgba(0,0,0,0.28)'
+              }}>
+                {m.displayLabel}
+              </div>
             </div>
           </div>
         ))}
-        {list.length === 0 && !loading && (
+        {list.length === 0 && (
           <div style={{
             marginTop: 12,
             padding: '14px 16px',
@@ -235,7 +221,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
             color: '#c7d1dc',
             fontSize: 13,
           }}>
-            Δεν βρέθηκαν αγώνες (live ή upcoming).
+            No live or upcoming matches found.
           </div>
         )}
       </div>
