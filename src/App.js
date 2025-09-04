@@ -1,3 +1,4 @@
+// App.js v0.9-patched
 import React, { useState } from 'react';
 import TopBar from './components/TopBar';
 import LiveTennis from './components/LiveTennis';
@@ -14,6 +15,10 @@ export default function App() {
         notificationsOn={notificationsOn}
         onToggleNotifications={() => setNotificationsOn(v => !v)}
       />
+
+      {/* ✅ FIXED SPACER για να σπρώχνει κάτω την πρώτη κάρτα */}
+      <div style={{ height: 104 }} />
+
       <main className="page-content">
         <LiveTennis onLiveCount={setLiveCount} />
       </main>
