@@ -1,4 +1,4 @@
-// LiveTennis.js v0.96.6-patched
+// LiveTennis.js v0.96.6-final-fixed
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
@@ -30,9 +30,7 @@ function currentSetFromScores(players) {
 
 function setFromStatus(status) {
   const s = String(status || '').toLowerCase().replace(/\s+/g, '');
-  const patterns = [
-    /set(\d)/i, /(\d)(?:st|nd|rd|th)?set/, /s(?:e?t)?(\d)/i, /set[-_#]?(\d)/i
-  ];
+  const patterns = [/set(\d)/i, /(\d)(?:st|nd|rd|th)?set/, /s(?:e?t)?(\d)/i, /set[-_#]?(\d)/i];
   for (const pattern of patterns) {
     const match = s.match(pattern);
     if (match) return parseInt(match[1], 10);
@@ -120,9 +118,9 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     SAFE: 1,
     RISKY: 2,
     AVOID: 3,
-    'SET 1': 4,
+    'SET 3': 4,
     'SET 2': 5,
-    'SET 3': 6,
+    'SET 1': 6,
     DEFAULT: 9
   };
 
@@ -138,8 +136,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
       return ta - tb;
     });
   }, [normalized]);
-
-  useEffect(() => {
+    useEffect(() => {
     onLiveCount(list.filter(x => x.isLive).length);
     list.forEach((m) => {
       if (m.displayLabel === 'SAFE' && !notifiedRef.current.has(m.id)) {
@@ -194,7 +191,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
 
   return (
     <div style={{ background: '#0a0c0e', minHeight: '100vh', paddingTop: 104 }}>
-      <div style={{ maxWidth: 1100, margin: '12px auto 40px', padding: '0 14px' }}>
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 14px' }}>
         {list.map((m) => (
           <div key={m.id} style={{
             borderRadius: 18,
@@ -203,6 +200,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
             boxShadow: '0 14px 28px rgba(0,0,0,0.45)',
             padding: 16,
             marginBottom: 12,
+            scrollMarginTop: 104
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
