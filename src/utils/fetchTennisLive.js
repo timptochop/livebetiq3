@@ -30,7 +30,7 @@ async function hit(url) {
 
 export default async function fetchTennisLive() {
   const CANDIDATES = [
-    '/api/gs/tennis-live' // ✅ correct endpoint
+    '/api/gs/tennis-live'
   ];
 
   let lastErr = null;
@@ -39,10 +39,21 @@ export default async function fetchTennisLive() {
       if (isDebug) console.log('[fetchTennisLive] try', url);
       const data = await hit(url);
       const arr = Array.isArray(data) ? data : data?.matches;
+
       if (Array.isArray(arr)) {
-        if (isDebug) console.log('[fetchTennisLive] OK from', url, 'count=', arr.length);
+        if (isDebug) {
+          console.log('[fetchTennisLive] OK from', url, 'count=', arr.length);
+          console.table(arr.map((m) => ({
+            id: m?.id,
+            p1: m?.player1?.name,
+            p2: m?.player2?.name,
+            status: m?.status,
+            start: m?.start_time
+          })));
+        }
         return arr.length ? arr : [];
       }
+
       if (isDebug) console.log('[fetchTennisLive] shape not array at', url, data);
       return data;
     } catch (e) {
