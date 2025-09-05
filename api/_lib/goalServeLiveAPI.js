@@ -9,12 +9,25 @@ export async function fetchLiveTennis() {
     const response = await axios.get(API_URL);
     const data = response.data;
 
-    // Optionally, clean or normalize here
-    const matches = data?.scores?.match || [];
+    // 🧠 Debug το structure:
+    console.log('[DEBUG] GoalServe raw data:', typeof data, Array.isArray(data), Object.keys(data || {}));
 
-    return Array.isArray(matches) ? matches : [matches];
+    let matches = [];
+
+    if (Array.isArray(data?.scores)) {
+      // ✅ scores is already an array of matches
+      matches = data.scores;
+    } else if (Array.isArray(data?.scores?.match)) {
+      matches = data.scores.match;
+    } else if (data?.scores?.match) {
+      matches = [data.scores.match]; // single object fallback
+    } else {
+      console.warn('[WARNING] GoalServe API returned unexpected format:', JSON.stringify(data).slice(0, 300));
+    }
+
+    return matches;
   } catch (error) {
     console.error('[FETCH] GoalServe tennis failed:', error.message);
-    throw new Error('GoalServe fetch failed');
+    return [];
   }
 }
