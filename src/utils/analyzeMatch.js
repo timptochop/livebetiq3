@@ -1,4 +1,3 @@
-// src/utils/analyzeMatch.js
 import calculateEV from './aiPredictionEngineModules/calculateEV';
 import estimateConfidence from './aiPredictionEngineModules/estimateConfidence';
 import calculateKelly from './aiPredictionEngineModules/calculateKelly';
@@ -21,6 +20,17 @@ export default function analyzeMatch(match) {
 
   const fair1 = odds1 ? 1 / odds1 : null;
   const fair2 = odds2 ? 1 / odds2 : null;
+
+  // DEBUG BEFORE SKIP
+  console.log('TESTING ODDS >>>', {
+    matchId: match?.id || '[no id]',
+    player1,
+    player2,
+    odds1,
+    odds2,
+    fair1,
+    fair2
+  });
 
   // Skip invalid data
   if (!odds1 || !odds2 || !Number.isFinite(fair1) || !Number.isFinite(fair2)) {
