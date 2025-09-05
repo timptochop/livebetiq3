@@ -21,9 +21,9 @@ export default function analyzeMatch(match) {
   const fair1 = odds1 ? 1 / odds1 : null;
   const fair2 = odds2 ? 1 / odds2 : null;
 
-  // DEBUG BEFORE SKIP
-  console.log('TESTING ODDS >>>', {
-    matchId: match?.id || '[no id]',
+  // DEBUG RAW ODDS INPUT
+  console.log('🔎 Odds check:', {
+    id: match?.id,
     player1,
     player2,
     odds1,
@@ -32,15 +32,17 @@ export default function analyzeMatch(match) {
     fair2
   });
 
-  // Skip invalid data
-  if (!odds1 || !odds2 || !Number.isFinite(fair1) || !Number.isFinite(fair2)) {
-    console.log(`Skipping match due to invalid odds:`, match?.id || '[no id]');
+  const invalidOdds = !odds1 || !odds2 || !Number.isFinite(fair1) || !Number.isFinite(fair2);
+
+  // Fallback για invalid odds — δεν κάνουμε skip
+  if (invalidOdds) {
+    console.warn(`⚠️ Invalid odds - fallback STARTS SOON →`, match?.id || '[no id]');
     return {
       ev: 0,
       confidence: 0,
       kelly: 0,
-      label: 'AVOID',
-      note: 'Invalid odds'
+      label: 'STARTS SOON',
+      note: 'Awaiting odds'
     };
   }
 

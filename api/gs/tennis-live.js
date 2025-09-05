@@ -1,10 +1,13 @@
-import { fetchLiveTennis } from '../_lib/goalServeLiveAPI';
+// File: api/gs/tennis-live.js
+
+import { fetchLiveTennis } from '../_lib/goalServeLiveAPI.js';
 
 export default async function handler(req, res) {
   try {
-    const data = await fetchLiveTennis();
-    res.status(200).json(data);
-  } catch (err) {
-    res.status(500).json({ error: 'live_failed', message: err?.message || 'unknown_error' });
+    const matches = await fetchLiveTennis();
+    res.status(200).json({ matches });
+  } catch (error) {
+    console.error('[API] Error in /api/gs/tennis-live:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 }
