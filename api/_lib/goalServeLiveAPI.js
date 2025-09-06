@@ -1,5 +1,4 @@
 // File: api/_lib/goalServeLiveAPI.js
-const https = require('https');
 const fetch = require('node-fetch');
 
 const GOALSERVE_API_URL = 'https://www.goalserve.com/getfeed/tennis?json=1';
@@ -7,10 +6,9 @@ const API_KEY = 'f0ad5b615f0b4febb29408dddb0d1d39';
 
 async function fetchLiveTennis() {
   const url = `${GOALSERVE_API_URL}&key=${API_KEY}`;
-  const agent = new https.Agent({ rejectUnauthorized: false });
 
   try {
-    const response = await fetch(url, { agent });
+    const response = await fetch(url); // ❌ NO https.Agent – Vercel blocks it!
 
     if (!response.ok) {
       console.error('[GoalServe] ❌ Response failed with status:', response.status);
