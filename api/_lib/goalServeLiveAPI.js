@@ -1,44 +1,61 @@
 // File: api/_lib/goalServeLiveAPI.js
+import fetch from 'node-fetch';
+import { parseStringPromise } from 'xml2js';
 
-const fetch = (...args) =>
-  import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const GOALSERVE_URL = 'http://www.goalserve.com/getfeed/f31155052f6749178f8808dde8bc3095/tennis_scores/home?json=1';
 
 export async function fetchLiveTennis() {
-  const API_KEY = 'f0ad5b615f0b4febb29408dddb0d1d39';
-  const url = `https://www.goalserve.com/getfeed/tennis?json=1&key=${API_KEY}`;
-
-  console.log('[fetchLiveTennis] Fetching from:', url);
-
   try {
-    const response = await fetch(url);
-    console.log('[fetchLiveTennis] HTTP Status:', response.status);
+    const response = await fetch(GOALSERVE_URL, {
+      method: 'GET',
+      headers: {
+        'Accept-Encoding': 'gzip, deflate',
+        'Accept': 'application/json',
+      },
+    });
 
     if (!response.ok) {
-      const text = await response.text();
-      console.error('[fetchLiveTennis] Response not OK:', text);
-      throw new Error(`GoalServe error: ${response.status} - ${text}`);
+      throw new Error(`HTTP ${response.status} - ${response.statusText}`);
     }
 
-    const raw = await response.json();
+    const data = await response.json();
 
-    console.log('[fetchLiveTennis] Raw JSON preview:', JSON.stringify(raw).slice(0, 500));
+    if (!data || !data.scores || !data.scores.category) {
+      console.warn('[GoalServe] Empty or unexpected structure:', data);
+      return [];
+    }
 
-    const matches = raw?.scores?.category?.flatMap(cat =>
-      cat?.matches?.map(match => ({
-        id: match.id,
-        player1: match.player1,
-        player2: match.player2,
-        status: match.status,
-        score: match.ss,
-        tournament: cat.name,
-        tournamentId: cat.id,
-      })) || []
-    ) || [];
+    const categories = Array.isArray(data.scores.category)
+      ? data.scores.category
+      : [data.scores.category];
 
-    console.log(`[fetchLiveTennis] Parsed matches: ${matches.length}`);
+    const matches = [];
+
+    for (const category of categories) {
+      const events = category.event || [];
+      for (const match of events) {
+        const home = match?.home?.name || match?.home;
+        const away = match?.away?.name || match?.away;
+        const score = match?.score || {};
+        const status = match?.status || 'Unknown';
+        const tournament = category.name || 'Unknown';
+        const matchId = match?.id || `${home}-${away}`;
+
+        matches.push({
+          id: matchId,
+          home,
+          away,
+          tournament,
+          status,
+          score,
+          raw: match, // keep original data for debug if needed
+        });
+      }
+    }
+
     return matches;
-  } catch (err) {
-    console.error('[fetchLiveTennis] Fetch error:', err);
-    throw err;
+  } catch (error) {
+    console.error('[GoalServe] fetchLiveTennis error:', error);
+    return [];
   }
 }
