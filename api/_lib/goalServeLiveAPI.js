@@ -1,53 +1,41 @@
-// api/_lib/goalServeLiveAPI.js
-import fetch from 'node-fetch';
+// File: api/_lib/goalServeLiveAPI.js
+const https = require('https');
+const fetch = require('node-fetch');
 
-const GOALSERVE_KEY = 'f31155052f6749178f8808dde8bc3095'; // 🔑 Trial API key
-const BASE_URL = `https://www.goalserve.com/getfeed/${GOALSERVE_KEY}/tennis_scores/home?json=1`;
+const GOALSERVE_API_URL = 'https://www.goalserve.com/getfeed/tennis?json=1';
+const API_KEY = 'f0ad5b615f0b4febb29408dddb0d1d39'; // αντικατάστησέ το αν αλλάξει
 
-/**
- * Fetches live tennis matches from GoalServe API in JSON format.
- * Handles parsing and error logging.
- */
-export default async function fetchLiveTennisMatches() {
+module.exports = async function fetchLiveTennisMatches() {
+  const url = `${GOALSERVE_API_URL}&key=${API_KEY}`;
+
   try {
-    const res = await fetch(BASE_URL, {
-      headers: {
-        'User-Agent': 'LiveBetIQ-Tennis/1.0',
-        'Accept-Encoding': 'gzip'
-      }
-    });
+    const agent = new https.Agent({ rejectUnauthorized: false });
+    const response = await fetch(url, { agent });
 
-    if (!res.ok) {
-      console.error(`[GoalServe] ❌ Bad response: ${res.status} ${res.statusText}`);
-      return { matches: [], error: true, status: res.status };
+    if (!response.ok) {
+      console.error('[GoalServe] ❌ Bad response status:', response.status);
+      return { matches: [], error: true };
     }
 
-    const data = await res.json();
+    const data = await response.json();
+    const matches = data?.scores?.category?.flatMap(cat =>
+      cat.tournament?.flatMap(tour =>
+        tour.match?.map(match => ({
+          id: match?.id,
+          player1: match?.player1,
+          player2: match?.player2,
+          status: match?.status,
+          score: match?.score,
+          tournament: tour?.name,
+          category: cat?.name,
+        })) || []
+      ) || []
+    ) || [];
 
-    if (!data || !data.scores || !Array.isArray(data.scores.category)) {
-      console.warn('[GoalServe] ⚠️ Unexpected structure in response:', JSON.stringify(data).slice(0, 300));
-      return { matches: [], error: true, status: 200 };
-    }
-
-    const allMatches = [];
-
-    data.scores.category.forEach((category) => {
-      const { name: tournament, match } = category;
-      if (!match) return;
-
-      const matchList = Array.isArray(match) ? match : [match];
-
-      matchList.forEach((m) => {
-        allMatches.push({
-          ...m,
-          tournament,
-        });
-      });
-    });
-
-    return { matches: allMatches, error: false };
+    console.log(`[GoalServe] ✅ ${matches.length} matches fetched`);
+    return { matches, error: false };
   } catch (err) {
-    console.error('[GoalServe] 🛑 Failed to fetch matches:', err.message);
+    console.error('[GoalServe] ❌ Exception during fetch:', err);
     return { matches: [], error: true };
   }
-}
+};
