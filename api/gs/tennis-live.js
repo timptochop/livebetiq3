@@ -1,17 +1,17 @@
 // File: api/gs/tennis-live.js
-const fetchLiveTennisMatches = require('../_lib/goalServeLiveAPI.js');
+const { fetchLiveTennis } = require('../_lib/goalServeLiveAPI.js');
 
-module.exports = async function handler(req, res) {
+module.exports = async (req, res) => {
   try {
-    const response = await fetchLiveTennisMatches();
+    const matches = await fetchLiveTennis();
 
-    if (response.error) {
-      return res.status(500).json({ matches: [], error: true, reason: 'fetch failed' });
+    if (!Array.isArray(matches) || matches.length === 0) {
+      console.warn('[API] ⚠ No matches returned from fetchLiveTennis');
     }
 
-    res.status(200).json({ matches: response.matches });
+    res.status(200).json({ matches });
   } catch (error) {
-    console.error('[API] ❌ Error in tennis-live:', error);
-    res.status(500).json({ matches: [], error: true, reason: 'unhandled exception' });
+    console.error('[API] ❌ Handler error in /api/gs/tennis-live:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 };
