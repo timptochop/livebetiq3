@@ -4,19 +4,26 @@ const fetch = (...args) =>
   import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 export async function fetchLiveTennis() {
-  const url = 'https://www.goalserve.com/getfeed/tennis?json=1&key=f0ad5b615f0b4febb29408dddb0d1d39';
+  const API_KEY = 'f0ad5b615f0b4febb29408dddb0d1d39';
+  const url = `https://www.goalserve.com/getfeed/tennis?json=1&key=${API_KEY}`;
+
+  console.log('[fetchLiveTennis] Fetching from:', url);
 
   try {
     const response = await fetch(url);
+    console.log('[fetchLiveTennis] HTTP Status:', response.status);
+
     if (!response.ok) {
-      console.error('[GoalServe API] Response Error:', response.status);
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const text = await response.text();
+      console.error('[fetchLiveTennis] Response not OK:', text);
+      throw new Error(`GoalServe error: ${response.status} - ${text}`);
     }
 
-    const data = await response.json();
+    const raw = await response.json();
 
-    console.log('[GoalServe API] Raw Response:', JSON.stringify(data).slice(0, 500)); // for debug
-    const matches = data?.scores?.category?.flatMap(cat =>
+    console.log('[fetchLiveTennis] Raw JSON preview:', JSON.stringify(raw).slice(0, 500));
+
+    const matches = raw?.scores?.category?.flatMap(cat =>
       cat?.matches?.map(match => ({
         id: match.id,
         player1: match.player1,
@@ -28,10 +35,10 @@ export async function fetchLiveTennis() {
       })) || []
     ) || [];
 
-    console.log('[GoalServe API] Parsed Matches:', matches.length);
+    console.log(`[fetchLiveTennis] Parsed matches: ${matches.length}`);
     return matches;
-  } catch (error) {
-    console.error('[GoalServe API] Fetch Error:', error);
-    throw error;
+  } catch (err) {
+    console.error('[fetchLiveTennis] Fetch error:', err);
+    throw err;
   }
 }
