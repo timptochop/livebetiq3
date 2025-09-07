@@ -6,7 +6,7 @@ module.exports = async (req, res) => {
     const matches = await fetchLiveTennis();
     res.status(200).json({ matches });
   } catch (error) {
-    console.error('[API] ❌ Handler error in /api/gs/tennis-live:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    console.error('[API] Handler error in /api/gs/tennis-live:', error);
+    res.status(500).json({ error: 'Internal Server Error', detail: String(error) });
   }
 };
