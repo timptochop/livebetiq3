@@ -2,38 +2,28 @@
 import fetch from 'node-fetch';
 import { parseStringPromise } from 'xml2js';
 
-const GOALSERVE_URL = 'http://www.goalserve.com/getfeed/f31155052f6749178f8808dde8bc3095/tennis_scores/home?json=1';
+const GOALSERVE_URL = 'http://www.goalserve.com/getfeed/f31155052f6749178f8808dde8bc3095/tennis_scores/home/';
 
 export async function fetchLiveTennis() {
   try {
-    const response = await fetch(GOALSERVE_URL, {
-      method: 'GET',
-      headers: {
-        'Accept-Encoding': 'gzip, deflate',
-        'Accept': 'application/json',
-      },
-    });
-
+    const response = await fetch(GOALSERVE_URL);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status} - ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const xml = await response.text();
+    const result = await parseStringPromise(xml, { explicitArray: false });
 
-    if (!data || !data.scores || !data.scores.category) {
-      console.warn('[GoalServe] Empty or unexpected structure:', data);
-      return [];
-    }
-
-    const categories = Array.isArray(data.scores.category)
-      ? data.scores.category
-      : [data.scores.category];
+    const categories = result?.scores?.category || [];
+    const normalized = Array.isArray(categories) ? categories : [categories];
 
     const matches = [];
 
-    for (const category of categories) {
+    for (const category of normalized) {
       const events = category.event || [];
-      for (const match of events) {
+      const eventsArray = Array.isArray(events) ? events : [events];
+
+      for (const match of eventsArray) {
         const home = match?.home?.name || match?.home;
         const away = match?.away?.name || match?.away;
         const score = match?.score || {};
@@ -48,11 +38,12 @@ export async function fetchLiveTennis() {
           tournament,
           status,
           score,
-          raw: match, // keep original data for debug if needed
+          raw: match,
         });
       }
     }
 
+    console.log(`[GoalServe] Loaded ${matches.length} matches`);
     return matches;
   } catch (error) {
     console.error('[GoalServe] fetchLiveTennis error:', error);
