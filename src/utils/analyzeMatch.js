@@ -1,12 +1,12 @@
 // src/utils/analyzeMatch.js
-import calculateEV from './aiPredictionEngineModules/calculateEV';
-import estimateConfidence from './aiPredictionEngineModules/estimateConfidence';
-import calculateKelly from './aiPredictionEngineModules/calculateKelly';
-import detectLineMovement from './aiPredictionEngineModules/detectLineMovement';
-import applySurfaceAdjustment from './aiPredictionEngineModules/surfaceAdjustment';
-import calculateTimeWeightedForm from './aiPredictionEngineModules/timeWeightedForm';
-import generateLabel from './aiPredictionEngineModules/generateLabel';
-import generateNote from './aiPredictionEngineModules/generateNote';
+import calculateEV from '../utils/aiPredictionEngineModules/calculateEV';
+import estimateConfidence from '../utils/aiPredictionEngineModules/estimateConfidence';
+import calculateKelly from '../utils/aiPredictionEngineModules/calculateKelly';
+import detectLineMovement from '../utils/aiPredictionEngineModules/detectLineMovement';
+import applySurfaceAdjustment from '../utils/aiPredictionEngineModules/surfaceAdjustment';
+import calculateTimeWeightedForm from '../utils/aiPredictionEngineModules/timeWeightedForm';
+import generateLabel from '../utils/aiPredictionEngineModules/generateLabel';
+import generateNote from '../utils/aiPredictionEngineModules/generateNote';
 
 export default function analyzeMatch(match) {
   const {
@@ -29,29 +29,18 @@ export default function analyzeMatch(match) {
   const ev = calculateEV(odds);
   let confidence = estimateConfidence({ odds, score });
 
-  // Momentum boost (π.χ. προηγούμενο σετ νίκη)
+  // Momentum boost
   if (score?.sets?.length >= 2) {
     const lastSet = score.sets[score.sets.length - 1];
-    if (lastSet && lastSet.winner === 'player1') confidence += 3;
-    else if (lastSet && lastSet.winner === 'player2') confidence -= 3;
+    if (lastSet?.winner === 'player1') confidence += 3;
+    else if (lastSet?.winner === 'player2') confidence -= 3;
   }
 
-  // Surface adjustment
   const surfaceAdjustedEV = applySurfaceAdjustment({ ev, surface, player1, player2 });
-
-  // Time-weighted form
   const formScore = calculateTimeWeightedForm({ lastMatches, player1, player2 });
-
-  // Line movement detection
   const lineMovement = detectLineMovement({ pregameOdds, liveOdds: odds });
-
-  // Kelly Criterion
   const kelly = calculateKelly({ ev: surfaceAdjustedEV, confidence });
-
-  // Label generation
   const label = generateLabel({ ev: surfaceAdjustedEV, confidence });
-
-  // Note generation
   const note = generateNote({ label, ev: surfaceAdjustedEV, confidence, player1, player2 });
 
   const ai = {
