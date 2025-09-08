@@ -8,66 +8,78 @@ import calculateTimeWeightedForm from './aiPredictionEngineModules/timeWeightedF
 import generateLabel from './aiPredictionEngineModules/generateLabel';
 import generateNote from './aiPredictionEngineModules/generateNote';
 
-export default async function analyzeMatch(match) {
+export default function analyzeMatch(match) {
   const {
+    id,
     player1,
     player2,
-    odds1,
-    odds2,
-    prob1,
-    prob2,
-    preOdds1,
-    preOdds2,
-    surface,
     status,
+    odds,
+    surface,
+    h2h,
     score,
-    id,
+    lastMatches,
+    pregameOdds,
   } = match;
 
-  const ev = calculateEV(prob1, prob2);
-  const confidence = estimateConfidence(prob1, prob2);
+  if (!odds || !odds.prob1 || !odds.prob2) {
+    return { ...match, ai: { label: 'NO ODDS', ev: null, confidence: null } };
+  }
 
-  const momentum = score && score.includes('-') ? 1 : 0;
+  const ev = calculateEV(odds);
+  let confidence = estimateConfidence({ odds, score });
 
-  const surfaceBoost = applySurfaceAdjustment(player1, player2, surface || '');
-  const formBoost = await calculateTimeWeightedForm(player1, player2);
+  // Momentum boost (π.χ. προηγούμενο σετ νίκη)
+  if (score?.sets?.length >= 2) {
+    const lastSet = score.sets[score.sets.length - 1];
+    if (lastSet && lastSet.winner === 'player1') confidence += 3;
+    else if (lastSet && lastSet.winner === 'player2') confidence -= 3;
+  }
 
-  const { driftDetected, lineMovementComment, confidenceBoost } = detectLineMovement(
-    preOdds1,
-    preOdds2,
-    odds1,
-    odds2
-  );
+  // Surface adjustment
+  const surfaceAdjustedEV = applySurfaceAdjustment({ ev, surface, player1, player2 });
 
-  const finalConfidence = confidence + momentum + surfaceBoost + formBoost + confidenceBoost;
-  const kelly = calculateKelly(ev, finalConfidence / 100);
+  // Time-weighted form
+  const formScore = calculateTimeWeightedForm({ lastMatches, player1, player2 });
 
-  const label = generateLabel(ev, finalConfidence, status);
-  const note = generateNote(label, player1, player2, ev, finalConfidence);
+  // Line movement detection
+  const lineMovement = detectLineMovement({ pregameOdds, liveOdds: odds });
 
-  console.table([
-    {
-      matchId: id,
-      player1,
-      player2,
-      ev,
-      confidence,
-      momentum,
-      surfaceBoost,
-      formBoost,
-      lineDrift: driftDetected,
-      finalConfidence,
-      label,
-      kelly,
-    },
-  ]);
+  // Kelly Criterion
+  const kelly = calculateKelly({ ev: surfaceAdjustedEV, confidence });
 
-  return {
-    ...match,
-    ev,
-    confidence: finalConfidence,
+  // Label generation
+  const label = generateLabel({ ev: surfaceAdjustedEV, confidence });
+
+  // Note generation
+  const note = generateNote({ label, ev: surfaceAdjustedEV, confidence, player1, player2 });
+
+  const ai = {
+    label,
+    ev: surfaceAdjustedEV,
+    confidence,
+    kelly,
+    formScore,
+    momentum: score?.sets?.length >= 2 ? 'active' : 'none',
+    lineMovement: lineMovement.drift,
+    note,
+  };
+
+  console.table({
+    id,
+    player1,
+    player2,
+    status,
+    ev: surfaceAdjustedEV,
+    confidence,
+    formScore,
     kelly,
     label,
     note,
+  });
+
+  return {
+    ...match,
+    ai,
   };
 }
