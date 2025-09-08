@@ -1,12 +1,12 @@
 // src/utils/analyzeMatch.js
-import calculateEV from './utils/aiPredictionEngineModules/calculateEV';
-import estimateConfidence from './utils/aiPredictionEngineModules/estimateConfidence';
-import calculateKelly from './utils/aiPredictionEngineModules/calculateKelly';
-import detectLineMovement from './utils/aiPredictionEngineModules/detectLineMovement';
-import applySurfaceAdjustment from './utils/aiPredictionEngineModules/surfaceAdjustment';
-import calculateTimeWeightedForm from './utils/aiPredictionEngineModules/timeWeightedForm';
-import generateLabel from './utils/aiPredictionEngineModules/generateLabel';
-import generateNote from './utils/aiPredictionEngineModules/generateNote';
+import calculateEV from './aiPredictionEngineModules/calculateEV';
+import estimateConfidence from './aiPredictionEngineModules/estimateConfidence';
+import calculateKelly from './aiPredictionEngineModules/calculateKelly';
+import detectLineMovement from './aiPredictionEngineModules/detectLineMovement';
+import applySurfaceAdjustment from './aiPredictionEngineModules/surfaceAdjustment';
+import calculateTimeWeightedForm from './aiPredictionEngineModules/timeWeightedForm';
+import generateLabel from './aiPredictionEngineModules/generateLabel';
+import generateNote from './aiPredictionEngineModules/generateNote';
 
 export default async function analyzeMatch(match) {
   const {
