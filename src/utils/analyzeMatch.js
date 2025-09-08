@@ -1,12 +1,13 @@
-// Corrected imports
-import calculateEV from './aiPredictionEngineModules/calculateEV';
-import estimateConfidence from './aiPredictionEngineModules/estimateConfidence';
-import calculateKelly from './aiPredictionEngineModules/calculateKelly';
-import detectLineMovement from './aiPredictionEngineModules/detectLineMovement';
-import surfaceAdjustment from './aiPredictionEngineModules/surfaceAdjustment';
-import timeWeightedForm from './aiPredictionEngineModules/timeWeightedForm';
-import generateLabel from './aiPredictionEngineModules/generateLabel';
-import generateNote from './aiPredictionEngineModules/generateNote';
+// File: src/utils/analyzeMatch.js
+
+import calculateEV from './aiPredictionEngineModules/calculateEV.js';
+import estimateConfidence from './aiPredictionEngineModules/estimateConfidence.js';
+import calculateKelly from './aiPredictionEngineModules/calculateKelly.js';
+import detectLineMovement from './aiPredictionEngineModules/detectLineMovement.js';
+import surfaceAdjustment from './aiPredictionEngineModules/surfaceAdjustment.js';
+import timeWeightedForm from './aiPredictionEngineModules/timeWeightedForm.js';
+import generateLabel from './aiPredictionEngineModules/generateLabel.js';
+import generateNote from './aiPredictionEngineModules/generateNote.js';
 
 export default async function analyzeMatch(match) {
   try {
