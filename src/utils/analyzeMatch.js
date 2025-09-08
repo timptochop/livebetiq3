@@ -1,105 +1,135 @@
-import calculateEV from './aiPredictionEngineModules/calculateEV';
-import estimateConfidence from './aiPredictionEngineModules/estimateConfidence';
-import calculateKelly from './aiPredictionEngineModules/calculateKelly';
-import detectLineMovement from './aiPredictionEngineModules/detectLineMovement';
-import surfaceAdjustment from './aiPredictionEngineModules/surfaceAdjustment';
-import timeWeightedForm from './aiPredictionEngineModules/timeWeightedForm';
-import generateLabel from './aiPredictionEngineModules/generateLabel';
-import generateNote from './aiPredictionEngineModules/generateNote';
+// File: src/utils/analyzeMatch.js
+import calculateEV from '../utils/aiPredictionEngineModules/calculateEV';
+import estimateConfidence from '../utils/aiPredictionEngineModules/estimateConfidence';
+import calculateKelly from '../utils/aiPredictionEngineModules/calculateKelly';
+import detectLineMovement from '../utils/aiPredictionEngineModules/detectLineMovement';
+import surfaceAdjustment from '../utils/aiPredictionEngineModules/surfaceAdjustment';
+import timeWeightedForm from '../utils/aiPredictionEngineModules/timeWeightedForm';
+import generateLabel from '../utils/aiPredictionEngineModules/generateLabel';
+import generateNote from '../utils/aiPredictionEngineModules/generateNote';
 
-export default function analyzeMatch(match) {
-  const player1 = match?.player1?.name || '';
-  const player2 = match?.player2?.name || '';
-  const odds1 = match?.odds?.player1;
-  const odds2 = match?.odds?.player2;
-  const preOdds1 = match?.odds?.pregame?.player1;
-  const preOdds2 = match?.odds?.pregame?.player2;
-  const surface = match?.surface || '';
-  const status = (match?.status || '').toLowerCase();
-  const score = match?.score || '';
+export default async function analyzeMatch(match) {
+  try {
+    const { home, away, odds, raw, status, tournament } = match;
 
-  const fair1 = odds1 ? 1 / odds1 : null;
-  const fair2 = odds2 ? 1 / odds2 : null;
+    const setNumber = extractSetNumber(status);
+    const isLive = isLiveMatch(status);
 
-  // DEBUG RAW ODDS INPUT
-  console.log('🔎 Odds check:', {
-    id: match?.id,
-    player1,
-    player2,
-    odds1,
-    odds2,
-    fair1,
-    fair2
-  });
+    if (!home || !away || !odds) return null;
+    if (!odds?.odds?.[0]?.bookmaker) return null;
 
-  const invalidOdds = !odds1 || !odds2 || !Number.isFinite(fair1) || !Number.isFinite(fair2);
+    const fairOdds = extractFairOdds(odds);
+    if (!fairOdds || fairOdds.prob1 === 0 || fairOdds.prob2 === 0) return null;
 
-  // Fallback για invalid odds — δεν κάνουμε skip
-  if (invalidOdds) {
-    console.warn(`⚠️ Invalid odds - fallback STARTS SOON →`, match?.id || '[no id]');
-    return {
-      ev: 0,
-      confidence: 0,
-      kelly: 0,
-      label: 'STARTS SOON',
-      note: 'Awaiting odds'
+    const inputs = {
+      home,
+      away,
+      status,
+      setNumber,
+      tournament,
+      fairOdds,
+      momentum: 0,
+      surface: extractSurface(tournament),
+      formHome: null,
+      formAway: null,
+      lineMovement: null,
     };
+
+    const formData = await timeWeightedForm(home, away);
+    inputs.formHome = formData.homeForm;
+    inputs.formAway = formData.awayForm;
+
+    const surfaceBoost = surfaceAdjustment(inputs.surface);
+    const lineMovement = detectLineMovement(odds);
+    inputs.lineMovement = lineMovement?.movement || null;
+
+    const momentumBonus = calculateMomentumBonus(match?.score);
+    inputs.momentum = momentumBonus;
+
+    const ev = calculateEV(fairOdds) + momentumBonus + surfaceBoost;
+    const confidence = estimateConfidence(ev, momentumBonus, surfaceBoost, inputs);
+    const kelly = calculateKelly(ev, confidence);
+    const label = generateLabel({ ev, confidence, setNumber });
+    const note = generateNote({ ev, confidence, label, fairOdds, momentumBonus });
+
+    console.table({
+      matchId: match.id,
+      home,
+      away,
+      ev: ev.toFixed(3),
+      confidence: Math.round(confidence) + '%',
+      label,
+      kelly: kelly.toFixed(2),
+      set: setNumber,
+      momentum: momentumBonus,
+      surface: inputs.surface,
+      formHome: inputs.formHome,
+      formAway: inputs.formAway,
+      lineMove: inputs.lineMovement,
+    });
+
+    return {
+      ...match,
+      ev,
+      confidence,
+      label,
+      tip: label === 'SAFE' ? `TIP: ${home}` : null,
+      note,
+      kelly,
+    };
+  } catch (err) {
+    console.error('[AI] analyzeMatch error:', err.message);
+    return null;
   }
+}
 
-  // Base EV
-  const ev = calculateEV(fair1, fair2);
+// Helpers
 
-  // Form score
-  const form1 = timeWeightedForm(player1);
-  const form2 = timeWeightedForm(player2);
+function extractSetNumber(status) {
+  const s = String(status || '').toLowerCase();
+  if (s.includes('set 3')) return 3;
+  if (s.includes('set 2')) return 2;
+  if (s.includes('set 1')) return 1;
+  return s.includes('in progress') ? 1 : 0;
+}
 
-  // Momentum logic
-  const momentumBoost = score.includes('RET') ? 0 : (
-    score.includes('1-0') ? 0.05 :
-    score.includes('2-0') ? 0.1 : 0
-  );
+function isLiveMatch(status) {
+  const s = String(status || '').toLowerCase();
+  return s.includes('in progress') || s.includes('live') || s.includes('set');
+}
 
-  // Surface adjustment
-  const surfaceFactor = surfaceAdjustment(surface, player1, player2);
+function extractSurface(tournament) {
+  const s = tournament.toLowerCase();
+  if (s.includes('clay')) return 'clay';
+  if (s.includes('grass')) return 'grass';
+  if (s.includes('hard')) return 'hard';
+  return 'unknown';
+}
 
-  // Confidence
-  let confidence = estimateConfidence(ev, form1, form2);
-  confidence += momentumBoost + surfaceFactor;
+function extractFairOdds(odds) {
+  try {
+    const bookmaker = odds.odds[0].bookmaker[0];
+    const o1 = parseFloat(bookmaker.odds?.[0]?._);
+    const o2 = parseFloat(bookmaker.odds?.[1]?._);
+    if (!o1 || !o2) return null;
+    const prob1 = 1 / o1;
+    const prob2 = 1 / o2;
+    return { o1, o2, prob1, prob2 };
+  } catch (e) {
+    return null;
+  }
+}
 
-  // Line movement adjustment
-  const lineMovementComment = detectLineMovement(preOdds1, preOdds2, odds1, odds2);
-
-  // Final Label
-  const label = generateLabel({ ev, confidence });
-  const kelly = calculateKelly(ev, confidence);
-  const note = generateNote({ label, player1, player2 });
-
-  // DEBUG LOGGING
-  console.table({
-    MatchID: match.id || '[no id]',
-    Player1: player1,
-    Player2: player2,
-    Odds1: odds1,
-    Odds2: odds2,
-    Fair1: fair1?.toFixed(3),
-    Fair2: fair2?.toFixed(3),
-    EV: ev?.toFixed(3),
-    Confidence: confidence?.toFixed(1),
-    Label: label,
-    Kelly: kelly?.toFixed(2),
-    Surface: surface,
-    Form1: form1,
-    Form2: form2,
-    Momentum: momentumBoost?.toFixed(2),
-    SurfaceAdj: surfaceFactor?.toFixed(2),
-    LineMove: lineMovementComment
-  });
-
-  return {
-    ev,
-    confidence,
-    kelly,
-    label,
-    note
-  };
+function calculateMomentumBonus(score) {
+  try {
+    const sets = score?.set || [];
+    if (!Array.isArray(sets) || sets.length < 2) return 0;
+    const lastSet = sets[sets.length - 1];
+    const [h, a] = [parseInt(lastSet.home), parseInt(lastSet.away)];
+    if (h > a) return 0.005;
+    if (a > h) return -0.005;
+    return 0;
+  } catch (e) {
+    return 0;
+  }
 }
