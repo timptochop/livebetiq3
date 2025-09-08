@@ -1,0 +1,9 @@
+{
+  "regions": ["sfo1"],
+  "functions": {
+    "api/gs/tennis-live.js": {
+      "memory": 512,
+      "maxDuration": 10
+    }
+  }
+}

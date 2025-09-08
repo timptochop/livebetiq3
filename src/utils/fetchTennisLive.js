@@ -1,21 +1,30 @@
-// File: src/utils/fetchTennisLive.js v0.96.14-debug
+// src/utils/fetchTennisLive.js
+const API_URL = 'https://livebetiq3.vercel.app/api/gs/tennis-live'; // production-only
+
 export default async function fetchTennisLive() {
   try {
-    const res = await fetch('https://livebetiq3.vercel.app/api/gs/tennis-live');
-    const data = await res.json();
+    const response = await fetch(API_URL, {
+      headers: {
+        'Cache-Control': 'no-cache',
+      },
+    });
 
-    console.log('🎯 [fetchTennisLive] Response status:', res.status);
-    console.log('🎯 [fetchTennisLive] Matches:', data.matches?.length);
-    console.table((data.matches || []).map(m => ({
-      id: m.id || m['@id'],
-      status: m.status || m['@status'],
-      player1: m?.player?.[0]?.name || m?.players?.[0]?.name,
-      player2: m?.player?.[1]?.name || m?.players?.[1]?.name,
-    })));
+    if (!response.ok) {
+      console.error(`[fetchTennisLive] ❌ HTTP Error ${response.status}`);
+      return { matches: [] };
+    }
 
-    return Array.isArray(data.matches) ? data.matches : [];
-  } catch (e) {
-    console.warn('[fetchTennisLive] API Error:', e.message);
-    return [];
+    const json = await response.json();
+
+    if (!json || !Array.isArray(json.matches)) {
+      console.error('[fetchTennisLive] ❌ API Error: Invalid JSON structure');
+      return { matches: [] };
+    }
+
+    console.log(`[fetchTennisLive] ✅ Loaded ${json.matches.length} matches`);
+    return json;
+  } catch (err) {
+    console.error('[fetchTennisLive] ❌ Network/API Error:', err.message);
+    return { matches: [] };
   }
 }

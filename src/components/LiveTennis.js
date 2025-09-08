@@ -1,230 +1,148 @@
-// src/components/LiveTennis.js v0.96.7-labelpatch
-import React, { useEffect, useMemo, useState, useRef } from 'react';
-import fetchTennisLive from '../utils/fetchTennisLive';
-import analyzeMatch from '../utils/analyzeMatch';
+// File: src/utils/analyzeMatch.js
+import calculateEV from './aiPredictionEngineModules/calculateEV';
+import estimateConfidence from './aiPredictionEngineModules/estimateConfidence';
+import calculateKelly from './aiPredictionEngineModules/calculateKelly';
+import detectLineMovement from './aiPredictionEngineModules/detectLineMovement';
+import surfaceAdjustment from './aiPredictionEngineModules/surfaceAdjustment';
+import timeWeightedForm from './aiPredictionEngineModules/timeWeightedForm';
+import generateLabel from './aiPredictionEngineModules/generateLabel';
+import generateNote from './aiPredictionEngineModules/generateNote';
 
-const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
-const isFinishedLike = (s) => {
-  const x = String(s || '').toLowerCase();
-  return ['finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over'].includes(x);
-};
+export default async function analyzeMatch(match) {
+  try {
+    const { home, away, odds, raw, status, tournament } = match;
 
-const num = (v) => {
-  if (v === null || v === undefined) return null;
-  const s = String(v).trim();
-  if (!s) return null;
-  const x = parseInt(s.split(/[.:]/)[0], 10);
-  return Number.isFinite(x) ? x : null;
-};
+    const setNumber = extractSetNumber(status);
+    const isLive = isLiveMatch(status);
 
-function currentSetFromScores(players) {
-  const p = Array.isArray(players) ? players : [];
-  const a = p[0] || {};
-  const b = p[1] || {};
-  const sA = [num(a.s1), num(a.s2), num(a.s3)];
-  const sB = [num(b.s1), num(b.s2), num(b.s3)];
-  let k = 0;
-  for (let i = 0; i < 3; i++) if (sA[i] !== null || sB[i] !== null) k = i + 1;
-  return k || null;
-}
+    // Basic validation
+    if (!home || !away || !odds) return null;
+    if (!odds?.odds?.[0]?.bookmaker) return null;
 
-function setFromStatus(status) {
-  const s = String(status || '').toLowerCase().replace(/\s+/g, '');
-  const patterns = [/set(\d)/i, /(\d)(?:st|nd|rd|th)?set/, /s(?:e?t)?(\d)/i, /set[-_#]?(\d)/i];
-  for (const pattern of patterns) {
-    const match = s.match(pattern);
-    if (match) return parseInt(match[1], 10);
-  }
-  return null;
-}
+    const fairOdds = extractFairOdds(odds);
+    if (!fairOdds || fairOdds.prob1 === 0 || fairOdds.prob2 === 0) return null;
 
-export default function LiveTennis({ onLiveCount = () => {} }) {
-  const [rows, setRows] = useState([]);
-  const notifiedRef = useRef(new Set());
+    // Core inputs
+    const inputs = {
+      home,
+      away,
+      status,
+      setNumber,
+      tournament,
+      fairOdds,
+      momentum: 0,
+      surface: extractSurface(tournament),
+      formHome: null,
+      formAway: null,
+      lineMovement: null,
+    };
 
-  const playNotification = () => {
-    const audio = new Audio('/notify.mp3');
-    audio.play().catch(() => {});
-  };
+    // Time-weighted form (async)
+    const formData = await timeWeightedForm(home, away);
+    inputs.formHome = formData.homeForm;
+    inputs.formAway = formData.awayForm;
 
-  const load = async () => {
-    try {
-      const matches = await fetchTennisLive();
-      setRows(Array.isArray(matches) ? matches : []);
-    } catch (e) {
-      console.warn('Failed to fetch matches:', e);
-      setRows([]);
-    }
-  };
+    // Surface adjustment
+    const surfaceBoost = surfaceAdjustment(inputs.surface);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 15000);
-    return () => clearInterval(t);
-  }, []);
+    // Line movement detection
+    const lineMovement = detectLineMovement(odds);
+    inputs.lineMovement = lineMovement?.movement || null;
 
-  const now = new Date();
+    // Momentum bonus
+    const momentumBonus = calculateMomentumBonus(match?.score);
+    inputs.momentum = momentumBonus;
 
-  const normalized = useMemo(() => rows.map((m) => {
-    const players = Array.isArray(m.players) ? m.players : (Array.isArray(m.player) ? m.player : []);
-    const p1 = players[0] || {};
-    const p2 = players[1] || {};
-    const name1 = p1.name || p1['@name'] || '';
-    const name2 = p2.name || p2['@name'] || '';
-    const date = m.date || m['@date'] || '';
-    const time = m.time || m['@time'] || '';
-    const dt = (() => {
-      const [dd, mm, yyyy] = date.split('.').map(Number);
-      const [HH = 0, MM = 0] = String(time || '').split(':').map(Number);
-      const d = new Date(yyyy, (mm || 1) - 1, dd, HH, MM);
-      return isNaN(d.getTime()) ? null : d;
-    })();
-    const status = m.status || m['@status'] || '';
-    const isLive = !isUpcoming(status) && !isFinishedLike(status);
-    const setByStatus = setFromStatus(status);
-    const setByScores = currentSetFromScores(players);
-    const setNum = setByStatus || setByScores || (isUpcoming(status) ? 1 : null);
+    // EV + Confidence
+    const ev = calculateEV(fairOdds) + momentumBonus + surfaceBoost;
+    const confidence = estimateConfidence(ev, momentumBonus, surfaceBoost, inputs);
 
-    const ai = analyzeMatch(m);
-    let label = (ai.label || '').toUpperCase();
+    // Kelly
+    const kelly = calculateKelly(ev, confidence);
 
-    if (['SAFE', 'RISKY', 'AVOID'].includes(label)) {
-      // valid label, do nothing
-    } else if (isLive && setNum) {
-      label = `SET ${setNum}`;
-    } else if (isUpcoming(status) && dt && dt > now) {
-      const diffMin = Math.round((dt - now) / 60000);
-      label = `STARTS IN ${diffMin} MIN`;
-    } else {
-      label = 'STARTS SOON';
-    }
+    // Label + Note
+    const label = generateLabel({ ev, confidence, setNumber });
+    const note = generateNote({ ev, confidence, label, fairOdds, momentumBonus });
+
+    // Debug log
+    console.table({
+      matchId: match.id,
+      home,
+      away,
+      ev: ev.toFixed(3),
+      confidence: Math.round(confidence) + '%',
+      label,
+      kelly: kelly.toFixed(2),
+      set: setNumber,
+      momentum: momentumBonus,
+      surface: inputs.surface,
+      formHome: inputs.formHome,
+      formAway: inputs.formAway,
+      lineMove: inputs.lineMovement,
+    });
 
     return {
-      id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
-      name1, name2, date, time, dt,
-      status, setNum, isLive,
-      categoryName: m.categoryName || m['@category'] || m.category || '',
-      ...ai,
-      displayLabel: label
+      ...match,
+      ev,
+      confidence,
+      label,
+      tip: label === 'SAFE' ? `TIP: ${home}` : null,
+      note,
+      kelly,
     };
-  }), [rows]);
+  } catch (err) {
+    console.error('[AI] analyzeMatch error:', err.message);
+    return null;
+  }
+}
 
-  const labelPriority = {
-    'SAFE': 1,
-    'RISKY': 2,
-    'AVOID': 3,
-    'SET 3': 4,
-    'SET 2': 5,
-    'SET 1': 6,
-    'STARTS SOON': 7,
-    'DEFAULT': 99
-  };
+// Helpers
 
-  const list = useMemo(() => {
-    const active = normalized.filter((m) => !isFinishedLike(m.status));
-    return active.sort((a, b) => {
-      const la = labelPriority[a.displayLabel?.toUpperCase()] || 99;
-      const lb = labelPriority[b.displayLabel?.toUpperCase()] || 99;
-      if (la !== lb) return la - lb;
-      if (a.isLive !== b.isLive) return a.isLive ? -1 : 1;
-      const ta = a.dt?.getTime() ?? Infinity;
-      const tb = b.dt?.getTime() ?? Infinity;
-      return ta - tb;
-    });
-  }, [normalized]);
+function extractSetNumber(status) {
+  const s = String(status || '').toLowerCase();
+  if (s.includes('set 3')) return 3;
+  if (s.includes('set 2')) return 2;
+  if (s.includes('set 1')) return 1;
+  return s.includes('in progress') ? 1 : 0;
+}
 
-  useEffect(() => {
-    onLiveCount(list.filter(x => x.isLive).length);
-    list.forEach((m) => {
-      if (m.displayLabel === 'SAFE' && !notifiedRef.current.has(m.id)) {
-        playNotification();
-        notifiedRef.current.add(m.id);
-      }
-    });
-  }, [list]);
+function isLiveMatch(status) {
+  const s = String(status || '').toLowerCase();
+  return s.includes('in progress') || s.includes('live') || s.includes('set');
+}
 
-  const badgeColors = {
-    SAFE: '#1fdd73',
-    RISKY: '#f5d743',
-    AVOID: '#ff4c4c',
-    SET: '#9370DB',
-    DEFAULT: '#5a5f68'
-  };
+function extractSurface(tournament) {
+  const s = tournament.toLowerCase();
+  if (s.includes('clay')) return 'clay';
+  if (s.includes('grass')) return 'grass';
+  if (s.includes('hard')) return 'hard';
+  return 'unknown';
+}
 
-  const setBadge = (label = '') => {
-    const base = label.toUpperCase();
-    let bg = badgeColors.DEFAULT;
-    if (base.startsWith('SAFE')) bg = badgeColors.SAFE;
-    else if (base.startsWith('RISKY')) bg = badgeColors.RISKY;
-    else if (base.startsWith('AVOID')) bg = badgeColors.AVOID;
-    else if (base.startsWith('SET')) bg = badgeColors.SET;
-    return bg;
-  };
+function extractFairOdds(odds) {
+  try {
+    const bookmaker = odds.odds[0].bookmaker[0];
+    const o1 = parseFloat(bookmaker.odds?.[0]?._);
+    const o2 = parseFloat(bookmaker.odds?.[1]?._);
+    if (!o1 || !o2) return null;
+    const prob1 = 1 / o1;
+    const prob2 = 1 / o2;
+    return { o1, o2, prob1, prob2 };
+  } catch (e) {
+    return null;
+  }
+}
 
-  return (
-    <div style={{ background: '#0a0c0e', minHeight: '100vh', paddingTop: 104 }}>
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 14px' }}>
-        {list.map((m) => (
-          <div key={m.id} style={{
-            borderRadius: 18,
-            background: '#121416',
-            border: '1px solid #1d2126',
-            boxShadow: '0 14px 28px rgba(0,0,0,0.45)',
-            padding: 16,
-            marginBottom: 12,
-            scrollMarginTop: 104
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span title={m.isLive ? 'Live' : 'Upcoming'} style={{
-                  display: 'inline-block', width: 12, height: 12, borderRadius: '50%',
-                  background: m.isLive ? '#1fdd73' : '#ff5d5d',
-                  boxShadow: m.isLive ? '0 0 10px rgba(31,221,115,.8)' : '0 0 8px rgba(255,93,93,.6)',
-                }}/>
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: '#f2f6f9' }}>
-                    {m.name1} <span style={{ color: '#96a5b4', fontWeight: 600 }}>vs</span> {m.name2}
-                  </div>
-                  <div style={{ marginTop: 6, fontSize: 12, color: '#c7d1dc' }}>
-                    {m.date} {m.time} • {m.categoryName}
-                  </div>
-                  {['SAFE', 'RISKY'].includes(m.displayLabel.toUpperCase()) && m.pick && (
-                    <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700, color: '#1fdd73' }}>
-                      TIP: {m.pick}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div style={{
-                background: setBadge(m.displayLabel),
-                color: '#fff',
-                borderRadius: 16,
-                padding: '6px 12px',
-                fontWeight: 900,
-                fontSize: 13,
-                minWidth: 64,
-                textAlign: 'center',
-                boxShadow: '0 8px 18px rgba(0,0,0,0.28)'
-              }}>
-                {m.displayLabel}
-              </div>
-            </div>
-          </div>
-        ))}
-        {list.length === 0 && (
-          <div style={{
-            marginTop: 12,
-            padding: '14px 16px',
-            borderRadius: 12,
-            background: '#121416',
-            border: '1px solid #22272c',
-            color: '#c7d1dc',
-            fontSize: 13,
-          }}>
-            No live or upcoming matches found.
-          </div>
-        )}
-      </div>
-    </div>
-  );
+function calculateMomentumBonus(score) {
+  try {
+    const sets = score?.set || [];
+    if (!Array.isArray(sets) || sets.length < 2) return 0;
+    const lastSet = sets[sets.length - 1];
+    const [h, a] = [parseInt(lastSet.home), parseInt(lastSet.away)];
+    if (h > a) return 0.005;
+    if (a > h) return -0.005;
+    return 0;
+  } catch (e) {
+    return 0;
+  }
 }
