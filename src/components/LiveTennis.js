@@ -1,148 +1,117 @@
-// File: src/utils/analyzeMatch.js
-import calculateEV from './aiPredictionEngineModules/calculateEV';
-import estimateConfidence from './aiPredictionEngineModules/estimateConfidence';
-import calculateKelly from './aiPredictionEngineModules/calculateKelly';
-import detectLineMovement from './aiPredictionEngineModules/detectLineMovement';
-import surfaceAdjustment from './aiPredictionEngineModules/surfaceAdjustment';
-import timeWeightedForm from './aiPredictionEngineModules/timeWeightedForm';
-import generateLabel from './aiPredictionEngineModules/generateLabel';
-import generateNote from './aiPredictionEngineModules/generateNote';
+// src/components/LiveTennis.js
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import fetchTennisLive from '../utils/fetchTennisLive';
+import analyzeMatch from '../utils/analyzeMatch';
 
-export default async function analyzeMatch(match) {
-  try {
-    const { home, away, odds, raw, status, tournament } = match;
+// ----- helpers -----
+const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
+const isFinishedLike = (s) => {
+  const x = String(s || '').toLowerCase();
+  return ['finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over'].includes(x);
+};
 
-    const setNumber = extractSetNumber(status);
-    const isLive = isLiveMatch(status);
+const num = (v) => {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const x = parseInt(s.split(/[.:]/)[0], 10);
+  return Number.isFinite(x) ? x : null;
+};
 
-    // Basic validation
-    if (!home || !away || !odds) return null;
-    if (!odds?.odds?.[0]?.bookmaker) return null;
-
-    const fairOdds = extractFairOdds(odds);
-    if (!fairOdds || fairOdds.prob1 === 0 || fairOdds.prob2 === 0) return null;
-
-    // Core inputs
-    const inputs = {
-      home,
-      away,
-      status,
-      setNumber,
-      tournament,
-      fairOdds,
-      momentum: 0,
-      surface: extractSurface(tournament),
-      formHome: null,
-      formAway: null,
-      lineMovement: null,
-    };
-
-    // Time-weighted form (async)
-    const formData = await timeWeightedForm(home, away);
-    inputs.formHome = formData.homeForm;
-    inputs.formAway = formData.awayForm;
-
-    // Surface adjustment
-    const surfaceBoost = surfaceAdjustment(inputs.surface);
-
-    // Line movement detection
-    const lineMovement = detectLineMovement(odds);
-    inputs.lineMovement = lineMovement?.movement || null;
-
-    // Momentum bonus
-    const momentumBonus = calculateMomentumBonus(match?.score);
-    inputs.momentum = momentumBonus;
-
-    // EV + Confidence
-    const ev = calculateEV(fairOdds) + momentumBonus + surfaceBoost;
-    const confidence = estimateConfidence(ev, momentumBonus, surfaceBoost, inputs);
-
-    // Kelly
-    const kelly = calculateKelly(ev, confidence);
-
-    // Label + Note
-    const label = generateLabel({ ev, confidence, setNumber });
-    const note = generateNote({ ev, confidence, label, fairOdds, momentumBonus });
-
-    // Debug log
-    console.table({
-      matchId: match.id,
-      home,
-      away,
-      ev: ev.toFixed(3),
-      confidence: Math.round(confidence) + '%',
-      label,
-      kelly: kelly.toFixed(2),
-      set: setNumber,
-      momentum: momentumBonus,
-      surface: inputs.surface,
-      formHome: inputs.formHome,
-      formAway: inputs.formAway,
-      lineMove: inputs.lineMovement,
-    });
-
-    return {
-      ...match,
-      ev,
-      confidence,
-      label,
-      tip: label === 'SAFE' ? `TIP: ${home}` : null,
-      note,
-      kelly,
-    };
-  } catch (err) {
-    console.error('[AI] analyzeMatch error:', err.message);
-    return null;
-  }
-}
-
-// Helpers
-
-function extractSetNumber(status) {
+function setFromStatus(status) {
   const s = String(status || '').toLowerCase();
+  let m = s.match(/set\s*([1-5])/i);
+  if (m) return parseInt(m[1]);
   if (s.includes('set 3')) return 3;
   if (s.includes('set 2')) return 2;
   if (s.includes('set 1')) return 1;
-  return s.includes('in progress') ? 1 : 0;
+  if (s.includes('in progress')) return 1;
+  return 0;
 }
 
-function isLiveMatch(status) {
-  const s = String(status || '').toLowerCase();
-  return s.includes('in progress') || s.includes('live') || s.includes('set');
-}
+// ----- main -----
+export default function LiveTennis() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const notifiedRef = useRef({});
 
-function extractSurface(tournament) {
-  const s = tournament.toLowerCase();
-  if (s.includes('clay')) return 'clay';
-  if (s.includes('grass')) return 'grass';
-  if (s.includes('hard')) return 'hard';
-  return 'unknown';
-}
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
-function extractFairOdds(odds) {
-  try {
-    const bookmaker = odds.odds[0].bookmaker[0];
-    const o1 = parseFloat(bookmaker.odds?.[0]?._);
-    const o2 = parseFloat(bookmaker.odds?.[1]?._);
-    if (!o1 || !o2) return null;
-    const prob1 = 1 / o1;
-    const prob2 = 1 / o2;
-    return { o1, o2, prob1, prob2 };
-  } catch (e) {
-    return null;
-  }
-}
+  const load = async () => {
+    try {
+      setLoading(true);
+      const raw = await fetchTennisLive();
+      const filtered = raw.filter((m) => !isFinishedLike(m.status));
+      const analyzed = await Promise.all(
+        filtered.map(async (match) => {
+          try {
+            const result = await analyzeMatch(match);
+            return result;
+          } catch (err) {
+            console.warn(`analyzeMatch failed for match ${match.id}:`, err.message);
+            return {
+              ...match,
+              ev: 0,
+              confidence: 0,
+              kelly: 0,
+              label: 'SAFE',
+              note: 'Fallback: analyzeMatch failed',
+            };
+          }
+        })
+      );
+      const final = analyzed.filter(Boolean);
+      setRows(final);
+    } catch (err) {
+      console.error('Load error:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-function calculateMomentumBonus(score) {
-  try {
-    const sets = score?.set || [];
-    if (!Array.isArray(sets) || sets.length < 2) return 0;
-    const lastSet = sets[sets.length - 1];
-    const [h, a] = [parseInt(lastSet.home), parseInt(lastSet.away)];
-    if (h > a) return 0.005;
-    if (a > h) return -0.005;
-    return 0;
-  } catch (e) {
-    return 0;
-  }
+  const sortedRows = useMemo(() => {
+    const priority = {
+      SAFE: 1,
+      RISKY: 2,
+      AVOID: 3,
+      SET: 4,
+      SOON: 5,
+    };
+    return [...rows].sort((a, b) => {
+      const prioA = priority[getLabelGroup(a.label)] || 99;
+      const prioB = priority[getLabelGroup(b.label)] || 99;
+      return prioA - prioB;
+    });
+  }, [rows]);
+
+  const getLabelGroup = (label) => {
+    if (label === 'SAFE') return 'SAFE';
+    if (label === 'RISKY') return 'RISKY';
+    if (label === 'AVOID') return 'AVOID';
+    if (label?.startsWith('SET')) return 'SET';
+    if (label?.startsWith('START')) return 'SOON';
+    return 'OTHER';
+  };
+
+  return (
+    <main style={{ padding: '16px', paddingTop: '104px', minHeight: '100vh' }}>
+      <h2>Live Tennis Matches</h2>
+      {loading && <p>Loading...</p>}
+      {sortedRows.map((m) => (
+        <div key={m.id} style={{ marginBottom: '16px', border: '1px solid #ccc', padding: '8px' }}>
+          <strong>{m.home} vs {m.away}</strong>
+          <div>Status: {m.status}</div>
+          <div>Label: <strong>{m.label}</strong></div>
+          {m.tip && <div style={{ color: 'green' }}>{m.tip}</div>}
+          <div>EV: {(m.ev * 100).toFixed(2)}%</div>
+          <div>Confidence: {Math.round(m.confidence)}%</div>
+          {m.note && <div style={{ fontStyle: 'italic', fontSize: '0.9em' }}>{m.note}</div>}
+        </div>
+      ))}
+    </main>
+  );
 }
