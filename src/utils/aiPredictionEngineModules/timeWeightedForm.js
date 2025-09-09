@@ -1,21 +1,37 @@
-export default function timeWeightedForm(playerStats = []) {
-  let score = 0;
-  let totalWeight = 0;
+// src/utils/aiPredictionEngineModules/timeWeightedForm.js
 
-  for (const match of playerStats) {
-    const date = new Date(match.date);
-    const daysAgo = (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24);
+/**
+ * Calculates time-weighted form for both players based on mock recent results.
+ * In production, replace with real historical match data API.
+ */
+export default async function timeWeightedForm(home, away) {
+  const mockRecentMatches = {
+    [home]: [
+      { result: 'W', daysAgo: 10 },
+      { result: 'L', daysAgo: 25 },
+      { result: 'W', daysAgo: 45 },
+    ],
+    [away]: [
+      { result: 'L', daysAgo: 5 },
+      { result: 'W', daysAgo: 15 },
+      { result: 'L', daysAgo: 50 },
+    ],
+  };
 
-    let weight = 0;
-    if (daysAgo <= 30) weight = 1.0;
-    else if (daysAgo <= 60) weight = 0.5;
-    else if (daysAgo <= 90) weight = 0.25;
-    else continue;
+  const calculateFormScore = (matches) => {
+    return matches.reduce((score, match) => {
+      const weight =
+        match.daysAgo <= 30
+          ? 1
+          : match.daysAgo <= 60
+          ? 0.5
+          : 0.1; // decay over time
+      return score + (match.result === 'W' ? 1 : -1) * weight;
+    }, 0);
+  };
 
-    const outcome = match.result === 'win' ? 1 : match.result === 'loss' ? -1 : 0;
-    score += outcome * weight;
-    totalWeight += weight;
-  }
+  const homeForm = calculateFormScore(mockRecentMatches[home] || []);
+  const awayForm = calculateFormScore(mockRecentMatches[away] || []);
 
-  return totalWeight ? score / totalWeight : 0;
+  return { homeForm, awayForm };
 }

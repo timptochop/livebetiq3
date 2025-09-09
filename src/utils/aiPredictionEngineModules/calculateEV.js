@@ -1,13 +1,16 @@
-// calculateEV.js
-// Υπολογισμός Expected Value (EV) για έναν παίκτη με βάση τις πιθανότητες νίκης (prob) και τις αποδόσεις (odds)
+// src/utils/aiPredictionEngineModules/calculateEV.js
 
-export default function calculateEV(prob, odds) {
-  if (!Number.isFinite(prob) || !Number.isFinite(odds) || prob <= 0 || odds <= 1) {
-    return 0; // fallback σε μη έγκυρες τιμές
-  }
+export default function calculateEV({ prob1, prob2 }) {
+  if (!prob1 || !prob2) return 0;
 
-  // Υπολογισμός Expected Value: EV = (probability * (odds - 1)) - (1 - probability)
-  const ev = (prob * (odds - 1)) - (1 - prob);
+  // Normalize
+  const total = prob1 + prob2;
+  const p1 = prob1 / total;
+  const p2 = prob2 / total;
 
-  return Math.round(ev * 1000) / 1000; // 3 δεκαδικά ψηφία
+  // Calculate edge
+  const edge = Math.abs(p1 - p2);
+  const ev = edge - 0.02; // House edge buffer
+
+  return parseFloat(ev.toFixed(4));
 }

@@ -1,74 +1,69 @@
 // src/utils/analyzeMatch.js
-import calculateEV from '../utils/aiPredictionEngineModules/calculateEV';
-import estimateConfidence from '../utils/aiPredictionEngineModules/estimateConfidence';
-import calculateKelly from '../utils/aiPredictionEngineModules/calculateKelly';
-import detectLineMovement from '../utils/aiPredictionEngineModules/detectLineMovement';
-import applySurfaceAdjustment from '../utils/aiPredictionEngineModules/surfaceAdjustment';
-import calculateTimeWeightedForm from '../utils/aiPredictionEngineModules/timeWeightedForm';
-import generateLabel from '../utils/aiPredictionEngineModules/generateLabel';
-import generateNote from '../utils/aiPredictionEngineModules/generateNote';
+import calculateEV from "./aiPredictionEngineModules/calculateEV";
+import estimateConfidence from "./aiPredictionEngineModules/estimateConfidence";
+import calculateKelly from "./aiPredictionEngineModules/calculateKelly";
+import detectLineMovement from "./aiPredictionEngineModules/detectLineMovement";
+import surfaceAdjustment from "./aiPredictionEngineModules/surfaceAdjustment";
+import timeWeightedForm from "./aiPredictionEngineModules/timeWeightedForm";
+import generateLabel from "./aiPredictionEngineModules/generateLabel";
+import generateNote from "./aiPredictionEngineModules/generateNote";
 
-export default function analyzeMatch(match) {
-  const {
-    id,
-    player1,
-    player2,
-    status,
-    odds,
-    surface,
-    h2h,
-    score,
-    lastMatches,
-    pregameOdds,
-  } = match;
+async function analyzeMatch(match) {
+  try {
+    const {
+      player1,
+      player2,
+      odds1,
+      odds2,
+      surface,
+      status,
+      set,
+      scheduledTime,
+      matchId,
+    } = match;
 
-  if (!odds || !odds.prob1 || !odds.prob2) {
-    return { ...match, ai: { label: 'NO ODDS', ev: null, confidence: null } };
+    // Base EV calculation
+    const ev = calculateEV(odds1, odds2);
+
+    // Surface awareness
+    const adjustedEV = surfaceAdjustment(ev, surface, player1, player2);
+
+    // Line movement awareness
+    const lineMovement = detectLineMovement(match);
+
+    // Time-weighted form
+    const formBoost = timeWeightedForm(player1, player2);
+
+    // Momentum (set-based)
+    const momentumBoost = set === 2 && match.lastSetWinner ? 0.05 : 0;
+
+    // Final confidence
+    const confidence = estimateConfidence(adjustedEV, lineMovement, formBoost, momentumBoost);
+
+    // Kelly Criterion
+    const kelly = calculateKelly(adjustedEV, confidence);
+
+    // Label & Note
+    const label = generateLabel(adjustedEV, confidence);
+    const note = generateNote(label, player1, player2);
+
+    // Logging (for debug mode)
+    console.table({
+      matchId,
+      player1,
+      player2,
+      ev: adjustedEV.toFixed(3),
+      confidence: confidence.toFixed(1),
+      kelly: kelly.toFixed(2),
+      label,
+      note,
+    });
+
+    return { ev: adjustedEV, confidence, kelly, label, note };
+  } catch (error) {
+    console.error("analyzeMatch error:", error);
+    return { ev: 0, confidence: 0, kelly: 0, label: "ERROR", note: "AI FAIL" };
   }
-
-  const ev = calculateEV(odds);
-  let confidence = estimateConfidence({ odds, score });
-
-  // Momentum boost
-  if (score?.sets?.length >= 2) {
-    const lastSet = score.sets[score.sets.length - 1];
-    if (lastSet?.winner === 'player1') confidence += 3;
-    else if (lastSet?.winner === 'player2') confidence -= 3;
-  }
-
-  const surfaceAdjustedEV = applySurfaceAdjustment({ ev, surface, player1, player2 });
-  const formScore = calculateTimeWeightedForm({ lastMatches, player1, player2 });
-  const lineMovement = detectLineMovement({ pregameOdds, liveOdds: odds });
-  const kelly = calculateKelly({ ev: surfaceAdjustedEV, confidence });
-  const label = generateLabel({ ev: surfaceAdjustedEV, confidence });
-  const note = generateNote({ label, ev: surfaceAdjustedEV, confidence, player1, player2 });
-
-  const ai = {
-    label,
-    ev: surfaceAdjustedEV,
-    confidence,
-    kelly,
-    formScore,
-    momentum: score?.sets?.length >= 2 ? 'active' : 'none',
-    lineMovement: lineMovement.drift,
-    note,
-  };
-
-  console.table({
-    id,
-    player1,
-    player2,
-    status,
-    ev: surfaceAdjustedEV,
-    confidence,
-    formScore,
-    kelly,
-    label,
-    note,
-  });
-
-  return {
-    ...match,
-    ai,
-  };
 }
+
+export default analyzeMatch;

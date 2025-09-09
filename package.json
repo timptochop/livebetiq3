@@ -1,39 +1,18 @@
 {
   "name": "livebetiq3",
   "version": "1.0.0",
-  "private": true,
-  "dependencies": {
-    "axios": "^1.11.0",
-    "concurrently": "^8.2.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-icons": "^4.12.0",
-    "react-scripts": "5.0.1",
-    "undici": "^7.15.0",
-    "xml2js": "^0.6.2"
-  },
+  "main": "index.js",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject",
-    "server": "node -r dotenv/config server/index.js",
-    "client": "react-scripts start",
-    "dev": "concurrently \"npm run server\" \"npm run client\""
+    "eject": "react-scripts eject"
   },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+  "dependencies": {
+    "axios": "^1.6.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "xml2js": "^0.4.23"
   }
 }
