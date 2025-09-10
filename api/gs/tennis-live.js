@@ -2,7 +2,6 @@
 
 import { xml2js } from 'xml-js';
 
-// ✅ Required for Edge Function
 export const config = {
   runtime: 'edge',
 };
@@ -11,6 +10,14 @@ const GOALSERVE_URL = 'https://www.goalserve.com/getfeed/YOUR_KEY/tennis_scores/
 const GZIP_HEADER = { 'Accept-Encoding': 'gzip' };
 
 export default async function handler(req) {
+  // ✅ Handle OPTIONS preflight (CORS)
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders(),
+    });
+  }
+
   try {
     const apiRes = await fetch(GOALSERVE_URL, {
       method: 'GET',
@@ -21,17 +28,21 @@ export default async function handler(req) {
       console.error('[GoalServe] ❌ Bad response:', apiRes.status);
       return new Response(JSON.stringify({ error: 'GoalServe fetch failed' }), {
         status: 500,
-        headers: corsHeaders(),
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders(),
+        },
       });
     }
 
     const xmlText = await apiRes.text();
     const json = xml2js(xmlText, { compact: true, ignoreDeclaration: true });
 
-    // ✅ Extract matches (robust parsing)
     const matches = extractMatches(json);
 
-    return new Response(JSON.stringify({ matches }), {
+    console.log('[GoalServe] ✅ Matches extracted:', matches.length);
+
+    return new Response(JSON.stringify({ matches: Array.isArray(matches) ? matches : [] }), {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
@@ -42,23 +53,25 @@ export default async function handler(req) {
     console.error('[GoalServe] ❌ Exception:', err.message);
     return new Response(JSON.stringify({ error: 'Fetch exception', details: err.message }), {
       status: 500,
-      headers: corsHeaders(),
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders(),
+      },
     });
   }
 }
 
-// 🔄 Extract matches safely from GoalServe XML
+// 🧠 Match extraction from GoalServe XML
 function extractMatches(json) {
   try {
     const scores = json?.scores?.category;
     if (!scores) return [];
 
     const categories = Array.isArray(scores) ? scores : [scores];
-
     const matches = [];
 
     for (const category of categories) {
-      const tournaments = category.tournament;
+      const tournaments = category?.tournament;
       const tournamentsArray = Array.isArray(tournaments) ? tournaments : [tournaments];
 
       for (const tournament of tournamentsArray) {
@@ -84,7 +97,7 @@ function extractMatches(json) {
             time,
             score,
             odds,
-            raw: match, // optional: keep raw for AI debug
+            raw: match,
           });
         }
       }
@@ -97,7 +110,7 @@ function extractMatches(json) {
   }
 }
 
-// 🌍 Add CORS headers
+// 🌍 Add proper CORS headers
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
