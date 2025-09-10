@@ -1,90 +1,107 @@
-// api/gs/tennis-live.js
-import { NextResponse } from 'next/server';
-import zlib from 'zlib';
-import { promisify } from 'util';
-import { parseStringPromise } from 'xml2js';
+// File: /api/gs/tennis-live.js
 
-const gunzip = promisify(zlib.gunzip);
+import { xml2js } from 'xml-js';
 
+// ✅ Required for Edge Function
 export const config = {
   runtime: 'edge',
 };
 
-export default async function handler(req) {
-  const API_KEY = process.env.GOALSERVE_KEY || 'f04d5b615f0b4febb29408dddb0d1d39';
-  const url = `https://www.goalserve.com/getfeed/${API_KEY}/tennis_scores/home`;
+const GOALSERVE_URL = 'https://www.goalserve.com/getfeed/YOUR_KEY/tennis_scores/home';
+const GZIP_HEADER = { 'Accept-Encoding': 'gzip' };
 
+export default async function handler(req) {
   try {
-    const response = await fetch(url, {
-      headers: {
-        'Accept-Encoding': 'gzip',
-      },
+    const apiRes = await fetch(GOALSERVE_URL, {
+      method: 'GET',
+      headers: GZIP_HEADER,
     });
 
-    if (!response.ok) {
-      return new NextResponse(
-        JSON.stringify({ error: 'Failed to fetch from GoalServe' }),
-        {
-          status: 500,
-          headers: corsHeaders(),
-        }
-      );
-    }
-
-    const buffer = await response.arrayBuffer();
-    const decompressed = await gunzip(Buffer.from(buffer));
-    const xml = decompressed.toString('utf-8');
-    const parsed = await parseStringPromise(xml, { explicitArray: false });
-
-    const matches = [];
-
-    if (parsed && parsed.scores && parsed.scores.category) {
-      const categories = Array.isArray(parsed.scores.category)
-        ? parsed.scores.category
-        : [parsed.scores.category];
-
-      categories.forEach((cat) => {
-        if (!cat.match) return;
-
-        const events = Array.isArray(cat.match) ? cat.match : [cat.match];
-
-        events.forEach((match) => {
-          matches.push({
-            id: match.id,
-            home: match.player1,
-            away: match.player2,
-            status: match.status,
-            score: match.score,
-            odds: match.odds,
-            tournament: cat.name,
-            date: match.date,
-            time: match.time,
-          });
-        });
+    if (!apiRes.ok) {
+      console.error('[GoalServe] ❌ Bad response:', apiRes.status);
+      return new Response(JSON.stringify({ error: 'GoalServe fetch failed' }), {
+        status: 500,
+        headers: corsHeaders(),
       });
     }
 
-    return new NextResponse(JSON.stringify({ matches }), {
+    const xmlText = await apiRes.text();
+    const json = xml2js(xmlText, { compact: true, ignoreDeclaration: true });
+
+    // ✅ Extract matches (robust parsing)
+    const matches = extractMatches(json);
+
+    return new Response(JSON.stringify({ matches }), {
       status: 200,
-      headers: corsHeaders(),
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders(),
+      },
     });
   } catch (err) {
-    console.error('API error:', err);
-    return new NextResponse(
-      JSON.stringify({ error: 'Internal server error' }),
-      {
-        status: 500,
-        headers: corsHeaders(),
-      }
-    );
+    console.error('[GoalServe] ❌ Exception:', err.message);
+    return new Response(JSON.stringify({ error: 'Fetch exception', details: err.message }), {
+      status: 500,
+      headers: corsHeaders(),
+    });
   }
 }
 
+// 🔄 Extract matches safely from GoalServe XML
+function extractMatches(json) {
+  try {
+    const scores = json?.scores?.category;
+    if (!scores) return [];
+
+    const categories = Array.isArray(scores) ? scores : [scores];
+
+    const matches = [];
+
+    for (const category of categories) {
+      const tournaments = category.tournament;
+      const tournamentsArray = Array.isArray(tournaments) ? tournaments : [tournaments];
+
+      for (const tournament of tournamentsArray) {
+        const events = tournament?.match;
+        const eventsArray = Array.isArray(events) ? events : [events];
+
+        for (const match of eventsArray) {
+          const id = match?._attributes?.id || '';
+          const status = match?.status?._text || 'unknown';
+          const home = match?.home?.name?._text || '';
+          const away = match?.away?.name?._text || '';
+          const date = match?.date?._text || '';
+          const time = match?.time?._text || '';
+          const score = match?.score?._text || '';
+          const odds = match?.odds || {};
+
+          matches.push({
+            id,
+            status,
+            home,
+            away,
+            date,
+            time,
+            score,
+            odds,
+            raw: match, // optional: keep raw for AI debug
+          });
+        }
+      }
+    }
+
+    return matches;
+  } catch (err) {
+    console.warn('[GoalServe] ⚠️ Failed to extract matches:', err.message);
+    return [];
+  }
+}
+
+// 🌍 Add CORS headers
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
-    'Content-Type': 'application/json',
   };
 }

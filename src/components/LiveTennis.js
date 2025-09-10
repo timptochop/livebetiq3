@@ -3,7 +3,6 @@ import React, { useEffect, useMemo, useState, useRef } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
 
-// ----- helpers -----
 const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
 const isFinishedLike = (s) => {
   const x = String(s || '').toLowerCase();
@@ -29,7 +28,6 @@ function setFromStatus(status) {
   return 0;
 }
 
-// ----- main -----
 export default function LiveTennis() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,15 +43,25 @@ export default function LiveTennis() {
     try {
       setLoading(true);
       const raw = await fetchTennisLive();
+
+      console.log('[LiveTennis] ✅ Total matches from API:', raw.length);
+
       const filtered = raw.filter((m) => !isFinishedLike(m.status));
+      console.log('[LiveTennis] ⏩ After filter (not finished):', filtered.length);
+
       const analyzed = await Promise.all(
-        filtered.map(async (match) => {
+        filtered.map(async (match, index) => {
+          const safeId = match.id || `${match.home}-${match.away}-${index}`;
           try {
             const result = await analyzeMatch(match);
-            return result;
-          } catch (err) {
-            console.warn(`analyzeMatch failed for match ${match.id}:`, err.message);
             return {
+              id: safeId,
+              ...result,
+            };
+          } catch (err) {
+            console.warn(`⚠️ analyzeMatch failed for match ${safeId}:`, err.message);
+            return {
+              id: safeId,
               ...match,
               ev: 0,
               confidence: 0,
@@ -64,10 +72,13 @@ export default function LiveTennis() {
           }
         })
       );
+
       const final = analyzed.filter(Boolean);
+      console.log('[LiveTennis] ✅ Final rows after analysis:', final.length);
+
       setRows(final);
     } catch (err) {
-      console.error('Load error:', err.message);
+      console.error('[LiveTennis] ❌ Load error:', err.message);
     } finally {
       setLoading(false);
     }
@@ -100,7 +111,19 @@ export default function LiveTennis() {
   return (
     <main style={{ padding: '16px', paddingTop: '104px', minHeight: '100vh' }}>
       <h2>Live Tennis Matches</h2>
+
       {loading && <p>Loading...</p>}
+      {!loading && rows.length === 0 && (
+        <p style={{ color: 'orange' }}>
+          ⚠️ No matches found. Possible issues:
+          <ul>
+            <li>GoalServe API returned empty or failed</li>
+            <li>fetchTennisLive.js blocked by CORS</li>
+            <li>analyzeMatch failed / filters too strict</li>
+          </ul>
+        </p>
+      )}
+
       {sortedRows.map((m) => (
         <div key={m.id} style={{ marginBottom: '16px', border: '1px solid #ccc', padding: '8px' }}>
           <strong>{m.home} vs {m.away}</strong>
