@@ -1,23 +1,10 @@
 // File: /api/gs/tennis-live.js
-
 import { xml2js } from 'xml-js';
-
-export const config = {
-  runtime: 'edge',
-};
 
 const GOALSERVE_URL = 'https://www.goalserve.com/getfeed/YOUR_KEY/tennis_scores/home';
 const GZIP_HEADER = { 'Accept-Encoding': 'gzip' };
 
-export default async function handler(req) {
-  // ✅ Handle OPTIONS preflight (CORS)
-  if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders(),
-    });
-  }
-
+export default async function handler(req, res) {
   try {
     const apiRes = await fetch(GOALSERVE_URL, {
       method: 'GET',
@@ -26,13 +13,8 @@ export default async function handler(req) {
 
     if (!apiRes.ok) {
       console.error('[GoalServe] ❌ Bad response:', apiRes.status);
-      return new Response(JSON.stringify({ error: 'GoalServe fetch failed' }), {
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders(),
-        },
-      });
+      res.status(500).set(corsHeaders()).json({ error: 'GoalServe fetch failed' });
+      return;
     }
 
     const xmlText = await apiRes.text();
@@ -40,28 +22,17 @@ export default async function handler(req) {
 
     const matches = extractMatches(json);
 
-    console.log('[GoalServe] ✅ Matches extracted:', matches.length);
-
-    return new Response(JSON.stringify({ matches: Array.isArray(matches) ? matches : [] }), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        ...corsHeaders(),
-      },
-    });
+    res.status(200).set({
+      'Content-Type': 'application/json',
+      ...corsHeaders(),
+    }).json({ matches });
   } catch (err) {
     console.error('[GoalServe] ❌ Exception:', err.message);
-    return new Response(JSON.stringify({ error: 'Fetch exception', details: err.message }), {
-      status: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        ...corsHeaders(),
-      },
-    });
+    res.status(500).set(corsHeaders()).json({ error: 'Fetch exception', details: err.message });
   }
 }
 
-// 🧠 Match extraction from GoalServe XML
+// 🔄 Extract matches safely from GoalServe XML
 function extractMatches(json) {
   try {
     const scores = json?.scores?.category;
@@ -71,7 +42,7 @@ function extractMatches(json) {
     const matches = [];
 
     for (const category of categories) {
-      const tournaments = category?.tournament;
+      const tournaments = category.tournament;
       const tournamentsArray = Array.isArray(tournaments) ? tournaments : [tournaments];
 
       for (const tournament of tournamentsArray) {
@@ -97,7 +68,7 @@ function extractMatches(json) {
             time,
             score,
             odds,
-            raw: match,
+            raw: match, // optional: keep raw for AI debug
           });
         }
       }
@@ -110,7 +81,7 @@ function extractMatches(json) {
   }
 }
 
-// 🌍 Add proper CORS headers
+// 🌍 Add CORS headers
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
