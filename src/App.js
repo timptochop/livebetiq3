@@ -1,22 +1,13 @@
-import React, { useState } from 'react';
-import TopBar from './components/TopBar';
+// src/App.js (v0.96.16-main-entrypoint)
+import React from 'react';
 import LiveTennis from './components/LiveTennis';
-import './App.css';
 
-export default function App() {
-  const [liveCount, setLiveCount] = useState(0);
-  const [notificationsOn, setNotificationsOn] = useState(true);
-
+function App() {
   return (
-    <div className="app-shell">
-      <TopBar
-        liveCount={liveCount}
-        notificationsOn={notificationsOn}
-        onToggleNotifications={() => setNotificationsOn(v => !v)}
-      />
-      <main className="page-content">
-        <LiveTennis onLiveCount={setLiveCount} />
-      </main>
+    <div>
+      <LiveTennis />
     </div>
   );
 }
+
+export default App;
