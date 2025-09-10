@@ -1,32 +1,28 @@
-// src/utils/fetchTennisLive.js (v0.96.15-debug-log)
-
+// src/utils/fetchTennisLive.js
 const API_URL = 'https://livebetiq3.vercel.app/api/gs/tennis-live';
 
 export default async function fetchTennisLive() {
   try {
-    const response = await fetch(API_URL);
+    const res = await fetch(API_URL, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
 
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
+    if (!res.ok) {
+      throw new Error(`[fetchTennisLive] HTTP error! status: ${res.status}`);
     }
 
-    const data = await response.json();
+    const data = await res.json();
 
-    // 🔍 Full payload logging (for diagnostics)
-    console.log('[fetchTennisLive] 🔍 Full data:', data);
+    if (!data || !Array.isArray(data.matches)) {
+      throw new Error('[fetchTennisLive] Invalid API response structure');
+    }
 
-    // ✅ Basic status log
-    console.log('[fetchTennisLive] ✅ Matches fetched:', data.matches?.length || 0);
-    console.log('[fetchTennisLive] Example match:', data.matches?.[0]);
-
-    // 🧠 Optional filtering: exclude invalid matches (no players)
-    const validMatches = Array.isArray(data.matches)
-      ? data.matches.filter((m) => m?.home && m?.away)
-      : [];
-
-    return validMatches;
+    return data.matches;
   } catch (error) {
-    console.error('[fetchTennisLive] ❌ Failed to fetch:', error);
-    return []; // fallback to empty list
+    console.error('[fetchTennisLive] Network/API Error:', error);
+    return []; // fallback empty array
   }
 }
