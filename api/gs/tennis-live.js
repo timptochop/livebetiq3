@@ -1,75 +1,90 @@
-// /api/gs/tennis-live.js (Vercel Edge Function)
+// api/gs/tennis-live.js
+import { NextResponse } from 'next/server';
 import zlib from 'zlib';
 import { promisify } from 'util';
-import https from 'https';
 import { parseStringPromise } from 'xml2js';
 
 const gunzip = promisify(zlib.gunzip);
 
-const GOALSERVE_KEY = process.env.GOALSERVE_KEY || 'f31155052f6749178f8808dde8bc3095';
-const GS_URL = `https://www.goalserve.com/getfeed/${GOALSERVE_KEY}/tennis_scores/home`;
+export const config = {
+  runtime: 'edge',
+};
 
-export default async function handler(req, res) {
+export default async function handler(req) {
+  const API_KEY = process.env.GOALSERVE_KEY || 'f04d5b615f0b4febb29408dddb0d1d39';
+  const url = `https://www.goalserve.com/getfeed/${API_KEY}/tennis_scores/home`;
+
   try {
-    const xmlBuffer = await fetchGzipXML(GS_URL);
-    const xmlText = xmlBuffer.toString('utf8');
-    const parsed = await parseStringPromise(xmlText, { explicitArray: false });
+    const response = await fetch(url, {
+      headers: {
+        'Accept-Encoding': 'gzip',
+      },
+    });
 
-    const categories = parsed?.scores?.category || [];
-    const normalizedMatches = [];
-
-    const categoryList = Array.isArray(categories) ? categories : [categories];
-
-    for (const category of categoryList) {
-      const tournament = category?.$?.name || 'Unknown Tournament';
-      const matches = category.match || [];
-
-      const matchList = Array.isArray(matches) ? matches : [matches];
-
-      for (const match of matchList) {
-        normalizedMatches.push({
-          id: match?.id || '',
-          tournament,
-          home: match?.player?.[0]?._ || match?.player?.[0],
-          away: match?.player?.[1]?._ || match?.player?.[1],
-          status: match?.status || '',
-          time: match?.time || '',
-          odds: match?.odds || null,
-          raw: match,
-        });
-      }
+    if (!response.ok) {
+      return new NextResponse(
+        JSON.stringify({ error: 'Failed to fetch from GoalServe' }),
+        {
+          status: 500,
+          headers: corsHeaders(),
+        }
+      );
     }
 
-    console.log(`[GS] ✅ Loaded ${normalizedMatches.length} matches`);
-    res.status(200).json({ matches: normalizedMatches });
+    const buffer = await response.arrayBuffer();
+    const decompressed = await gunzip(Buffer.from(buffer));
+    const xml = decompressed.toString('utf-8');
+    const parsed = await parseStringPromise(xml, { explicitArray: false });
+
+    const matches = [];
+
+    if (parsed && parsed.scores && parsed.scores.category) {
+      const categories = Array.isArray(parsed.scores.category)
+        ? parsed.scores.category
+        : [parsed.scores.category];
+
+      categories.forEach((cat) => {
+        if (!cat.match) return;
+
+        const events = Array.isArray(cat.match) ? cat.match : [cat.match];
+
+        events.forEach((match) => {
+          matches.push({
+            id: match.id,
+            home: match.player1,
+            away: match.player2,
+            status: match.status,
+            score: match.score,
+            odds: match.odds,
+            tournament: cat.name,
+            date: match.date,
+            time: match.time,
+          });
+        });
+      });
+    }
+
+    return new NextResponse(JSON.stringify({ matches }), {
+      status: 200,
+      headers: corsHeaders(),
+    });
   } catch (err) {
-    console.error('[GS-ERROR]', err);
-    res.status(500).json({ matches: [], error: err.message });
+    console.error('API error:', err);
+    return new NextResponse(
+      JSON.stringify({ error: 'Internal server error' }),
+      {
+        status: 500,
+        headers: corsHeaders(),
+      }
+    );
   }
 }
 
-// Helper to fetch and decompress gzip XML
-async function fetchGzipXML(url) {
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { 'Accept-Encoding': 'gzip' } }, (res) => {
-      const chunks = [];
-
-      const encoding = res.headers['content-encoding'];
-      const isGzip = encoding === 'gzip';
-
-      res.on('data', (chunk) => chunks.push(chunk));
-      res.on('end', async () => {
-        const buffer = Buffer.concat(chunks);
-        try {
-          const decoded = isGzip ? await gunzip(buffer) : buffer;
-          resolve(decoded);
-        } catch (err) {
-          reject(err);
-        }
-      });
-    });
-
-    req.on('error', reject);
-    req.end();
-  });
+function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Content-Type': 'application/json',
+  };
 }
