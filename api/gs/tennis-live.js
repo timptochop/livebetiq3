@@ -1,91 +1,35 @@
-// File: /api/gs/tennis-live.js
-import { xml2js } from 'xml-js';
+// src/utils/fetchTennisLive.js
+const API_URL = process.env.REACT_APP_API_URL || 'https://livebetiq3.vercel.app/api/gs/tennis-live';
 
-const GOALSERVE_URL = 'https://www.goalserve.com/getfeed/YOUR_KEY/tennis_scores/home';
-const GZIP_HEADER = { 'Accept-Encoding': 'gzip' };
-
-export default async function handler(req, res) {
+/**
+ * Fetches live and upcoming tennis matches from the backend API.
+ * This is used by LiveTennis.js to load matches with AI predictions.
+ */
+export default async function fetchTennisLive() {
   try {
-    const apiRes = await fetch(GOALSERVE_URL, {
+    const res = await fetch(API_URL, {
       method: 'GET',
-      headers: GZIP_HEADER,
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
 
-    if (!apiRes.ok) {
-      console.error('[GoalServe] ❌ Bad response:', apiRes.status);
-      res.status(500).set(corsHeaders()).json({ error: 'GoalServe fetch failed' });
-      return;
+    if (!res.ok) {
+      console.error(`❌ fetchTennisLive error: ${res.status} ${res.statusText}`);
+      return { matches: [] };
     }
 
-    const xmlText = await apiRes.text();
-    const json = xml2js(xmlText, { compact: true, ignoreDeclaration: true });
+    const data = await res.json();
 
-    const matches = extractMatches(json);
-
-    res.status(200).set({
-      'Content-Type': 'application/json',
-      ...corsHeaders(),
-    }).json({ matches });
-  } catch (err) {
-    console.error('[GoalServe] ❌ Exception:', err.message);
-    res.status(500).set(corsHeaders()).json({ error: 'Fetch exception', details: err.message });
-  }
-}
-
-// 🔄 Extract matches safely from GoalServe XML
-function extractMatches(json) {
-  try {
-    const scores = json?.scores?.category;
-    if (!scores) return [];
-
-    const categories = Array.isArray(scores) ? scores : [scores];
-    const matches = [];
-
-    for (const category of categories) {
-      const tournaments = category.tournament;
-      const tournamentsArray = Array.isArray(tournaments) ? tournaments : [tournaments];
-
-      for (const tournament of tournamentsArray) {
-        const events = tournament?.match;
-        const eventsArray = Array.isArray(events) ? events : [events];
-
-        for (const match of eventsArray) {
-          const id = match?._attributes?.id || '';
-          const status = match?.status?._text || 'unknown';
-          const home = match?.home?.name?._text || '';
-          const away = match?.away?.name?._text || '';
-          const date = match?.date?._text || '';
-          const time = match?.time?._text || '';
-          const score = match?.score?._text || '';
-          const odds = match?.odds || {};
-
-          matches.push({
-            id,
-            status,
-            home,
-            away,
-            date,
-            time,
-            score,
-            odds,
-            raw: match, // optional: keep raw for AI debug
-          });
-        }
-      }
+    // Basic validation
+    if (!data || !Array.isArray(data.matches)) {
+      console.warn('⚠️ Invalid response structure from /api/gs/tennis-live');
+      return { matches: [] };
     }
 
-    return matches;
-  } catch (err) {
-    console.warn('[GoalServe] ⚠️ Failed to extract matches:', err.message);
-    return [];
+    return data;
+  } catch (error) {
+    console.error('❌ fetchTennisLive() failed:', error);
+    return { matches: [] };
   }
-}
-
-// 🌍 Add CORS headers
-function corsHeaders() {
-  return {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-  };
 }
