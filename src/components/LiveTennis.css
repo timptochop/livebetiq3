@@ -1,0 +1,109 @@
+.live-tennis-container {
+  padding: 24px;
+  max-width: 960px;
+  margin: 0 auto;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+h2 {
+  font-size: 24px;
+  margin-bottom: 20px;
+  text-align: center;
+  color: #222;
+}
+
+.match-card {
+  background-color: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 18px;
+  padding: 16px;
+  transition: all 0.3s ease;
+  border-left: 8px solid #ccc;
+}
+
+.match-card.safe {
+  border-left-color: #2ecc71;
+}
+
+.match-card.risky {
+  border-left-color: #f39c12;
+}
+
+.match-card.avoid {
+  border-left-color: #e74c3c;
+}
+
+.match-card.soon,
+.match-card.set-1,
+.match-card.set-2,
+.match-card.set-3 {
+  border-left-color: #9b59b6;
+}
+
+.match-header {
+  display: flex;
+  justify-content: space-between;
+  font-weight: bold;
+  font-size: 15px;
+  margin-bottom: 10px;
+  color: #333;
+}
+
+.match-status {
+  font-style: italic;
+  color: #666;
+}
+
+.match-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.score {
+  font-size: 18px;
+  font-weight: bold;
+  color: #000;
+}
+
+.label {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: bold;
+  font-size: 13px;
+  width: fit-content;
+}
+
+.label-safe {
+  background-color: #2ecc71;
+  color: #fff;
+}
+
+.label-risky {
+  background-color: #f39c12;
+  color: #fff;
+}
+
+.label-avoid {
+  background-color: #e74c3c;
+  color: #fff;
+}
+
+.label-soon,
+.label-set-1,
+.label-set-2,
+.label-set-3 {
+  background-color: #9b59b6;
+  color: #fff;
+}
+
+.tip {
+  background-color: #f0f9ec;
+  padding: 8px;
+  border-left: 5px solid #27ae60;
+  border-radius: 5px;
+  font-size: 14px;
+  color: #2d7c44;
+}

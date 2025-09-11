@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
-import './LiveTennis.css';
+import './LiveTennis.css'; // ✅ Το CSS παραμένει στο components folder
 
 const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
 const isFinishedLike = (s) => {
