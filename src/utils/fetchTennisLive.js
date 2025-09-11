@@ -1,8 +1,30 @@
-const API_URL = 'https://livebetiq3.vercel.app/api/gs/tennis-live';
+// src/utils/fetchTennisLive.js
+const BASE_URL = '/api/gs/tennis-live'; // ✅ relative path for CORS-safe fetch
 
 export default async function fetchTennisLive() {
-  const res = await fetch(API_URL);
-  if (!res.ok) throw new Error('Failed to fetch matches');
-  const data = await res.json();
-  return data.matches || [];
+  try {
+    const response = await fetch(BASE_URL, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      console.error('[fetchTennisLive] Network response was not ok:', response.statusText);
+      return [];
+    }
+
+    const data = await response.json();
+
+    if (!Array.isArray(data.matches)) {
+      console.warn('[fetchTennisLive] Unexpected response structure:', data);
+      return [];
+    }
+
+    return data.matches;
+  } catch (error) {
+    console.error('[fetchTennisLive] API Error:', error);
+    return [];
+  }
 }
