@@ -1,47 +1,32 @@
-/* LiveTennis.css - v0.97.6 default fallback */
-
-.live-tennis-container {
-  padding: 16px;
-}
-
-.match-card {
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  margin-bottom: 12px;
-  padding: 12px;
-  background-color: #fff;
-}
-
-.match-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.label-safe {
-  background-color: #4caf50;
-  color: white;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.label-risky {
-  background-color: #ff9800;
-  color: white;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.label-avoid {
-  background-color: #f44336;
-  color: white;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.label-soon {
-  background-color: #9c27b0;
-  color: white;
-  padding: 2px 8px;
-  border-radius: 4px;
+{
+  "name": "livebetiq3",
+  "version": "0.97.6",
+  "private": true,
+  "scripts": {
+    "dev": "react-scripts start",
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "dependencies": {
+    "axios": "^1.6.8",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {},
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
 }
