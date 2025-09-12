@@ -3,19 +3,23 @@ import axios from 'axios';
 import zlib from 'zlib';
 import { parseStringPromise } from 'xml2js';
 
-// Βάλε το κλειδί σου στα Vercel Environment Variables (GOALSERVE_KEY)
-const KEY = process.env.GOALSERVE_KEY || 'f31155052f6749178f8808dde8bc3095';
-
-// ΣΩΣΤΗ ΒΑΣΗ URL (με key μέσα στη διαδρομή)
+// Βάλε κανονικά το κλειδί σου στα Vercel ENV (GOALSERVE_KEY)
+const KEY  = process.env.GOALSERVE_KEY || 'f31155052f6749178f8808dde8bc3095';
 const BASE = `https://www.goalserve.com/getfeed/${KEY}/tennis_scores`;
-const URL_JSON = `${BASE}/home?json=1`; // JSON σύμφωνα με τα docs   [oai_citation:1‡feeds_urls 2.txt](file-service://file-CqYRBhHWXzNcH17fKRBNyf)
-const URL_XML  = `${BASE}/home`;       // XML (συχνά gzip)           [oai_citation:2‡feeds_urls 2.txt](file-service://file-CqYRBhHWXzNcH17fKRBNyf)
+const URL_JSON = `${BASE}/home?json=1`; // JSON endpoint
+const URL_XML  = `${BASE}/home`;        // XML (συχνά gzip)
 
+const UA_HEADERS = {
+  'User-Agent': 'LiveBetIQ/1.0 (Vercel Serverless)',
+  'Accept': 'application/json, text/plain, */*',
+  'Accept-Encoding': 'gzip,deflate,br',
+  'Connection': 'keep-alive',
+};
+
+const isGzip = (buf) => buf?.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b;
 const toArray = (x) => (Array.isArray(x) ? x : x ? [x] : []);
 
-// Διαβάζει ομοιόμορφα JSON ή XML-σε-JSON
 function extractMatches(root) {
-  // Σε JSON: root.scores.category; Σε XML->JSON: το ίδιο σχήμα
   const categories = root?.scores?.category ?? [];
   const cats = toArray(categories);
 
@@ -29,7 +33,6 @@ function extractMatches(root) {
       const players = toArray(m?.player ?? m?.players);
       const p1 = players[0] ?? {};
       const p2 = players[1] ?? {};
-
       const text = (o) =>
         typeof o === 'string'
           ? o
@@ -52,61 +55,58 @@ function extractMatches(root) {
 }
 
 /**
- * Επιστρέφει ΠΑΝΤΑ array από matches (ποτέ δεν πετάει exception).
- * 1) Προσπαθεί JSON endpoint
- * 2) Fallback: XML (αν είναι gzip το αποσυμπιέζει) -> xml2js -> extract
+ * ΠΑΝΤΑ επιστρέφει Array. Δεν πετάμε exception προς τον handler.
+ * 1) JSON (responseType=json, χωρίς throw σε 4xx/5xx)
+ * 2) XML fallback (arraybuffer, αν είναι gzip το ανοίγουμε)
  */
 export async function fetchLiveTennis() {
-  // 1) JSON πρώτα
+  // --- JSON first ---
   try {
     const res = await axios.get(URL_JSON, {
-      timeout: 8000,
-      headers: { Accept: 'application/json' },
-      // αφήνουμε axios να αποσυμπιέσει αυτόματα αν είναι gzip
+      timeout: 10000,
+      headers: UA_HEADERS,
+      responseType: 'json',
+      validateStatus: () => true, // δεν κάνει throw σε 4xx/5xx
     });
-
-    const payload = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
-    const matches = extractMatches(payload);
-    return matches;
+    if (res.status >= 200 && res.status < 300 && res.data && typeof res.data === 'object') {
+      return extractMatches(res.data);
+    }
+    console.warn('[GS] JSON endpoint returned', res.status);
   } catch (e) {
-    console.warn('[GS] JSON fetch failed, will try XML fallback:', e?.message);
+    console.warn('[GS] JSON fetch error:', e?.message);
   }
 
-  // 2) XML fallback (πιθανώς gzip)
+  // --- XML fallback ---
   try {
     const res = await axios.get(URL_XML, {
-      timeout: 8000,
+      timeout: 10000,
+      headers: UA_HEADERS,
       responseType: 'arraybuffer',
-      // axios δεν κάνει decompress όταν ζητάμε arraybuffer
+      decompress: false,
+      validateStatus: () => true,
     });
+    if (!(res.status >= 200 && res.status < 300)) {
+      console.warn('[GS] XML endpoint returned', res.status);
+      return [];
+    }
 
-    const enc = String(res.headers['content-encoding'] || '').toLowerCase();
     let buf = Buffer.from(res.data);
-
-    if (enc.includes('gzip')) {
-      try {
-        buf = zlib.gunzipSync(buf);
-      } catch (gzErr) {
-        // Μερικές φορές επιστρέφει ήδη uncompressed
-        console.warn('[GS] gunzip failed, treating as plain XML:', gzErr?.message);
-      }
+    if (isGzip(buf)) {
+      try { buf = zlib.gunzipSync(buf); }
+      catch (e) { console.warn('[GS] gunzip failed, treating as plain XML:', e?.message); }
     }
 
     const xml = buf.toString('utf8');
-    const xmlObj = await parseStringPromise(xml, {
+    const obj = await parseStringPromise(xml, {
       explicitArray: false,
       attrkey: '@',
       charkey: '_',
       mergeAttrs: true,
     });
-
-    const matches = extractMatches(xmlObj);
-    return matches;
+    return extractMatches(obj);
   } catch (e) {
-    console.error('[GS] XML fallback failed:', e?.message);
-    if (e?.response) {
-      console.error('[GS] Response status:', e.response.status, e.response.statusText);
-    }
-    return [];
+    console.error('[GS] XML fetch error:', e?.message);
   }
+
+  return [];
 }

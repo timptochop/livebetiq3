@@ -1,5 +1,4 @@
 // src/utils/fetchTennisLive.js
-// relative path για να αποφεύγουμε CORS σε Vercel previews
 const BASE_URL = '/api/gs/tennis-live';
 
 export default async function fetchTennisLive() {
@@ -10,8 +9,7 @@ export default async function fetchTennisLive() {
       return [];
     }
     const data = await resp.json();
-    const arr = Array.isArray(data?.matches) ? data.matches : [];
-    return arr;
+    return Array.isArray(data?.matches) ? data.matches : [];
   } catch (e) {
     console.error('[fetchTennisLive] Error:', e);
     return [];
