@@ -16,7 +16,6 @@
     "react-scripts": "5.0.1",
     "xml2js": "^0.6.2"
   },
-  "devDependencies": {},
   "browserslist": {
     "production": [
       ">0.2%",
