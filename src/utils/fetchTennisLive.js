@@ -1,30 +1,19 @@
 // src/utils/fetchTennisLive.js
-const BASE_URL = '/api/gs/tennis-live'; // ✅ relative path for CORS-safe fetch
+// relative path για να αποφεύγουμε CORS σε Vercel previews
+const BASE_URL = '/api/gs/tennis-live';
 
 export default async function fetchTennisLive() {
   try {
-    const response = await fetch(BASE_URL, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      console.error('[fetchTennisLive] Network response was not ok:', response.statusText);
+    const resp = await fetch(BASE_URL, { method: 'GET' });
+    if (!resp.ok) {
+      console.error('[fetchTennisLive] HTTP', resp.status, resp.statusText);
       return [];
     }
-
-    const data = await response.json();
-
-    if (!Array.isArray(data.matches)) {
-      console.warn('[fetchTennisLive] Unexpected response structure:', data);
-      return [];
-    }
-
-    return data.matches;
-  } catch (error) {
-    console.error('[fetchTennisLive] API Error:', error);
+    const data = await resp.json();
+    const arr = Array.isArray(data?.matches) ? data.matches : [];
+    return arr;
+  } catch (e) {
+    console.error('[fetchTennisLive] Error:', e);
     return [];
   }
 }

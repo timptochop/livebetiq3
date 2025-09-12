@@ -1,23 +1,24 @@
-// File: api/gs/tennis-live.js
-
+// api/gs/tennis-live.js
 import { fetchLiveTennis } from '../_lib/goalServeLiveAPI.js';
 
+// Force Node runtime (όχι Edge)
+export const config = { runtime: 'nodejs' };
+
 export default async function handler(req, res) {
-  // ✅ Enable CORS headers
+  // CORS (safe για preview/prod)
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  // ✅ Handle preflight requests
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
   try {
-    const matches = await fetchLiveTennis();
-    res.status(200).json({ matches });
-  } catch (error) {
-    console.error('[API] Error in /api/gs/tennis-live:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    const matches = await fetchLiveTennis(); // ΠΑΝΤΑ array
+    return res.status(200).json({ matches });
+  } catch (err) {
+    console.error('[API] /api/gs/tennis-live error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
 }
