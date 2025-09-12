@@ -1,38 +1,36 @@
-// /api/_lib/goalServeLiveAPI.js
+// File: api/_lib/goalServeLiveAPI.js
 import axios from 'axios';
+import zlib from 'zlib';
+import { parseStringPromise } from 'xml2js';
 
-const GOALSERVE_KEY = process.env.GOALSERVE_KEY || 'f31155052f6749178f8808dde8bc3095'; // fallback dev key
+const GOALSERVE_KEY = process.env.GOALSERVE_KEY || 'f31155052f6749178f8808dde8bc3095';
+const GOALSERVE_URL = `https://www.goalserve.com/getfeed/tennis_scores/home/?key=${GOALSERVE_KEY}`;
 
-// ✅ Fixed base URL — must end with /home?json=1 (no placeholder in the path)
-const GOALSERVE_URL = `https://www.goalserve.com/getfeed/tennis_scores/home/?json=1&key=${GOALSERVE_KEY}`;
-
-export default async function fetchLiveTennis() {
+export async function fetchLiveTennis() {
   try {
     const response = await axios.get(GOALSERVE_URL, {
-      headers: {
-        'Accept': 'application/json',
-      },
+      responseType: 'arraybuffer',
+      decompress: false,
     });
 
-    const data = response.data;
+    const buffer = Buffer.from(response.data);
+    const decompressed = zlib.gunzipSync(buffer);
+    const xml = decompressed.toString('utf8');
 
-    if (!data || !data.scores) {
-      console.error('[GS-ERROR] Invalid or empty data structure from GoalServe');
-      return { matches: [] };
-    }
+    const json = await parseStringPromise(xml, { explicitArray: false, mergeAttrs: true });
 
-    const categories = data.scores.category || [];
-    const matches = [];
-
+    const categories = json?.scores?.category || [];
     const categoryList = Array.isArray(categories) ? categories : [categories];
 
+    const matches = [];
+
     for (const category of categoryList) {
-      const tournament = category?.$?.name || 'Unknown Tournament';
+      const tournament = category.name || 'Unknown Tournament';
       const matchList = category.match || [];
 
-      const matchesArray = Array.isArray(matchList) ? matchList : [matchList];
+      const matchArray = Array.isArray(matchList) ? matchList : [matchList];
 
-      for (const match of matchesArray) {
+      for (const match of matchArray) {
         const home = match?.player?.[0]?._ || match?.player?.[0];
         const away = match?.player?.[1]?._ || match?.player?.[1];
         const status = match?.status || '';
@@ -53,16 +51,13 @@ export default async function fetchLiveTennis() {
       }
     }
 
-    console.log(`[GS] ✅ Fetched ${matches.length} matches`);
+    console.log(`[GS] ✅ Parsed ${matches.length} matches`);
     return { matches };
   } catch (err) {
-    console.error('[GS-ERROR] Failed to fetch GoalServe data:', err.message);
-
-    // fallback log of full response if available
+    console.error('[GS-ERROR] Failed to fetch or parse GoalServe Tennis feed:', err.message);
     if (err.response) {
-      console.error('[GS-ERROR] Response:', err.response.data);
+      console.error('[GS-ERROR] Response:', err.response.status, err.response.statusText);
     }
-
     return { matches: [] };
   }
 }
