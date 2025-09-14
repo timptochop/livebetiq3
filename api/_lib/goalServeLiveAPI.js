@@ -1,43 +1,50 @@
 // api/_lib/goalServeLiveAPI.js
 import axios from 'axios';
 
-// Διαβάζουμε ΚΑΙ τα δύο πιθανά env names, προτιμάμε GOALSERVE_TOKEN
-const GOALSERVE_TOKEN =
-  process.env.GOALSERVE_TOKEN || process.env.GOALSERVE_KEY;
-
-if (!GOALSERVE_TOKEN) {
-  // Θα φανεί καθαρά στα function logs αν λείπει
-  console.warn('[GoalServe] Missing GOALSERVE_TOKEN / GOALSERVE_KEY');
-}
-
-const GOALSERVE_URL = `https://www.goalserve.com/getfeed/tennis_scores/home/?json=1&key=${GOALSERVE_TOKEN}`;
+// Διαβάζουμε ΚΑΙ GOALSERVE_TOKEN ΚΑΙ GOALSERVE_KEY (σου αρκεί να έχεις το πρώτο στο Vercel)
+const TOKEN = process.env.GOALSERVE_TOKEN || process.env.GOALSERVE_KEY || '';
+const URL = `https://www.goalserve.com/getfeed/tennis_scores/home/?json=1&key=${TOKEN}`;
 
 export async function fetchLiveTennis() {
-  if (!GOALSERVE_TOKEN) {
-    throw new Error('Missing GOALSERVE_TOKEN (set it in Vercel env vars).');
+  // 1) Έλεγχος token
+  if (!TOKEN) {
+    return { ok: false, error: 'Missing GOALSERVE_TOKEN (set it in Vercel -> Settings -> Environment Variables).' };
   }
 
-  const resp = await axios.get(GOALSERVE_URL, {
-    headers: { Accept: 'application/json' },
-    timeout: 10000,
-    // σε κάποια responses το content-type δεν είναι σωστό -> προσπαθούμε να κάνουμε parse χειροκίνητα
-    transformResponse: [(data) => {
-      try { return typeof data === 'string' ? JSON.parse(data) : data; }
-      catch { return data; }
-    }],
-    validateStatus: () => true, // να μη ρίχνει εξαίρεση αυτόματα
-  });
+  // 2) Κλήση GoalServe (JSON)
+  let resp;
+  try {
+    resp = await axios.get(URL, {
+      headers: { Accept: 'application/json' },
+      timeout: 10000,
+      validateStatus: () => true,
+      transformResponse: [(data) => {
+        // Μπορεί να έρθει string, Buffer ή ήδη object
+        try {
+          if (typeof data === 'string') return JSON.parse(data);
+          if (data && typeof data === 'object') return data;
+          return data;
+        } catch {
+          return data;
+        }
+      }],
+    });
+  } catch (e) {
+    return { ok: false, error: `Network error to GoalServe: ${e.message}` };
+  }
 
+  // 3) HTTP status από GoalServe
   if (resp.status >= 400) {
-    throw new Error(`GoalServe HTTP ${resp.status}`);
+    // Συχνά 401/403 αν το token δεν είναι ενεργό
+    return { ok: false, error: `GoalServe HTTP ${resp.status}`, bodyType: typeof resp.data };
   }
 
+  // 4) Δομή δεδομένων
   const data = resp.data;
   if (!data || !data.scores) {
-    throw new Error('GoalServe response has no "scores"');
+    return { ok: false, error: 'GoalServe response has no "scores"', bodyType: typeof data };
   }
 
-  // Η δομή του JSON δίνει είτε array είτε single object
   const cats = Array.isArray(data.scores.category)
     ? data.scores.category
     : (data.scores.category ? [data.scores.category] : []);
@@ -48,7 +55,6 @@ export async function fetchLiveTennis() {
     const list = Array.isArray(cat.match) ? cat.match : (cat.match ? [cat.match] : []);
 
     for (const m of list) {
-      // Τα πεδία παίζουν λίγο – κρατάμε τα πιο συνηθισμένα
       const p = Array.isArray(m.player) ? m.player : [];
       const home = p[0]?._ || p[0] || m.home || m.player1 || '';
       const away = p[1]?._ || p[1] || m.away || m.player2 || '';
@@ -65,5 +71,5 @@ export async function fetchLiveTennis() {
     }
   }
 
-  return { matches };
+  return { ok: true, matches };
 }
