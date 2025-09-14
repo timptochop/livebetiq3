@@ -1,17 +1,16 @@
-// src/utils/fetchTennisLive.js
 const BASE_URL = '/api/gs/tennis-live';
 
 export default async function fetchTennisLive() {
   try {
-    const resp = await fetch(BASE_URL, { method: 'GET' });
-    if (!resp.ok) {
-      console.error('[fetchTennisLive] HTTP', resp.status, resp.statusText);
+    const r = await fetch(BASE_URL, { method: 'GET' });
+    if (!r.ok) {
+      console.error('[fetchTennisLive] HTTP', r.status);
       return [];
     }
-    const data = await resp.json();
+    const data = await r.json();
     return Array.isArray(data?.matches) ? data.matches : [];
   } catch (e) {
-    console.error('[fetchTennisLive] Error:', e);
+    console.error('[fetchTennisLive] Error', e);
     return [];
   }
 }
