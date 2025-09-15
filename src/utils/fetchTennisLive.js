@@ -2,26 +2,17 @@
 const BASE_URL = '/api/gs/tennis-live';
 
 export default async function fetchTennisLive() {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 10000);
-
   try {
-    const res = await fetch(BASE_URL, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      cache: 'no-store',
-      signal: ctrl.signal,
-    });
-
-    if (!res.ok) return [];
-
-    const data = await res.json();
-    const matches = Array.isArray(data?.matches) ? data.matches : [];
-    return matches;
-  } catch (_e) {
-    // σιωπηλό fallback — απλά άδειος πίνακας
+    const r = await fetch(BASE_URL, { method: 'GET' });
+    if (!r.ok) {
+      console.warn('[fetchTennisLive] HTTP', r.status);
+      return [];
+    }
+    const data = await r.json();
+    if (!data || !Array.isArray(data.matches)) return [];
+    return data.matches;
+  } catch (e) {
+    console.error('[fetchTennisLive] Error', e);
     return [];
-  } finally {
-    clearTimeout(timer);
   }
 }

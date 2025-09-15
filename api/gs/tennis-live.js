@@ -9,24 +9,18 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // Μην cache-άρεις το αποτέλεσμα της function
-  res.setHeader('Cache-Control', 'no-store');
-
-  const debug = req.query?.debug ? true : false;
+  const debug = req.query?.debug === '1';
 
   try {
-    const data = await fetchLiveTennis();
-
-    // Αν το upstream έσκασε, στείλε 200 με άδειο matches για να μη “κοκκινίζει” το UI.
-    if (data?.error) {
-      return res.status(200).json(
-        debug ? data : { matches: [] }
-      );
+    const out = await fetchLiveTennis(debug);
+    // Αν ο upstream έδωσε 500, απαντάμε 200 με κενή λίστα + meta, για να μην “σκάει” το UI.
+    if (out.error) {
+      if (debug) console.error('[API tennis-live] Upstream error:', out.error, out.meta);
+      return res.status(200).json({ matches: [], error: out.error, meta: out.meta });
     }
-
-    return res.status(200).json(data);
+    return res.status(200).json(out);
   } catch (err) {
-    // Απόλυτο fallback — ποτέ 500 στο UI
-    return res.status(200).json({ matches: [], error: 'INTERNAL_HANDLER_ERROR' });
+    console.error('[API] Fatal error /api/gs/tennis-live:', err);
+    return res.status(200).json({ matches: [], error: 'Internal error' });
   }
 }
