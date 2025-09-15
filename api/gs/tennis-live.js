@@ -1,25 +1,31 @@
-// api/gs/tennis-live.js
-import { fetchLiveTennis } from '../_lib/goalServeLiveAPI.js';
+// File: api/gs/tennis-live.js
+import { fetchGoalServeLive } from "../_lib/goalServeLiveAPI.js";
 
 export default async function handler(req, res) {
-  // CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  // CORS (ώστε να μην έχουμε μπλοκάρισμα από preview domains)
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'GET')   return res.status(405).json({ error: 'Method Not Allowed' });
+  if (req.method === "OPTIONS") return res.status(200).end();
 
-  // ασφαλής ανάγνωση query (να μη βασιστούμε στο req.query)
-  const url = new URL(req.url, 'http://localhost');
-  const debug = url.searchParams.get('debug') === '1';
+  const debug = String(req.query.debug || "") === "1";
 
   try {
-    const { matches, error, meta } = await fetchLiveTennis({ debug });
-    // ΠΟΤΕ 500 στο client – πάντα 200 με διάγνωση.
-    return res.status(200).json({ matches, error, meta });
-  } catch (err) {
-    console.error('[API /api/gs/tennis-live] crash:', err);
-    return res.status(200).json({ matches: [], error: err?.message || 'Internal error' });
+    const { matches, error, meta } = await fetchGoalServeLive({ debug });
+
+    // ΠΟΤΕ δεν ρίχνουμε την function: αν έχει πρόβλημα ο πάροχος, απαντάμε 200 με error πεδίο
+    return res.status(200).json({
+      matches: Array.isArray(matches) ? matches : [],
+      error: error || null,
+      ...(debug ? { meta } : {}),
+    });
+  } catch (e) {
+    // Ακόμα κι εδώ, δίνουμε ασφαλή 200 + error
+    return res.status(200).json({
+      matches: [],
+      error: e?.message || "Unhandled error",
+      ...(debug ? { meta: { crashed: true } } : {}),
+    });
   }
 }
