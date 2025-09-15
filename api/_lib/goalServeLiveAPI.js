@@ -1,118 +1,88 @@
-// File: api/_lib/goalServeLiveAPI.js
-// Node 18+ (fetch διαθέσιμο). Δεν χρειάζεται axios/xml2js/zlib.
+// api/_lib/goalServeLiveAPI.js
+import axios from 'axios';
 
-const UA =
-  "LiveBetIQ/0.97 (+https://vercel.app) Mozilla/5.0; support: livebetiq";
+const TOKEN = process.env.GOALSERVE_TOKEN || process.env.GOALSERVE_KEY || '';
 
-function asArray(x) {
-  if (!x) return [];
-  return Array.isArray(x) ? x : [x];
-}
-
-function pick(...xs) {
-  for (const x of xs) if (x !== undefined && x !== null && x !== "") return x;
-  return "";
-}
-
-function extractFromJSON(root) {
-  const out = [];
-  const scores = root?.scores;
-  if (!scores) return out;
-
-  const categories = asArray(scores.category);
-  for (const cat of categories) {
-    const tournament =
-      pick(cat?.name, cat?.["@name"], cat?.$?.name) || "Unknown Tournament";
-    const matches = asArray(cat?.match);
-
-    for (const m of matches) {
-      // Παίχτες (πολλές παραλλαγές στα feeds)
-      const players = asArray(m?.player);
-      const p1 = players[0] ?? {};
-      const p2 = players[1] ?? {};
-
-      const name1 = pick(
-        p1?._,
-        p1?.name,
-        p1?.["@name"],
-        m?.home,
-        m?.home_name,
-        m?.player1
-      );
-      const name2 = pick(
-        p2?._,
-        p2?.name,
-        p2?.["@name"],
-        m?.away,
-        m?.away_name,
-        m?.player2
-      );
-
-      out.push({
-        id: pick(m?.id, m?.["@id"], `${tournament}-${name1}-${name2}`),
-        tournament,
-        home: name1,
-        away: name2,
-        status: pick(m?.status, m?.["@status"], ""),
-        time: pick(m?.time, m?.["@time"], ""),
-        raw: m,
-      });
-    }
-  }
-  return out;
-}
-
-export async function fetchGoalServeLive({ debug = false } = {}) {
-  const key = process.env.GOALSERVE_KEY || process.env.GOALSERVE_TOKEN || "";
-  if (!key) {
-    return {
-      matches: [],
-      error: "Missing GOALSERVE_KEY/GOALSERVE_TOKEN",
-      meta: debug ? { note: "set one env var on Vercel" } : undefined,
-    };
+/**
+ * Τραβάμε live tennis από GoalServe.
+ * Προσπαθούμε πρώτα το JSON endpoint, μετά το κλασικό.
+ * Επιστρέφουμε ΠΑΝΤΑ { matches: [...] } και, αν κάτι πάει στραβά, γεμίζουμε το error.
+ */
+export async function fetchLiveTennis() {
+  if (!TOKEN) {
+    return { matches: [], error: 'MISSING_TOKEN' };
   }
 
-  // Δοκιμάζουμε ΚΑΙ τις 2 παραλλαγές (μερικά accounts «θέλουν» τη σειρά των query params)
   const urls = [
-    `https://www.goalserve.com/getfeed/tennis_scores/home/?json=1&key=${key}`,
-    `https://www.goalserve.com/getfeed/tennis_scores/home/?key=${key}&json=1`,
+    `https://www.goalserve.com/getfeed/tennis_scores/home/?json=1&key=${TOKEN}`,
+    `https://www.goalserve.com/getfeed/tennis_scores/home/?key=${TOKEN}`,
   ];
 
+  const headers = {
+    'Accept': 'application/json, text/plain, */*',
+    // βοηθάει σε μερικούς providers
+    'User-Agent': 'livebetiq3/1.0 (+vercel; tennis-live)',
+  };
+
   let lastErr = null;
-  let lastStatus = null;
 
   for (const url of urls) {
     try {
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": UA,
-          Accept: "application/json,text/plain,*/*",
-        },
+      const res = await axios.get(url, {
+        timeout: 10000,
+        headers,
+        // μην πετάς exception για 4xx — μόνο για 5xx/δίκτυο
+        validateStatus: (s) => s < 500,
       });
 
-      lastStatus = res.status;
-
-      if (!res.ok) {
-        lastErr = `${res.status} ${res.statusText}`;
-        continue; // δοκίμασε το επόμενο url
+      if (res.status >= 400) {
+        lastErr = new Error(`HTTP ${res.status}`);
+        continue;
       }
 
-      // Περιμένουμε JSON (με ?json=1)
-      const data = await res.json();
-      const matches = extractFromJSON(data);
-      return {
-        matches,
-        meta: debug ? { source: "json", urlTried: [url] } : undefined,
-      };
+      const raw = res.data;
+      const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+
+      const categories = data?.scores?.category ?? [];
+      const catList = Array.isArray(categories) ? categories : [categories];
+
+      const matches = [];
+      for (const cat of catList) {
+        const tournament =
+          cat?.name || cat?.$?.name || cat?.['@name'] || 'Unknown Tournament';
+
+        const matchList = cat?.match ?? [];
+        const matchArr = Array.isArray(matchList) ? matchList : [matchList];
+
+        for (const m of matchArr) {
+          const players = m?.player ?? m?.players ?? [];
+          const p0 = Array.isArray(players) ? players[0] : players?.[0] ?? {};
+          const p1 = Array.isArray(players) ? players[1] : players?.[1] ?? {};
+
+          const home = p0?.name || p0?._ || p0 || '';
+          const away = p1?.name || p1?._ || p1 || '';
+
+          matches.push({
+            id: m?.id || m?.['@id'] || `${tournament}-${home}-${away}-${m?.time || ''}`,
+            tournament,
+            home,
+            away,
+            status: m?.status || m?.['@status'] || '',
+            time: m?.time || m?.['@time'] || '',
+            odds: m?.odds ?? null,
+            raw: m,
+          });
+        }
+      }
+
+      return { matches, meta: { source: url } };
     } catch (e) {
-      lastErr = e?.message || "unknown error";
-      // συνέχισε στο επόμενο URL
+      lastErr = e;
     }
   }
 
   return {
     matches: [],
-    error: lastErr || `HTTP ${lastStatus || "?"}`,
-    meta: debug ? { urlTried: urls } : undefined,
+    error: (lastErr && (lastErr.message || String(lastErr))) || 'FETCH_FAILED',
   };
 }

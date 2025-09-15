@@ -1,22 +1,27 @@
-// File: src/utils/fetchTennisLive.js
-const BASE = "/api/gs/tennis-live"; // relative, ώστε να μην έχουμε CORS
+// src/utils/fetchTennisLive.js
+const BASE_URL = '/api/gs/tennis-live';
 
-export default async function fetchTennisLive({ debug = false } = {}) {
-  const url = debug ? `${BASE}?debug=1` : BASE;
+export default async function fetchTennisLive() {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
 
   try {
-    const r = await fetch(url, { method: "GET" });
-    // Δεν εμπιστευόμαστε το status code: το API επιστρέφει πάντα 200 με {error} αν ο πάροχος σκάσει
-    const data = await r.json();
+    const res = await fetch(BASE_URL, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      cache: 'no-store',
+      signal: ctrl.signal,
+    });
 
-    if (data?.error) {
-      console.warn("[fetchTennisLive] provider error:", data.error, data.meta || {});
-    }
+    if (!res.ok) return [];
 
-    return Array.isArray(data?.matches) ? data.matches : [];
-  } catch (e) {
-    console.error("[fetchTennisLive] fetch failed:", e);
+    const data = await res.json();
+    const matches = Array.isArray(data?.matches) ? data.matches : [];
+    return matches;
+  } catch (_e) {
+    // σιωπηλό fallback — απλά άδειος πίνακας
     return [];
+  } finally {
+    clearTimeout(timer);
   }
 }
-
