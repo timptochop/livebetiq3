@@ -1,145 +1,130 @@
 // api/_lib/goalServeLiveAPI.js
-import axios from 'axios';
+const DEFAULT_TIMEOUT_MS = 8000;
+const RETRIES = 2;
 
-const TOKEN = process.env.GOALSERVE_KEY || process.env.GOALSERVE_TOKEN || '';
-const BASES = [
-  // JSON feed (προτιμάται)
-  (t) => `https://www.goalserve.com/getfeed/tennis_scores/home/?json=1&key=${t}`,
-  // Fallback (μερικές φορές δουλεύει όταν το json=1 500-άρει)
-  (t) => `https://www.goalserve.com/getfeed/tennis_scores/home/?key=${t}&json=1`,
-];
+const getToken = () => {
+  const k = process.env.GOALSERVE_TOKEN || process.env.GOALSERVE_KEY;
+  if (!k) throw new Error('Missing GOALSERVE_TOKEN / GOALSERVE_KEY');
+  return k.trim();
+};
 
-// Μικρό helper για αναμονή ανάμεσα σε retries
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const makeUrls = (token) => ([
+  // 1) feed1 με HTTPS
+  `https://feed1.goalserve.com/getfeed/${encodeURIComponent(token)}/tennis_scores/home/?json=1`,
+  // 2) feed1 με HTTP (μερικά accounts απαντούν μόνο σε http)
+  `http://feed1.goalserve.com/getfeed/${encodeURIComponent(token)}/tennis_scores/home/?json=1`,
+  // 3) www.goalserve.com με ?key=
+  `https://www.goalserve.com/getfeed/tennis_scores/home/?json=1&key=${encodeURIComponent(token)}`
+]);
 
-export async function fetchLiveTennisRaw(debug = false) {
-  if (!TOKEN) {
-    return { matches: [], error: 'Missing GOALSERVE_TOKEN/GOALSERVE_KEY', meta: {} };
-  }
+async function once(url, { timeoutMs }) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json,text/plain,*/*',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'User-Agent': 'livebetiq3/1.0 (+vercel)'
+      },
+      signal: ctrl.signal
+    });
 
-  const tried = [];
-  const headers = {
-    // Μερικά CDNs θέλουν UA
-    'User-Agent': 'LiveBetIQ/1.0 (+vercel-serverless)',
-    'Accept': 'application/json,text/plain,*/*',
-    // Αφήνουμε το axios να χειριστεί gzip
-  };
+    const text = await res.text(); // πιο ασφαλές: πρώτα text, μετά JSON.parse
 
-  // 2 προσπάθειες × 2 URLs = 4 το πολύ χτυπήματα
-  for (let attempt = 0; attempt < 2; attempt++) {
-    for (const buildUrl of BASES) {
-      const url = buildUrl(TOKEN) + `&nocache=${Date.now()}`; // cache-bust
-      tried.push(url);
-
-      try {
-        const resp = await axios.get(url, {
-          headers,
-          timeout: 7000,
-          // Επιτρέπουμε redirect/encoding by default
-        });
-
-        // Περιμένουμε JSON structure: { scores: { category: [...] } } ή { matches: [...] }
-        const data = resp.data;
-
-        // Αν ο provider επιστρέψει "σκέτο" object με scores
-        if (data && data.scores) {
-          return { data, tried };
-        }
-
-        // Αν επιστρέψει ήδη κανονικοποιημένη λίστα (σπάνιο)
-        if (data && Array.isArray(data.matches)) {
-          return { data: { scores: { category: [] }, matches: data.matches }, tried };
-        }
-
-        // Αν φτάσουμε εδώ, είναι άγνωστη δομή — το περνάμε στον normalizer να προσπαθήσει
-        return { data, tried };
-      } catch (err) {
-        // Αν ο upstream δώσει 500/502/503 κτλ συνεχίζουμε στα επόμενα URL/attempt
-        if (debug) console.error('[GS FETCH ERR]', err?.response?.status, err?.message);
-        // μικρή καθυστέρηση πριν την επόμενη προσπάθεια
-        await sleep(400);
-      }
+    if (!res.ok) {
+      const err = new Error(`HTTP ${res.status} ${res.statusText}`);
+      err.status = res.status;
+      err.body = text?.slice(0, 300);
+      throw err;
     }
+
+    if (text.trim().startsWith('<')) {
+      // Κάποιες φορές γυρνάει XML κατά λάθος
+      const err = new Error('upstream_returned_xml');
+      err.body = text?.slice(0, 300);
+      throw err;
+    }
+
+    // JSON με BOM/παράξενα κενά -> καθάρισμα
+    const cleaned = text.replace(/^\uFEFF/, '');
+    return JSON.parse(cleaned);
+  } finally {
+    clearTimeout(t);
   }
-
-  return {
-    error: 'HTTP 500 Internal Server Error',
-    tried,
-  };
 }
 
-function num(v) {
-  const s = String(v ?? '').trim();
-  if (!s) return null;
-  const n = parseInt(s.split(/[.:]/)[0], 10);
-  return Number.isFinite(n) ? n : null;
-}
+function normalize(json) {
+  const scores = json?.scores;
+  if (!scores) return { matches: [] };
 
-// Μετατροπή από το json του GoalServe σε flat matches[]
-export function normalizeGoalServe(data) {
-  // data μπορεί να είναι { scores: {...} } ή κάτι άλλο – το χειριζόμαστε προσεκτικά
-  const scores = data?.scores;
-  const categories = scores?.category ?? [];
-  const catArr = Array.isArray(categories) ? categories : [categories];
+  const cats = Array.isArray(scores.category) ? scores.category : (scores.category ? [scores.category] : []);
+  const out = [];
 
-  const matches = [];
+  for (const cat of cats) {
+    const tournament = cat?.name || cat?.$?.name || cat?.['@name'] || 'Unknown Tournament';
+    const ms = Array.isArray(cat?.match) ? cat.match : (cat?.match ? [cat.match] : []);
+    for (const m of ms) {
+      const players = Array.isArray(m?.player) ? m.player : (m?.player ? [m.player] : []);
+      const p0 = players[0] ?? {};
+      const p1 = players[1] ?? {};
 
-  for (const cat of catArr) {
-    if (!cat) continue;
-    const tournament = cat?.name || cat?.$?.name || 'Unknown Tournament';
-    const matchList = cat?.match ?? [];
-    const mArr = Array.isArray(matchList) ? matchList : [matchList];
+      const home = p0?.name ?? p0?._ ?? p0 ?? m?.home ?? '';
+      const away = p1?.name ?? p1?._ ?? p1 ?? m?.away ?? '';
 
-    for (const m of mArr) {
-      if (!m) continue;
-
-      // Players μπορούν να είναι είτε array από objects είτε απλές τιμές
-      const players = m.player ?? [];
-      const pArr = Array.isArray(players) ? players : [players];
-      const getName = (p) => (p?.name ?? p?._ ?? p ?? '').toString();
-
-      const home = getName(pArr[0] ?? {});
-      const away = getName(pArr[1] ?? {});
-
-      // Sets αν υπάρχουν σε s1..s5
-      const s1 = num(m.s1), s2 = num(m.s2), s3 = num(m.s3), s4 = num(m.s4), s5 = num(m.s5);
-
-      matches.push({
-        id: m.id ?? m.matchid ?? `${tournament}-${home}-${away}-${m.time ?? ''}`,
-        tournament,
-        home,
-        away,
-        status: m.status ?? '',
-        time: m.time ?? '',
-        date: m.date ?? '',
-        sets: [s1, s2, s3, s4, s5].filter((x) => x !== null),
-        raw: m,
+      out.push({
+        id: m?.id ?? m?.['@id'] ?? `${m?.date || ''}-${m?.time || ''}-${home}-${away}`,
+        date: m?.date ?? m?.['@date'] ?? '',
+        time: m?.time ?? m?.['@time'] ?? '',
+        status: m?.status ?? m?.['@status'] ?? '',
+        categoryName: tournament,
+        players: players.map((p) => ({
+          name: p?.name ?? p?._ ?? p?.['@name'] ?? '',
+          s1: p?.s1 ?? p?.['@s1'] ?? null,
+          s2: p?.s2 ?? p?.['@s2'] ?? null,
+          s3: p?.s3 ?? p?.['@s3'] ?? null,
+          s4: p?.s4 ?? p?.['@s4'] ?? null,
+          s5: p?.s5 ?? p?.['@s5'] ?? null
+        })),
+        raw: m
       });
     }
   }
 
-  return matches;
+  return { matches: out };
 }
 
+/** Κύρια συνάρτηση: retries + rotation */
 export async function fetchLiveTennis(debug = false) {
-  const res = await fetchLiveTennisRaw(debug);
+  const token = getToken();
+  const urls = makeUrls(token);
+  const tried = [];
+  let lastErr = null;
 
-  if (res.error) {
-    return {
-      matches: [],
-      error: res.error,
-      meta: { urlTried: res.tried ?? [] },
-    };
+  for (let i = 0; i < 1 + RETRIES; i++) {
+    const url = urls[i % urls.length];
+    tried.push(url);
+    try {
+      const raw = await once(url, { timeoutMs: DEFAULT_TIMEOUT_MS });
+      const out = normalize(raw);
+      if (debug) return { ...out, meta: { urlTried: tried, retry: i, provider: 'goalserve-json' } };
+      return out;
+    } catch (e) {
+      lastErr = e;
+      // Retry μόνο σε 5xx/timeout/XML
+      const retriable =
+        e.name === 'AbortError' ||
+        e.message === 'upstream_returned_xml' ||
+        (e.status >= 500 && e.status < 600);
+      if (!retriable) break;
+    }
   }
 
-  try {
-    const matches = normalizeGoalServe(res.data);
-    return { matches, meta: { ok: true } };
-  } catch (e) {
-    return {
-      matches: [],
-      error: 'ParseError',
-      meta: { detail: e?.message, sample: typeof res.data },
-    };
-  }
+  return {
+    matches: [],
+    error: lastErr ? String(lastErr.message || lastErr) : 'Unknown upstream error',
+    meta: debug ? { urlTried: tried, provider: 'goalserve-json', body: lastErr?.body } : undefined
+  };
 }
