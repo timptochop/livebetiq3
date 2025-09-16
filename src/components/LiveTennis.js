@@ -1,34 +1,35 @@
-// src/components/LiveTennis.js
-// v0.98.1 — AI labels μόνο από Set ≥ 3, ταξινόμηση live (AI→Set3→Set2→Set1),
-// dot πράσινο=live / κόκκινο=όχι live, ενημέρωση top bar με liveCount.
-
 import React, { useEffect, useMemo, useState } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 
-// ---- helpers ----
+// -------- helpers --------
 const FINISHED_SET = new Set([
   'finished','cancelled','retired','abandoned','postponed','walk over','walkover'
 ]);
 const isFinishedLike = (s) => FINISHED_SET.has(String(s||'').toLowerCase());
-const isNotStarted = (s) => String(s||'').toLowerCase() === 'not started';
+const isNotStarted  = (s) => String(s||'').toLowerCase() === 'not started';
 
-const num = (v) => {
-  if (v === null || v === undefined) return null;
-  const s = String(v).trim(); if (!s) return null;
-  const x = parseInt(s.split(/[.:]/)[0], 10);
-  return Number.isFinite(x) ? x : null;
+// μετατρέπει σε int, μη αριθμητικά -> 0
+const toInt = (v) => {
+  if (v === null || v === undefined) return 0;
+  const s = String(v).trim();
+  if (!s) return 0;
+  const n = parseInt(s.split(/[.:]/)[0], 10);
+  return Number.isFinite(n) ? n : 0;
 };
 
-const currentSetFromScores = (players) => {
+// Επιστρέφει τα games ανά σετ και αν έχει ξεκινήσει έστω 1 game
+function extractScore(players) {
   const p = Array.isArray(players) ? players
           : Array.isArray(players?.player) ? players.player : [];
-  const a = p[0] || {}, b = p[1] || {};
-  const sA = [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)];
-  const sB = [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)];
-  let k = 0;
-  for (let i=0;i<5;i++) if (sA[i] !== null || sB[i] !== null) k = i+1;
-  return k || 0;
-};
+  const A = p[0] || {}, B = p[1] || {};
+  const a = [toInt(A.s1), toInt(A.s2), toInt(A.s3), toInt(A.s4), toInt(A.s5)];
+  const b = [toInt(B.s1), toInt(B.s2), toInt(B.s3), toInt(B.s4), toInt(B.s5)];
+  const totals = a.map((v,i) => v + b[i]);
+  const anyGame = totals.some(t => t > 0);
+  let currentSet = 0;
+  for (let i=0;i<totals.length;i++) if (totals[i] > 0) currentSet = i+1; // μετράμε μόνο σετ με παιχνίδι (>0)
+  return { a, b, totals, anyGame, currentSet };
+}
 
 const parseDateTime = (d, t) => {
   const ds = String(d || '').trim();
@@ -40,14 +41,16 @@ const parseDateTime = (d, t) => {
   return Number.isNaN(dt.getTime()) ? null : dt;
 };
 
-const looksLiveFromStatus = (s) => {
+// μόνο για “ρητό” live από status
+const liveFromStatus = (s) => {
   const x = String(s||'').toLowerCase();
-  return /set|game|in\s?progress|1st|2nd|3rd|tiebreak|tb/.test(x);
+  if (isNotStarted(x) || isFinishedLike(x)) return false;
+  return /(?:^|\s)(in\s?progress|live|1st|2nd|3rd|set\s?\d|tiebreak|tb)(?:\s|$)/.test(x);
 };
 
 const AI_LABELS = new Set(['SAFE','RISKY','AVOID']);
 
-// ---- component ----
+// -------- component --------
 export default function LiveTennis({ onLiveCount = () => {} }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -74,32 +77,34 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
 
   const normalized = useMemo(() => rows.map((m) => {
     const players = Array.isArray(m.players) ? m.players
-                    : Array.isArray(m.player)  ? m.player  : [];
+                  : Array.isArray(m.player)  ? m.player  : [];
     const p1 = players[0] || {}, p2 = players[1] || {};
     const name1 = p1.name || p1['@name'] || '';
     const name2 = p2.name || p2['@name'] || '';
     const date = m.date || m['@date'] || '';
     const time = m.time || m['@time'] || '';
-    const dt = parseDateTime(date, time);
+    const dt   = parseDateTime(date, time);
     const status = m.status || m['@status'] || '';
-    const setNum = currentSetFromScores(players);
 
-    // live inference
-    const live = (!!setNum) || (looksLiveFromStatus(status) && !isNotStarted(status) && !isFinishedLike(status));
+    const { anyGame, currentSet } = extractScore(players);
 
-    // AI (αν υπάρχει)
+    // LIVE μόνο αν έχει παιχτεί τουλάχιστον 1 game ή status δηλώνει live,
+    // και φυσικά ΔΕΝ είναι Not Started / Finished
+    const live = !isFinishedLike(status) && (anyGame || liveFromStatus(status)) && !isNotStarted(status);
+
+    // AI label μόνο για live από Set >= 3
     const label = String(m?.prediction?.label || '').toUpperCase();
-    const showAI = live && setNum >= 3 && AI_LABELS.has(label);
+    const showAI = live && currentSet >= 3 && AI_LABELS.has(label);
 
-    // badge text
+    // Τι γράφει το badge
     let badgeText = '';
     if (showAI) {
       badgeText = label; // SAFE/RISKY/AVOID
     } else if (live) {
-      badgeText = `SET ${setNum || 1}`;
+      badgeText = `SET ${currentSet || 1}`;
     } else {
       if (dt && dt.getTime() > Date.now()) {
-        const mins = Math.max(1, Math.round((dt.getTime() - Date.now()) / 60000));
+        const mins = Math.max(1, Math.round((dt.getTime() - Date.now())/60000));
         badgeText = `STARTS IN ${mins} MIN`;
       } else {
         badgeText = 'STARTS SOON';
@@ -108,25 +113,25 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
 
     return {
       id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
-      name1, name2, date, time, dt, status,
-      categoryName: m.categoryName || m['@category'] || m.category || '',
-      setNum, live, label, showAI, badgeText
+      name1, name2, date, time, dt,
+      status, categoryName: m.categoryName || m['@category'] || m.category || '',
+      setNum: currentSet,
+      live, label, showAI, badgeText
     };
   }), [rows]);
 
-  // ενημέρωση live counter για το TopBar
+  // ενημέρωση TopBar counter
   useEffect(() => {
-    const liveCount = normalized.reduce((n, m) => n + (m.live ? 1 : 0), 0);
-    onLiveCount(liveCount);
+    onLiveCount(normalized.reduce((n, x) => n + (x.live ? 1 : 0), 0));
   }, [normalized, onLiveCount]);
 
-  // sort: live με AI πρώτα, μετά live set3, set2, set1, μετά upcoming by time
+  // Ταξινόμηση: live με AI -> live set3 -> set2 -> set1 -> upcoming by time
   const liveBucket = (m) => {
     if (!m.live) return 99;
-    if (m.showAI) return 0;          // AI στο Set>=3
+    if (m.showAI) return 0;
     if (m.setNum >= 3) return 1;
     if (m.setNum === 2) return 2;
-    return 3; // set 1 ή 0 (σπάνιο)
+    return 3;
   };
 
   const list = useMemo(() => {
@@ -140,7 +145,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     });
   }, [normalized]);
 
-  // badge styles
   const badgeStyle = (m) => {
     if (m.showAI && m.label === 'SAFE')  return { bg:'#20b954', fg:'#fff' };
     if (m.showAI && m.label === 'RISKY') return { bg:'#ffbf0a', fg:'#151515' };
@@ -168,7 +172,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
             }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
                 <div style={{ display:'flex', alignItems:'center', gap:12, minWidth:0 }}>
-                  {/* dot: πράσινο live / κόκκινο όχι-live */}
+                  {/* dot: πράσινο = live, κόκκινο = όχι live */}
                   <span aria-hidden style={{
                     width:12, height:12, borderRadius:999,
                     background: m.live ? '#1fdd73' : '#e53935',
