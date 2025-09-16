@@ -1,18 +1,20 @@
-// LiveTennis.js — v0.97.7 set-priority & ai-after-set3
+// src/components/LiveTennis.js
+// v0.98.1 — AI labels μόνο από Set ≥ 3, ταξινόμηση live (AI→Set3→Set2→Set1),
+// dot πράσινο=live / κόκκινο=όχι live, ενημέρωση top bar με liveCount.
+
 import React, { useEffect, useMemo, useState } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 
-/* ---------------- helpers ---------------- */
+// ---- helpers ----
 const FINISHED_SET = new Set([
-  'finished','cancelled','retired','abandoned','postponed','walk over','walkover',
+  'finished','cancelled','retired','abandoned','postponed','walk over','walkover'
 ]);
 const isFinishedLike = (s) => FINISHED_SET.has(String(s||'').toLowerCase());
 const isNotStarted = (s) => String(s||'').toLowerCase() === 'not started';
 
 const num = (v) => {
   if (v === null || v === undefined) return null;
-  const s = String(v).trim();
-  if (!s) return null;
+  const s = String(v).trim(); if (!s) return null;
   const x = parseInt(s.split(/[.:]/)[0], 10);
   return Number.isFinite(x) ? x : null;
 };
@@ -40,22 +42,16 @@ const parseDateTime = (d, t) => {
 
 const looksLiveFromStatus = (s) => {
   const x = String(s||'').toLowerCase();
-  return /set|game|in\s?progress|1st|2nd|3rd/.test(x);
+  return /set|game|in\s?progress|1st|2nd|3rd|tiebreak|tb/.test(x);
 };
 
-const predictionChip = (label) => {
-  const t = String(label||'').toUpperCase();
-  if (t === 'SAFE')   return { bg:'#20b954', fg:'#fff', text:'SAFE' };
-  if (t === 'RISKY')  return { bg:'#ffbf0a', fg:'#151515', text:'RISKY' };
-  if (t === 'AVOID')  return { bg:'#e53935', fg:'#fff', text:'AVOID' };
-  return null;
-};
+const AI_LABELS = new Set(['SAFE','RISKY','AVOID']);
 
-/* ---------------- component ---------------- */
+// ---- component ----
 export default function LiveTennis({ onLiveCount = () => {} }) {
   const [rows, setRows] = useState([]);
-  const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
 
   const load = async () => {
     setLoading(true); setErr('');
@@ -63,7 +59,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
       const matches = await fetchTennisLive();
       setRows(Array.isArray(matches) ? matches : []);
     } catch (e) {
-      console.error('[LiveTennis] fetch error:', e);
       setErr(e?.message || 'Load failed');
       setRows([]);
     } finally {
@@ -89,108 +84,119 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     const status = m.status || m['@status'] || '';
     const setNum = currentSetFromScores(players);
 
-    const live = (setNum > 0) || looksLiveFromStatus(status);
+    // live inference
+    const live = (!!setNum) || (looksLiveFromStatus(status) && !isNotStarted(status) && !isFinishedLike(status));
 
-    const pr = m.prediction || {};
-    const prChip = predictionChip(pr.label);
+    // AI (αν υπάρχει)
+    const label = String(m?.prediction?.label || '').toUpperCase();
+    const showAI = live && setNum >= 3 && AI_LABELS.has(label);
 
-    // δείχνουμε AI μόνο στο Set 3 (και μόνο αν είναι live)
-    const showAI = !!(live && setNum >= 3 && prChip);
-
+    // badge text
     let badgeText = '';
-    let badgeBG = '#6e42c1', badgeFG = '#fff';
-
     if (showAI) {
-      badgeText = prChip.text; badgeBG = prChip.bg; badgeFG = prChip.fg;
+      badgeText = label; // SAFE/RISKY/AVOID
     } else if (live) {
       badgeText = `SET ${setNum || 1}`;
-      badgeBG = '#6e42c1'; badgeFG = '#fff';
     } else {
       if (dt && dt.getTime() > Date.now()) {
-        const mins = Math.max(1, Math.round((dt.getTime() - Date.now())/60000));
+        const mins = Math.max(1, Math.round((dt.getTime() - Date.now()) / 60000));
         badgeText = `STARTS IN ${mins} MIN`;
       } else {
         badgeText = 'STARTS SOON';
       }
-      badgeBG = '#7a6fde'; badgeFG = '#fff';
     }
 
     return {
       id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
       name1, name2, date, time, dt, status,
       categoryName: m.categoryName || m['@category'] || m.category || '',
-      setNum, live,
-      badgeText, badgeBG, badgeFG,
+      setNum, live, label, showAI, badgeText
     };
   }), [rows]);
 
-  // ενημέρωση top bar με live count
+  // ενημέρωση live counter για το TopBar
   useEffect(() => {
-    const n = normalized.reduce((acc, m) => acc + (m.live ? 1 : 0), 0);
-    onLiveCount(n);
+    const liveCount = normalized.reduce((n, m) => n + (m.live ? 1 : 0), 0);
+    onLiveCount(liveCount);
   }, [normalized, onLiveCount]);
 
-  // προτεραιότητα set: 3 -> 2 -> 1
-  const setPriority = (s) => (s >= 3 ? 0 : s === 2 ? 1 : s === 1 ? 2 : 3);
+  // sort: live με AI πρώτα, μετά live set3, set2, set1, μετά upcoming by time
+  const liveBucket = (m) => {
+    if (!m.live) return 99;
+    if (m.showAI) return 0;          // AI στο Set>=3
+    if (m.setNum >= 3) return 1;
+    if (m.setNum === 2) return 2;
+    return 3; // set 1 ή 0 (σπάνιο)
+  };
 
   const list = useMemo(() => {
-    return [...normalized].sort((a,b) => {
-      if (a.live !== b.live) return a.live ? -1 : 1;           // live πρώτα
-      if (a.live && b.live) {
-        const pa = setPriority(a.setNum), pb = setPriority(b.setNum);
-        if (pa !== pb) return pa - pb;                          // Set3 > Set2 > Set1
-      }
-      const ta = a.dt ? a.dt.getTime() : Infinity;             // μετά κοντινότερη ώρα
+    const keep = normalized.filter((m) => !isFinishedLike(m.status));
+    return keep.sort((a,b) => {
+      const wa = liveBucket(a), wb = liveBucket(b);
+      if (wa !== wb) return wa - wb;
+      const ta = a.dt ? a.dt.getTime() : Infinity;
       const tb = b.dt ? b.dt.getTime() : Infinity;
       return ta - tb;
     });
   }, [normalized]);
 
+  // badge styles
+  const badgeStyle = (m) => {
+    if (m.showAI && m.label === 'SAFE')  return { bg:'#20b954', fg:'#fff' };
+    if (m.showAI && m.label === 'RISKY') return { bg:'#ffbf0a', fg:'#151515' };
+    if (m.showAI && m.label === 'AVOID') return { bg:'#e53935', fg:'#fff' };
+    if (m.live)                           return { bg:'#6e42c1', fg:'#fff' }; // SET X
+    return { bg:'#7a6fde', fg:'#fff' };                                   // STARTS...
+  };
+
   return (
     <div style={{ background:'#0b0b0b', minHeight:'100vh' }}>
       <div style={{ maxWidth:1100, margin:'12px auto 40px', padding:'0 14px' }}>
         {err && (
-          <div style={{
-            background:'#3a1b1b', border:'1px solid #5b2a2a', color:'#ffd7d7',
-            borderRadius:10, padding:'10px 12px', marginBottom:12
-          }}>{err}</div>
+          <div style={{ background:'#3a1b1b', border:'1px solid #5b2a2a', color:'#ffd7d7',
+                        borderRadius:10, padding:'10px 12px', marginBottom:12 }}>
+            {err}
+          </div>
         )}
 
-        {list.map((m) => (
-          <div key={m.id} style={{
-            borderRadius:18, background:'#151718', border:'1px solid #202428',
-            boxShadow:'0 14px 28px rgba(0,0,0,0.45)', padding:16, marginBottom:12
-          }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:12, minWidth:0 }}>
-                <span aria-hidden style={{
-                  width:12, height:12, borderRadius:999,
-                  background: m.live ? '#1fdd73' : '#e53935',
-                  boxShadow: m.live
-                    ? '0 0 10px rgba(31,221,115,.8)'
-                    : '0 0 8px rgba(229,57,53,.6)'
-                }}/>
-                <div style={{ minWidth:0 }}>
-                  <div style={{ fontSize:16, fontWeight:800, color:'#f2f6f9', lineHeight:1.12, overflow:'hidden', textOverflow:'ellipsis' }}>
-                    {m.name1} <span style={{ color:'#96a5b4', fontWeight:600 }}>vs</span> {m.name2}
-                  </div>
-                  <div style={{ marginTop:6, fontSize:12, color:'#c7d1dc' }}>
-                    {m.date} {m.time} • {m.categoryName}
+        {list.map((m) => {
+          const { bg, fg } = badgeStyle(m);
+          return (
+            <div key={m.id} style={{
+              borderRadius:18, background:'#151718', border:'1px solid #202428',
+              boxShadow:'0 14px 28px rgba(0,0,0,0.45)', padding:16, marginBottom:12
+            }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:12, minWidth:0 }}>
+                  {/* dot: πράσινο live / κόκκινο όχι-live */}
+                  <span aria-hidden style={{
+                    width:12, height:12, borderRadius:999,
+                    background: m.live ? '#1fdd73' : '#e53935',
+                    boxShadow: m.live ? '0 0 10px rgba(31,221,115,.8)' : '0 0 8px rgba(229,57,53,.6)'
+                  }}/>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ fontSize:16, fontWeight:800, color:'#f2f6f9',
+                                  lineHeight:1.12, overflow:'hidden', textOverflow:'ellipsis' }}>
+                      {m.name1} <span style={{ color:'#96a5b4', fontWeight:600 }}>vs</span> {m.name2}
+                    </div>
+                    <div style={{ marginTop:6, fontSize:12, color:'#c7d1dc' }}>
+                      {m.date} {m.time} • {m.categoryName}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <span style={{
-                padding:'10px 14px', borderRadius:14, fontWeight:800, letterSpacing:.5,
-                boxShadow:'0 6px 18px rgba(0,0,0,0.25)', display:'inline-block',
-                minWidth:(m.badgeText||'').startsWith('STARTS') ? 140 : 84, textAlign:'center',
-                background:m.badgeBG, color:m.badgeFG
-              }}>
-                {m.badgeText}
-              </span>
+                <span style={{
+                  padding:'10px 14px', borderRadius:14, fontWeight:800, letterSpacing:.5,
+                  boxShadow:'0 6px 18px rgba(0,0,0,0.25)', display:'inline-block',
+                  minWidth: (m.badgeText||'').startsWith('STARTS') ? 140 : 84,
+                  textAlign:'center', background:bg, color:fg
+                }}>
+                  {m.badgeText}
+                </span>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {!loading && list.length === 0 && (
           <div style={{

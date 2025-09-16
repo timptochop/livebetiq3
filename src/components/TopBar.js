@@ -36,7 +36,7 @@ export default function TopBar({
           height: BAR_H,
         }}
       >
-        {/* Logo */}
+        {/* Logo (χωρίς καμία μικρή τελίτσα) */}
         <div
           style={{
             width: 56,
@@ -56,7 +56,7 @@ export default function TopBar({
           />
         </div>
 
-        {/* LIVE badge */}
+        {/* LIVE badge με counter */}
         <div
           style={{
             justifySelf: "start",
@@ -71,6 +71,7 @@ export default function TopBar({
           }}
         >
           <span
+            aria-hidden
             style={{
               width: 10,
               height: 10,
@@ -94,7 +95,7 @@ export default function TopBar({
           </span>
         </div>
 
-        {/* Notifications ON/OFF */}
+        {/* Notifications toggle */}
         <button
           onClick={() => onToggleNotifications(!notificationsOn)}
           aria-label={`Notifications ${notificationsOn ? "on" : "off"}`}
