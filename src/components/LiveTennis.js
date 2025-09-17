@@ -42,7 +42,6 @@ function parseDateTime(d, t) {
   return Number.isNaN(dt.getTime()) ? null : dt;
 }
 
-// Badge colors strictly by AI label (fallback σε SET/SOON)
 const BADGE = {
   SAFE:   { bg: '#1fdd73', fg: '#000000' },
   RISKY:  { bg: '#ff9900', fg: '#111'    },
@@ -169,6 +168,13 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     });
   }, [normalized, q]);
 
+  // Dynamic TIP color per label
+  const tipColor = (label) => {
+    if (label === 'SAFE') return '#1fdd73';
+    if (label === 'RISKY') return '#ff9900';
+    return '#cfd3d7';
+  };
+
   return (
     <div style={{ padding: 16, minHeight: '100vh', background: '#0b0b0b', color: '#fff' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
@@ -216,12 +222,18 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
                 <div style={{ marginTop:6, color:'#cfd3d7', fontSize:13 }}>
                   {m.date} {m.time} • {m.categoryName}
                 </div>
+
+                {/* TIP: δείξε για SAFE & RISKY ΠΑΝΤΑ (έχουμε πάντα pick από analyzeMatch) */}
                 {(m.label === 'SAFE' || m.label === 'RISKY') && m.ai?.pick && (
-                  <div style={{ marginTop:6, fontSize:13, fontWeight:700, color:'#1fdd73' }}>
-                    TIP: {m.ai.pick} <span style={{ color:'#9fb5a7', fontWeight:600 }}>({m.ai.reason})</span>
+                  <div style={{ marginTop:6, fontSize:13, fontWeight:700, color: tipColor(m.label) }}>
+                    TIP: {m.ai.pick}{' '}
+                    <span style={{ color:'#9fb5a7', fontWeight:600 }}>
+                      ({m.ai?.reason})
+                    </span>
                   </div>
                 )}
               </div>
+
               {/* badge (AI label OR SET/SOON) */}
               <div style={{
                 padding:'8px 12px',

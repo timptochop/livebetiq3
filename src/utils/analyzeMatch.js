@@ -1,4 +1,6 @@
 // src/utils/analyzeMatch.js
+// AI ενεργό από Set 3+ και ΠΑΝΤΑ δίνει pick για SAFE/RISKY
+
 export default function analyzeMatch(match, setNum) {
   // --- guard: πριν το 3ο σετ δεν δίνουμε AI label ---
   if (!Number.isFinite(setNum) || setNum < 3) {
@@ -12,26 +14,24 @@ export default function analyzeMatch(match, setNum) {
     };
   }
 
-  // ----------- Simple EV/Confidence Heuristic -----------
-  // Παίρνουμε games του τελευταίου σετ που έχει ξεκινήσει
-  const score = extractSets(match);
-  const last = score.at(-1);
-  const gameDiff = last ? Math.abs(last.a - last.b) : 0;
+  const sets = extractSets(match); // [{a,b},...]
+  const last = sets.at(-1) || { a: 0, b: 0 };
+  const { nameA, nameB } = getPlayerNames(match);
 
-  // EV: λίγο υψηλότερο όταν το τελευταίο σετ έχει μικρή διαφορά (value στο momentum)
+  // ----------- EV / Confidence -----------
+  const gameDiff = Math.abs(last.a - last.b);
   let ev = 0.02;
   if (gameDiff === 0) ev = 0.028;
   else if (gameDiff === 1) ev = 0.024;
   else if (gameDiff >= 2) ev = 0.02;
 
-  // Confidence: αυξάνει όσο περισσότερα games έχουν παιχτεί συνολικά
-  const totalGames = score.reduce((s, x) => s + x.a + x.b, 0);
+  const totalGames = sets.reduce((s, x) => s + (x.a || 0) + (x.b || 0), 0);
   let confidence = 52;
   if (totalGames > 12) confidence = 57;
   if (totalGames > 20) confidence = 61;
   if (totalGames > 30) confidence = 68;
 
-  // Kelly (διακοσμητικό εδώ – χωρίς odds, βάζουμε proxy)
+  // Kelly (proxy χωρίς odds)
   const kelly = Math.max(0, Math.min(0.15, (ev - 0.02) * 5)); // 0%–15%
 
   // Label thresholds
@@ -39,29 +39,37 @@ export default function analyzeMatch(match, setNum) {
   if (ev > 0.025 && confidence > 55) label = 'SAFE';
   else if (ev > 0.02 && confidence >= 50) label = 'RISKY';
 
-  // Pick (απλό placeholder: όποιος κέρδισε το προηγούμενο σετ)
-  let pick = null;
-  if (last) {
-    if (last.a > last.b) pick = getPlayerName(match, 0);
-    else if (last.b > last.a) pick = getPlayerName(match, 1);
+  // ----------- TIP (pick) — ΠΑΝΤΑ για SAFE/RISKY -----------
+  let pick = decidePick(match, sets, { nameA, nameB });
+
+  // Αν για κάποιο λόγο δεν βγήκε, βγάλε deterministic fallback (ποτέ null σε SAFE/RISKY)
+  if ((label === 'SAFE' || label === 'RISKY') && !pick) {
+    pick = nameA || nameB || null;
   }
 
   return {
     label,
     pick,
-    reason: `ev=${(ev*100).toFixed(1)}% conf=${confidence}%`,
-    ev, confidence, kelly,
+    reason: `ev=${(ev * 100).toFixed(1)}% · conf=${confidence}%`,
+    ev,
+    confidence,
+    kelly,
   };
 }
 
 // ---------- helpers ----------
 function extractSets(match) {
-  const players = Array.isArray(match.players) ? match.players
-                : Array.isArray(match.player)  ? match.player  : [];
+  const players = Array.isArray(match.players)
+    ? match.players
+    : Array.isArray(match.player)
+    ? match.player
+    : [];
   const a = players[0] || {};
   const b = players[1] || {};
+
   const sA = [a.s1, a.s2, a.s3, a.s4, a.s5].map(toNum);
   const sB = [b.s1, b.s2, b.s3, b.s4, b.s5].map(toNum);
+
   const out = [];
   for (let i = 0; i < 5; i++) {
     if (sA[i] !== null || sB[i] !== null) out.push({ a: sA[i] || 0, b: sB[i] || 0 });
@@ -77,9 +85,49 @@ function toNum(v) {
   return Number.isFinite(x) ? x : null;
 }
 
-function getPlayerName(match, idx) {
-  const players = Array.isArray(match.players) ? match.players
-                : Array.isArray(match.player)  ? match.player  : [];
-  const p = players[idx] || {};
-  return p.name || p['@name'] || '';
+function getPlayerNames(match) {
+  const players = Array.isArray(match.players)
+    ? match.players
+    : Array.isArray(match.player)
+    ? match.player
+    : [];
+  const pA = players[0] || {};
+  const pB = players[1] || {};
+  return {
+    nameA: pA.name || pA['@name'] || '',
+    nameB: pB.name || pB['@name'] || '',
+  };
+}
+
+function decidePick(match, sets, { nameA, nameB }) {
+  if (!sets || !sets.length) return null;
+  const last = sets.at(-1) || { a: 0, b: 0 };
+
+  // 1) Νικητής τελευταίου σετ
+  if (last.a > last.b) return nameA;
+  if (last.b > last.a) return nameB;
+
+  // 2) Σύνολο σετ κερδισμένα
+  let setsA = 0,
+    setsB = 0;
+  for (const s of sets) {
+    if (s.a > s.b) setsA++;
+    else if (s.b > s.a) setsB++;
+  }
+  if (setsA > setsB) return nameA;
+  if (setsB > setsA) return nameB;
+
+  // 3) Ποιος προηγείται στο "τρέχον" (τελευταίο) σετ σε games
+  const currDiff = last.a - last.b;
+  if (currDiff > 0) return nameA;
+  if (currDiff < 0) return nameB;
+
+  // 4) Σύνολο games σε όλους τους σετ
+  const totalA = sets.reduce((s, x) => s + (x.a || 0), 0);
+  const totalB = sets.reduce((s, x) => s + (x.b || 0), 0);
+  if (totalA > totalB) return nameA;
+  if (totalB > totalA) return nameB;
+
+  // 5) Τίποτα ξεκάθαρο → null (και θα καλυφθεί από deterministic fallback πάνω)
+  return null;
 }
