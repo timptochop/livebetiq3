@@ -1,23 +1,17 @@
 // src/components/LiveTennis.js
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
+// Προαιρετικά, αν έχεις css: import './LiveTennis.css';
 
 /* ----------------- helpers ----------------- */
 const FINISHED_SET = new Set([
-  'finished','cancelled','retired','abandoned','postponed','walk over','walkover',
-  'wo','suspended','interrupted'
+  'finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over',
 ]);
-const UPCOMING_SET = new Set(['not started','scheduled','ns','prematch']);
 
-const LIVE_KEYWORDS = [
-  'in progress','live','playing','ongoing',
-  '1st set','2nd set','3rd set','4th set','5th set',
-  'set 1','set 2','set 3','set 4','set 5'
-];
-
-const isFinishedLike = (s) => FINISHED_SET.has(String(s||'').toLowerCase());
-const isUpcomingLike = (s) => UPCOMING_SET.has(String(s||'').toLowerCase());
+const isFinishedLike = (s) => FINISHED_SET.has(String(s || '').toLowerCase());
+const isNotStarted   = (s) => String(s || '').toLowerCase() === 'not started';
+const isLiveStatus   = (s) => !!s && !isNotStarted(s) && !isFinishedLike(s);
 
 const num = (v) => {
   if (v === null || v === undefined) return null;
@@ -27,70 +21,76 @@ const num = (v) => {
   return Number.isFinite(x) ? x : null;
 };
 
-const anyScoreEntered = (players) => {
-  const p = Array.isArray(players) ? players : [];
-  for (const side of [p[0]||{}, p[1]||{}]) {
-    if ([side.s1,side.s2,side.s3,side.s4,side.s5].some(v => num(v) !== null)) return true;
-    if (side.game_score && String(side.game_score).trim() !== '') return true;
-    if (String(side.serve||'').toLowerCase() === 'true') return true;
-  }
-  return false;
-};
-
-const setFromStatus = (status) => {
-  const s = String(status||'').toLowerCase();
-  const m = s.match(/(?:^|\s)([1-5])(?:st|nd|rd|th)?\s*set|set\s*([1-5])/i);
-  if (!m) return null;
-  return parseInt(m[1] || m[2], 10);
-};
-
-const currentSetFromScores = (players) => {
+function currentSetFromScores(players) {
   const p = Array.isArray(players) ? players : [];
   const a = p[0] || {}, b = p[1] || {};
   const sA = [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)];
   const sB = [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)];
   let k = 0;
-  for (let i=0;i<5;i++) if (sA[i] !== null || sB[i] !== null) k = i+1;
+  for (let i = 0; i < 5; i++) if (sA[i] !== null || sB[i] !== null) k = i + 1;
   return k || null;
-};
+}
 
-const parseDateTime = (d, t) => {
-  const ds = String(d||'').trim(); if (!ds) return null;
-  const ts = String(t||'').trim();
-  const [dd,mm,yyyy] = ds.split('.').map(Number);
-  const [HH=0,MM=0] = ts.includes(':') ? ts.split(':').map(Number) : [0,0];
-  const dt = new Date(yyyy||1970,(mm||1)-1,dd||1,HH,MM,0,0);
-  return Number.isNaN(dt.getTime()) ? null : dt;
-};
+function setFromStatus(status) {
+  const s = String(status || '').toLowerCase();
+  const m = s.match(/(?:^|\s)([1-5])(?:st|nd|rd|th)?\s*set|set\s*([1-5])/i);
+  if (!m) return null;
+  return parseInt(m[1] || m[2], 10);
+}
 
-/* “Σφιχτός” ορισμός LIVE */
-const isLiveStrict = (status, players, dt) => {
-  if (isFinishedLike(status)) return false;
-  const s = String(status||'').toLowerCase();
-  const kw = LIVE_KEYWORDS.some(k => s.includes(k));
-  if (kw) return true;
-  if (anyScoreEntered(players)) return true;
-  if (!isUpcomingLike(status) && dt && dt.getTime() <= Date.now() + 2*60*1000) return true;
-  return false;
-};
+/* ----------------- UI atoms ----------------- */
+const Dot = ({ on }) => (
+  <span
+    style={{
+      width: 12, height: 12, borderRadius: 999, display: 'inline-block',
+      background: on ? '#1fdd73' : '#e53935',
+      boxShadow: on ? '0 0 10px rgba(31,221,115,.8)' : '0 0 8px rgba(229,57,53,.6)',
+    }}
+    aria-label={on ? 'live' : 'not-live'}
+  />
+);
+
+function RightBadge({ label, live, setNum }) {
+  // Χρώματα: SAFE=πράσινο, RISKY=πορτοκαλί, AVOID=κόκκινο, SET=μοβ, UPCOMING=γκρι
+  const L = String(label || '').toUpperCase();
+  let bg = '#5a5f68', text = L || 'STARTS SOON';
+
+  if (L === 'SAFE')  { bg = '#1fdd73'; text = 'SAFE'; }
+  else if (L === 'RISKY') { bg = '#ff9900'; text = 'RISKY'; }
+  else if (L === 'AVOID') { bg = '#ff2e2e'; text = 'AVOID'; }
+  else if (live) { // Live χωρίς AI -> δείξε SET X σε μωβ
+    bg = '#7c5cff'; text = `SET ${setNum || 1}`;
+  } else {
+    bg = '#5a5f68'; text = 'STARTS SOON';
+  }
+
+  return (
+    <div
+      style={{
+        background: bg, color: '#ffffff', borderRadius: 16,
+        padding: '8px 12px', fontWeight: 900, fontSize: 13,
+        boxShadow: '0 8px 18px rgba(0,0,0,0.28)', minWidth: 84, textAlign: 'center',
+      }}
+    >
+      {text}
+    </div>
+  );
+}
 
 /* ----------------- component ----------------- */
 export default function LiveTennis({ onLiveCount = () => {} }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const notifiedRef = useRef(new Set());
-
-  const playNotification = () => {
-    const audio = new Audio('/notify.mp3');
-    audio.play().catch(() => {});
-  };
+  const [err, setErr] = useState('');
 
   const load = async () => {
-    setLoading(true);
+    setLoading(true); setErr('');
     try {
-      const matches = await fetchTennisLive();
-      setRows(Array.isArray(matches) ? matches : []);
-    } catch {
+      const matches = await fetchTennisLive(); // επιστρέφει array ή {matches:[]}
+      const arr = Array.isArray(matches) ? matches : (matches?.matches || []);
+      setRows(Array.isArray(arr) ? arr : []);
+    } catch (e) {
+      setErr(e?.message || 'Load failed');
       setRows([]);
     } finally {
       setLoading(false);
@@ -109,174 +109,135 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     const p1 = players[0] || {}, p2 = players[1] || {};
     const name1 = p1.name || p1['@name'] || '';
     const name2 = p2.name || p2['@name'] || '';
-    const date = m.date || m['@date'] || '';
-    const time = m.time || m['@time'] || '';
-    const dt   = parseDateTime(date, time);
     const status = m.status || m['@status'] || '';
-    const setByStatus = setFromStatus(status);
-    const setByScores = currentSetFromScores(players);
-    const setNum = setByStatus || setByScores;
-    const live = isLiveStrict(status, players, dt);
+    const setNum = setFromStatus(status) || currentSetFromScores(players) || null;
+    const live = isLiveStatus(status);
 
-    // AI eligibility: από 3ο σετ και μετά, και να “τρέχει” ο αγώνας
-    const aiEligible = live && (setNum || 0) >= 3;
+    // AI v1.4 (επιστρέφει { label, pick, reason })
+    const ai = analyzeMatch({
+      ...m,
+      players,
+      categoryName: m.categoryName || m['@category'] || m.category || '',
+    }) || {};
 
-    let label = null, pick = null, reason = '';
-    if (aiEligible) {
-      const ai = analyzeMatch(m) || {};
-      label = ai.label || null;         // SAFE / RISKY / AVOID
-      pick  = ai.pick  || null;         // string
-      reason = ai.reason || '';
-    }
+    // label/pick
+    const label = ai.label || null;
+    const pick  = ai.pick  || null;
 
     return {
-      id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`,
-      name1, name2, date, time, dt, status,
+      id: m.id || m['@id'] || `${name1}-${name2}-${status}`,
+      name1, name2, status, live, setNum,
       categoryName: m.categoryName || m['@category'] || m.category || '',
-      players, live, setNum, label, pick, reason
+      label, pick,
     };
   }), [rows]);
 
-  // ενημέρωση live counter (TopBar)
+  // update live counter (πόσα είναι live τώρα)
   useEffect(() => {
-    const liveCount = normalized.reduce((acc, m) => acc + (m.live ? 1 : 0), 0);
+    const liveCount = normalized.reduce((n, m) => n + (m.live ? 1 : 0), 0);
     onLiveCount(liveCount);
   }, [normalized, onLiveCount]);
 
-  // ταξινόμηση: (1) AI-labeled SAFE/RISKY/AVOID με προτεραιότητα SAFE
-  // (2) υπόλοιπα live ανά Set: 3 > 2 > 1 > (unknown)
-  // (3) upcoming κατά ώρα
-  const labelPrio = { SAFE: 1, RISKY: 2, AVOID: 3 };
-  const list = useMemo(() => {
-    return [...normalized].sort((a,b) => {
-      const aHas = !!a.label, bHas = !!b.label;
-      if (aHas && bHas) {
-        const pa = labelPrio[a.label] || 9, pb = labelPrio[b.label] || 9;
-        if (pa !== pb) return pa - pb;
-      } else if (aHas !== bHas) {
-        return aHas ? -1 : 1;
-      }
+  // φιλτράρουμε τα finished
+  const filtered = useMemo(
+    () => normalized.filter((m) => !isFinishedLike(m.status)),
+    [normalized]
+  );
 
+  // ταξινόμηση:
+  // 1) LIVE με AI: SAFE -> RISKY -> AVOID
+  // 2) LIVE χωρίς AI: SET 3 -> 2 -> 1
+  // 3) UPCOMING (not started): όπως έρχονται
+  const sorted = useMemo(() => {
+    const labelRank = (lbl) => {
+      const L = String(lbl || '').toUpperCase();
+      if (L === 'SAFE') return 0;
+      if (L === 'RISKY') return 1;
+      if (L === 'AVOID') return 2;
+      return 9; // no AI
+    };
+    return [...filtered].sort((a, b) => {
+      // live πρώτα
       if (a.live !== b.live) return a.live ? -1 : 1;
-      if (a.live && b.live) {
-        const sa = a.setNum || 0, sb = b.setNum || 0;
-        if (sa !== sb) return sb - sa; // 3,2,1
+
+      if (a.live) {
+        const ar = labelRank(a.label), br = labelRank(b.label);
+        if (ar !== br) return ar - br;
+
+        // χωρίς AI (labelRank=9): SET 3 -> 2 -> 1
+        if (ar === 9 && br === 9) {
+          const sa = a.setNum || 0, sb = b.setNum || 0;
+          return sb - sa;
+        }
+        return 0; // ίδια κατηγορία
       }
-      const ta = a.dt ? a.dt.getTime() : Number.POSITIVE_INFINITY;
-      const tb = b.dt ? b.dt.getTime() : Number.POSITIVE_INFINITY;
-      return ta - tb;
+
+      // upcoming: δεν έχει ιδιαίτερη σειρά εδώ
+      return 0;
     });
-  }, [normalized]);
-
-  // ήχος μόνο όταν εμφανιστεί νέο SAFE
-  useEffect(() => {
-    list.forEach((m) => {
-      if (m.label === 'SAFE' && !notifiedRef.current.has(m.id)) {
-        playNotification();
-        notifiedRef.current.add(m.id);
-      }
-    });
-  }, [list]);
-
-  // styles
-  const titleStyle = { fontSize: 16, fontWeight: 800, color: '#f2f6f9', lineHeight: 1.12 };
-  const detailsStyle = { marginTop: 6, fontSize: 12, color: '#c7d1dc', lineHeight: 1.35 };
-  const tipStyle = { marginTop: 6, fontSize: 13, fontWeight: 700, color: '#1fdd73' };
-
-  const renderBadge = (m) => {
-    let text = '';
-    let bg = '#5e6872'; // default grey
-
-    if (m.label) {
-      text = m.label; // SAFE/RISKY/AVOID
-      bg = m.label === 'SAFE' ? '#12b76a' : m.label === 'RISKY' ? '#ff9900' : '#ff4747';
-    } else if (m.live) {
-      if (m.setNum) { text = `SET ${m.setNum}`; bg = '#6e42c1'; }  // purple για set
-      else          { text = 'LIVE'; bg = '#2f8d5b'; }             // green για live χωρίς set
-    } else if (m.dt && m.dt.getTime() > Date.now()) {
-      const mins = Math.max(0, Math.round((m.dt.getTime() - Date.now())/60000));
-      text = `STARTS IN ${mins} MIN`;
-      bg = '#5e6872';
-    } else {
-      text = 'SOON';
-      bg = '#5e6872';
-    }
-
-    return (
-      <div
-        style={{
-          background: bg,
-          color: '#fff',
-          borderRadius: 18,
-          padding: '7px 12px',
-          fontWeight: 900,
-          fontSize: 12,
-          letterSpacing: 0.3,
-          minWidth: 72,
-          textAlign: 'center',
-          boxShadow: '0 8px 18px rgba(0,0,0,.28)',
-        }}
-      >
-        {text}
-      </div>
-    );
-  };
+  }, [filtered]);
 
   return (
     <div style={{ background: '#0a0c0e', minHeight: '100vh' }}>
       <div style={{ maxWidth: 1100, margin: '12px auto 40px', padding: '0 14px' }}>
-        {list.map((m) => (
-          <div key={m.id} style={{
-            borderRadius: 18,
-            background: '#121416',
-            border: '1px solid #1d2126',
-            boxShadow: '0 14px 28px rgba(0,0,0,0.45)',
-            padding: 16,
-            marginBottom: 12,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                {/* live / not-live dot */}
-                <span
-                  title={m.live ? 'Live' : 'Not live'}
-                  style={{
-                    display: 'inline-block',
-                    width: 12, height: 12, borderRadius: '50%',
-                    background: m.live ? '#1fdd73' : '#e53935',
-                    boxShadow: m.live ? '0 0 10px rgba(31,221,115,.8)' : 'none',
-                  }}
-                />
-                <div>
-                  <div style={titleStyle}>
-                    {m.name1} <span style={{ color: '#96a5b4', fontWeight: 600 }}>vs</span> {m.name2}
-                  </div>
-                  <div style={detailsStyle}>
-                    {m.date} {m.time} • {m.categoryName}
-                  </div>
-                  {/* TIP: μόνο για SAFE & RISKY */}
-                  {m.label && (m.label === 'SAFE' || m.label === 'RISKY') && m.pick && (
-                    <div style={tipStyle}>TIP: {m.pick}</div>
-                  )}
-                </div>
-              </div>
-              {renderBadge(m)}
-            </div>
-          </div>
-        ))}
-
-        {list.length === 0 && !loading && (
+        {err && (
           <div style={{
-            marginTop: 12,
-            padding: '14px 16px',
-            borderRadius: 12,
-            background: '#121416',
-            border: '1px solid #22272c',
-            color: '#c7d1dc',
-            fontSize: 13,
+            background: '#3a1b1b', border: '1px solid #5b2a2a', color: '#ffd7d7',
+            borderRadius: 10, padding: '10px 12px', marginBottom: 12
           }}>
-            Δεν βρέθηκαν αγώνες (live ή upcoming).
+            {err}
           </div>
         )}
+
+        {loading && sorted.length === 0 && (
+          <div style={{ color: '#cfd3d7', padding: '8px 2px' }}>Φόρτωση…</div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {sorted.map((m) => (
+            <div key={m.id} style={{
+              borderRadius: 18,
+              background: '#121416',
+              border: '1px solid #1d2126',
+              boxShadow: '0 14px 28px rgba(0,0,0,0.45)',
+              padding: 16,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+            }}>
+              <Dot on={m.live} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 800, lineHeight: 1.2, color: '#f2f6f9' }}>
+                  {m.name1}
+                  <span style={{ color: '#96a5b4', fontWeight: 600 }}> &nbsp;vs&nbsp; </span>
+                  {m.name2}
+                </div>
+                <div style={{ marginTop: 6, color: '#c7d1dc', fontSize: 13 }}>
+                  {m.categoryName}
+                </div>
+
+                {/* TIP: μόνο κείμενο "TIP: <pick>", χωρίς EV/CONF */}
+                {m.pick && (m.label === 'SAFE' || m.label === 'RISKY') && (
+                  <div style={{ marginTop: 6, fontSize: 13, fontWeight: 800, color: '#1fdd73' }}>
+                    TIP: {m.pick}
+                  </div>
+                )}
+              </div>
+
+              <RightBadge label={m.label} live={m.live} setNum={m.setNum} />
+            </div>
+          ))}
+
+          {sorted.length === 0 && !loading && (
+            <div style={{
+              marginTop: 12, padding: '14px 16px', borderRadius: 12,
+              background: '#121416', border: '1px solid #22272c',
+              color: '#c7d1dc', fontSize: 13,
+            }}>
+              Δεν βρέθηκαν αγώνες (live ή upcoming).
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
