@@ -90,11 +90,8 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
       const live = isLive(status);
 
       const setNum = currentSetFromScores(players);
-
-      // --- AI only from Set 3+ ---
       const ai = analyzeMatch(m, setNum); // {label|null, pick, ...}
 
-      // Decide final label/text/color
       let label = ai?.label || null;
       let badgeText, badgeStyle;
 
@@ -127,16 +124,14 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     });
   }, [rows]);
 
-  // Live count -> TopBar
   useEffect(() => {
     const liveCount = normalized.reduce((n, m) => n + (m.live ? 1 : 0), 0);
     onLiveCount(liveCount);
   }, [normalized, onLiveCount]);
 
-  // ταξινόμηση χωρίς search bar (AI → set3 → set2 → set1 → soon)
+  // AI → set3 → set2 → set1 → soon (ίδια λογική, compact μόνο στο UI)
   const list = useMemo(() => {
     const keep = normalized.filter((m) => !isFinishedLike(m.status));
-
     const weight = (m) => {
       if (m.label === 'SAFE')  return 0;
       if (m.label === 'RISKY') return 1;
@@ -144,9 +139,8 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
       if (m.setNum === 3)      return 3;
       if (m.setNum === 2)      return 4;
       if (m.setNum === 1)      return 5;
-      return 6; // SOON
+      return 6;
     };
-
     return keep.sort((a, b) => {
       const wa = weight(a) - weight(b);
       if (wa !== 0) return wa;
@@ -158,49 +152,46 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     });
   }, [normalized]);
 
-  const tipColor = (label) => (label === 'SAFE' ? '#1fdd73' : label === 'RISKY' ? '#ff9900' : '#cfd3d7');
+  const tipColor = (label) => (label === 'SAFE' ? '#19c96a' : label === 'RISKY' ? '#ff9900' : '#cfd3d7');
 
   return (
-    <div style={{ padding: 16, minHeight: '100vh', background: '#0b0b0b', color: '#fff' }}>
+    <div style={{ padding: 12, minHeight: '100vh', background: '#0b0b0b', color: '#fff' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-        {/* αφαιρέθηκε το search bar όπως ζητήθηκε */}
-
-        {/* cards */}
-        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
           {list.map((m) => (
             <div key={m.id}
               style={{
-                borderRadius: 16,
+                borderRadius: 14,
                 background:'#151515',
                 border:'1px solid #222',
-                boxShadow:'0 6px 18px rgba(0,0,0,0.35)',
-                padding:12,
-                display:'flex', alignItems:'center', gap:12
+                boxShadow:'0 6px 16px rgba(0,0,0,0.32)',
+                padding:10,
+                display:'flex', alignItems:'center', gap:10
               }}
             >
               {/* live dot: πράσινο αν live, κόκκινο αν όχι */}
-              <span aria-label={m.live ? 'live' : 'not-live'}
+              <span
+                aria-label={m.live ? 'live' : 'not-live'}
                 style={{
-                  width:12, height:12, borderRadius:999,
-                  background: m.live ? '#1fdd73' : '#e53935',
-                  boxShadow: m.live ? '0 0 10px rgba(31,221,115,.7)' : '0 0 6px rgba(229,57,53,.6)',
-                  flex:'0 0 12px'
+                  width:10, height:10, borderRadius:999,
+                  background: m.live ? '#19c96a' : '#e53935',
+                  boxShadow: m.live ? '0 0 8px rgba(25,201,106,.7)' : '0 0 5px rgba(229,57,53,.6)',
+                  flex:'0 0 10px'
                 }}
               />
               {/* names + meta */}
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:16, fontWeight:800, lineHeight:1.2 }}>
+                <div style={{ fontSize:15, fontWeight:800, lineHeight:1.2 }}>
                   <span>{m.name1}</span>
                   <span style={{ color:'#96a5b4', fontWeight:600 }}> &nbsp;vs&nbsp; </span>
                   <span>{m.name2}</span>
                 </div>
-                <div style={{ marginTop:6, color:'#cfd3d7', fontSize:13 }}>
+                <div style={{ marginTop:4, color:'#cfd3d7', fontSize:12 }}>
                   {m.date} {m.time} • {m.categoryName}
                 </div>
 
-                {/* TIP: μόνο το pick — ΧΩΡΙΣ ev/conf/reason */}
                 {(m.label === 'SAFE' || m.label === 'RISKY') && m.ai?.pick && (
-                  <div style={{ marginTop:6, fontSize:13, fontWeight:700, color: tipColor(m.label) }}>
+                  <div style={{ marginTop:4, fontSize:12, fontWeight:700, color: tipColor(m.label) }}>
                     TIP: {m.ai.pick}
                   </div>
                 )}
@@ -208,11 +199,11 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
 
               {/* badge (AI label OR SET/SOON) */}
               <div style={{
-                padding:'8px 12px',
-                borderRadius:18,
+                padding:'6px 10px',
+                borderRadius:16,
                 fontWeight:800,
-                fontSize:12,
-                letterSpacing:0.4,
+                fontSize:11,
+                letterSpacing:0.3,
                 whiteSpace:'nowrap',
                 ...m.badgeStyle
               }}>
@@ -223,16 +214,16 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
 
           {list.length === 0 && !loading && (
             <div style={{
-              padding:14, borderRadius:12, background:'#151515',
-              border:'1px solid #222', color:'#cfd3d7'
+              padding:12, borderRadius:10, background:'#151515',
+              border:'1px solid #222', color:'#cfd3d7', fontSize:13
             }}>
               Δεν βρέθηκαν αγώνες.
             </div>
           )}
           {err && (
             <div style={{
-              marginTop:10, padding:12, borderRadius:10,
-              background:'#3a1b1b', border:'1px solid #5b2a2a', color:'#ffd7d7'
+              marginTop:8, padding:10, borderRadius:10,
+              background:'#3a1b1b', border:'1px solid #5b2a2a', color:'#ffd7d7', fontSize:13
             }}>
               {err}
             </div>
