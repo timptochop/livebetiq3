@@ -5,8 +5,8 @@ import analyzeMatch from '../utils/analyzeMatch';
 
 const FINISHED = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
 const isFinishedLike = (s) => FINISHED.has(String(s||'').toLowerCase());
-const isUpcoming = (s) => String(s||'').toLowerCase() === 'not started';
-const isLive = (s) => !!s && !isUpcoming(s) && !isFinishedLike(s);
+const isUpcoming     = (s) => String(s||'').toLowerCase() === 'not started';
+const isLive         = (s) => !!s && !isUpcoming(s) && !isFinishedLike(s);
 
 const toNum = (v) => {
   if (v === null || v === undefined) return null;
@@ -54,7 +54,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
-  const [q, setQ] = useState('');
 
   async function load() {
     setLoading(true); setErr('');
@@ -93,7 +92,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
       const setNum = currentSetFromScores(players);
 
       // --- AI only from Set 3+ ---
-      const ai = analyzeMatch(m, setNum); // {label|null, pick, reason, ev, ...}
+      const ai = analyzeMatch(m, setNum); // {label|null, pick, ...}
 
       // Decide final label/text/color
       let label = ai?.label || null;
@@ -134,61 +133,37 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     onLiveCount(liveCount);
   }, [normalized, onLiveCount]);
 
-  // φιλτράρισμα + ταξινόμηση
+  // ταξινόμηση χωρίς search bar (AI → set3 → set2 → set1 → soon)
   const list = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    const keep = normalized
-      .filter((m) => !isFinishedLike(m.status))
-      .filter((m) => {
-        if (!term) return true;
-        const blob = `${m.name1} ${m.name2} ${m.categoryName}`.toLowerCase();
-        return blob.includes(term);
-      });
+    const keep = normalized.filter((m) => !isFinishedLike(m.status));
 
-    // weight: AI first, then set3>2>1, then upcoming
     const weight = (m) => {
-      if (m.label === 'SAFE') return 0;
+      if (m.label === 'SAFE')  return 0;
       if (m.label === 'RISKY') return 1;
       if (m.label === 'AVOID') return 2;
-      if (m.setNum === 3) return 3;
-      if (m.setNum === 2) return 4;
-      if (m.setNum === 1) return 5;
+      if (m.setNum === 3)      return 3;
+      if (m.setNum === 2)      return 4;
+      if (m.setNum === 1)      return 5;
       return 6; // SOON
     };
 
     return keep.sort((a, b) => {
       const wa = weight(a) - weight(b);
       if (wa !== 0) return wa;
-      // Τie-break: live πρώτα, μετά μεγαλύτερο set, μετά κοντινότερη ώρα
       if (a.live !== b.live) return a.live ? -1 : 1;
       if ((b.setNum||0) !== (a.setNum||0)) return (b.setNum||0) - (a.setNum||0);
       const ta = a.dt ? a.dt.getTime() : Infinity;
       const tb = b.dt ? b.dt.getTime() : Infinity;
       return ta - tb;
     });
-  }, [normalized, q]);
+  }, [normalized]);
 
-  // Dynamic TIP color per label
-  const tipColor = (label) => {
-    if (label === 'SAFE') return '#1fdd73';
-    if (label === 'RISKY') return '#ff9900';
-    return '#cfd3d7';
-  };
+  const tipColor = (label) => (label === 'SAFE' ? '#1fdd73' : label === 'RISKY' ? '#ff9900' : '#cfd3d7');
 
   return (
     <div style={{ padding: 16, minHeight: '100vh', background: '#0b0b0b', color: '#fff' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-        {/* search + status */}
-        <div style={{ display:'flex', gap:10, alignItems:'center', margin:'6px 0 12px 0' }}>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Αναζήτηση παίκτη ή διοργάνωσης…"
-            style={{ padding:'10px 12px', minWidth:280, background:'#0f1113', color:'#fff', border:'1px solid #333', borderRadius:8, outline:'none' }}
-          />
-          {loading && <span style={{ color:'#cfd3d7' }}>Φόρτωση…</span>}
-          {err && <span style={{ color:'#ff8a80' }}>{err}</span>}
-        </div>
+        {/* αφαιρέθηκε το search bar όπως ζητήθηκε */}
 
         {/* cards */}
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
@@ -203,7 +178,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
                 display:'flex', alignItems:'center', gap:12
               }}
             >
-              {/* live dot */}
+              {/* live dot: πράσινο αν live, κόκκινο αν όχι */}
               <span aria-label={m.live ? 'live' : 'not-live'}
                 style={{
                   width:12, height:12, borderRadius:999,
@@ -223,13 +198,10 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
                   {m.date} {m.time} • {m.categoryName}
                 </div>
 
-                {/* TIP: δείξε για SAFE & RISKY ΠΑΝΤΑ (έχουμε πάντα pick από analyzeMatch) */}
+                {/* TIP: μόνο το pick — ΧΩΡΙΣ ev/conf/reason */}
                 {(m.label === 'SAFE' || m.label === 'RISKY') && m.ai?.pick && (
                   <div style={{ marginTop:6, fontSize:13, fontWeight:700, color: tipColor(m.label) }}>
-                    TIP: {m.ai.pick}{' '}
-                    <span style={{ color:'#9fb5a7', fontWeight:600 }}>
-                      ({m.ai?.reason})
-                    </span>
+                    TIP: {m.ai.pick}
                   </div>
                 )}
               </div>
@@ -255,6 +227,14 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
               border:'1px solid #222', color:'#cfd3d7'
             }}>
               Δεν βρέθηκαν αγώνες.
+            </div>
+          )}
+          {err && (
+            <div style={{
+              marginTop:10, padding:12, borderRadius:10,
+              background:'#3a1b1b', border:'1px solid #5b2a2a', color:'#ffd7d7'
+            }}>
+              {err}
             </div>
           )}
         </div>
