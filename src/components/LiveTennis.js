@@ -5,7 +5,7 @@ import analyzeMatch from '../utils/analyzeMatch';
 
 // ---------- helpers ----------
 const FINISHED = new Set([
-  'finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over',
+  'finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over'
 ]);
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
 const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
@@ -31,11 +31,61 @@ function currentSetFromScores(players) {
   return k || 0;
 }
 
+// Prefer tip, else pick/selection/etc.
+const getTip = (ai) => ai?.tip || ai?.pick || ai?.selection || null;
+
 // ---------- component ----------
 export default function LiveTennis({ onLiveCount = () => {} }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const notifiedRef = useRef(new Set()); // SAFE chime guard
+
+  // notification audio
+  const notifiedRef = useRef(new Set());
+  const unlockedRef = useRef(false);
+  const audioRef = useRef(null);
+
+  // Preload and unlock audio on first user gesture
+  useEffect(() => {
+    audioRef.current = new Audio('/notify.mp3');
+    audioRef.current.preload = 'auto';
+
+    function unlock() {
+      if (unlockedRef.current) return;
+      const a = new Audio('/notify.mp3');
+      a.play()
+        .then(() => {
+          // immediately pause/rewind so the first SAFE won’t double-play
+          a.pause();
+          a.currentTime = 0;
+          unlockedRef.current = true;
+        })
+        .catch(() => {
+          // Even if it fails, mark as touched so future plays after interaction are allowed
+          unlockedRef.current = true;
+        });
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+      window.removeEventListener('touchstart', unlock);
+    }
+
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    window.addEventListener('touchstart', unlock, { once: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+      window.removeEventListener('touchstart', unlock);
+    };
+  }, []);
+
+  function playNotify() {
+    try {
+      const a = audioRef.current || new Audio('/notify.mp3');
+      a.currentTime = 0;
+      a.play().catch(() => {});
+    } catch {}
+  }
 
   async function load() {
     setLoading(true);
@@ -110,19 +160,21 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     SOON: 7,
   };
 
-  // build UI list
   const list = useMemo(() => {
     const items = rows.map((m) => {
-      let label = m.ai?.label || null; // internal label (english keys)
+      let label = m.ai?.label || null;
       const s = m.status || '';
       const live = !!s && !isUpcoming(s) && !isFinishedLike(s);
 
-      // fallback label when AI is missing or gated
+      // If no AI label yet, show SET or SOON
       if (!label || label === 'PENDING') {
         label = live ? `SET ${m.setNum || 1}` : 'SOON';
       }
-      if (label && label.startsWith('SET')) {
-        const n = label.split(' ')[1] || m.setNum || 1;
+
+      // Normalize "SETx" → "SET n"
+      if (label.startsWith('SET')) {
+        const parts = label.split(/\s+/);
+        const n = Number(parts[1]) || m.setNum || 1;
         label = `SET ${n}`;
       }
 
@@ -134,7 +186,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
       };
     });
 
-    // sort: SAFE → RISKY → AVOID → SET 3/2/1 → SOON; for live, higher set first
+    // Sort: SAFE→RISKY→AVOID→SET 3→2→1→SOON; within live, higher set first
     return items.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
       if (a.live && b.live) return (b.setNum || 0) - (a.setNum || 0);
@@ -142,12 +194,12 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     });
   }, [rows]);
 
-  // play sound once per SAFE
+  // SAFE notification sound (once per match id)
   useEffect(() => {
     list.forEach((m) => {
       if (m.ai?.label === 'SAFE' && !notifiedRef.current.has(m.id)) {
-        const a = new Audio('/notify.mp3');
-        a.play().catch(() => {});
+        // Try to play regardless of bell toggle; the unlock effect handles permissions.
+        playNotify();
         notifiedRef.current.add(m.id);
       }
     });
@@ -155,25 +207,25 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
 
   // ---------- UI helpers ----------
   const Pill = ({ label, kellyLevel }) => {
-    // label is one of: SAFE | RISKY | AVOID | SET X | SOON
     let bg = '#5a5f68';
     let fg = '#fff';
-    let text = label || '';
+    let text = label;
 
     if (label === 'SAFE') {
       bg = '#1fdd73';
+      text = 'SAFE';
     } else if (label === 'RISKY') {
       bg = '#ffbf0a';
       fg = '#151515';
     } else if (label === 'AVOID') {
       bg = '#e53935';
-    } else if (label && label.startsWith('SET')) {
+    } else if (label.startsWith('SET')) {
       bg = '#6e42c1';
     } else if (label === 'SOON') {
       bg = '#5a5f68';
     }
 
-    // Kelly dots for SAFE/RISKY (no numbers)
+    // Kelly dots (no numbers)
     let dots = '';
     if (kellyLevel === 'HIGH') dots = ' ●●●';
     else if (kellyLevel === 'MED') dots = ' ●●';
@@ -216,9 +268,9 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
   // ---------- render ----------
   return (
     <div style={{ padding: '12px 14px 24px', color: '#fff' }}>
-      {loading && list.length === 0 ? (
+      {loading && list.length === 0 && (
         <div style={{ color: '#cfd3d7', padding: '8px 2px' }}>Loading…</div>
-      ) : null}
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {list.map((m) => (
@@ -250,8 +302,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
               >
                 <span>{m.name1}</span>
                 <span style={{ color: '#98a0a6', fontWeight: 600 }}>
-                  {' '}
-                  &nbsp;vs&nbsp;{' '}
+                  &nbsp;vs&nbsp;
                 </span>
                 <span>{m.name2}</span>
               </div>
@@ -261,7 +312,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
               </div>
 
               {/* TIP only for SAFE/RISKY */}
-              {['SAFE', 'RISKY'].includes(m.ai?.label) && m.ai?.tip && (
+              {['SAFE', 'RISKY'].includes(m.ai?.label) && getTip(m.ai) && (
                 <div
                   style={{
                     marginTop: 6,
@@ -270,7 +321,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
                     color: '#1fdd73',
                   }}
                 >
-                  TIP: {m.ai.tip}
+                  TIP: {getTip(m.ai)}
                 </div>
               )}
             </div>
@@ -287,7 +338,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
               padding: '14px 16px',
               borderRadius: 12,
               background: '#121416',
-              border: '1px solid #22272c',
+              border: '1px solid '#22272c',
               color: '#c7d1dc',
               fontSize: 13,
             }}

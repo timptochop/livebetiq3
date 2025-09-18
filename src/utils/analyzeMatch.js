@@ -1,11 +1,11 @@
 // src/utils/analyzeMatch.js
-//
-// AI v1.4 – mid-3rd gate + momentum + surface weighting + break-point awareness + Kelly post-filter
-// Επιστρέφει { label, pick, reason } (χωρίς ev/conf για καθαρό UI)
+// AI v1.4 – mid-3rd gating + momentum + surface weighting + break-point awareness + Kelly post-filter
+// Returns: { label, pick, tip, reason }
 
 export default function analyzeMatch(match = {}) {
-  const players = Array.isArray(match.players) ? match.players
-                : (Array.isArray(match.player) ? match.player : []);
+  const players = Array.isArray(match.players)
+    ? match.players
+    : (Array.isArray(match.player) ? match.player : []);
   const p1 = players[0] || {};
   const p2 = players[1] || {};
 
@@ -13,9 +13,9 @@ export default function analyzeMatch(match = {}) {
   const setNum = currentSetFromScores(players) ?? setFromStatus(match.status) ?? 0;
   const surface = parseSurface(match.categoryName || match.category || match.surface || '');
 
-  // Gate: κάνουμε predictions ΜΟΝΟ από "μέση 3ου" και μετά
+  // Gate: only predict from mid of 3rd set and later
   if (!isAfterMidThirdSet(players, setNum, match)) {
-    return { label: null, pick: null, reason: 'pre-mid-3rd' };
+    return { label: null, pick: null, tip: null, reason: 'pre-mid-3rd' };
   }
 
   // ------ set games ------
@@ -30,10 +30,10 @@ export default function analyzeMatch(match = {}) {
   // ------ point-level & serve ------
   const { vA, vB } = currentPointValues(p1.game_score, p2.game_score);
   const serveA = asBool(p1.serve), serveB = asBool(p2.serve);
-  const pointLead = pointDiffToUnit(vA, vB);      // [-1..+1] ~ advantage
+  const pointLead = pointDiffToUnit(vA, vB);  // [-1..+1]
   const serveBias = (serveA ? 0.22 : 0) - (serveB ? 0.22 : 0);
 
-  // ------ break-point awareness (δέλτα υπέρ A) ------
+  // ------ break-point awareness (delta for A) ------
   const bpDeltaA = breakDeltaForA(serveA, serveB, vA, vB);
 
   // ------ historical momentum ------
@@ -42,16 +42,16 @@ export default function analyzeMatch(match = {}) {
   const deltaLead = curLead - prevLead;
 
   // ------ surface weighting ------
-  const surfaceW = surfaceWeight(surface); // μικρό bias σε momentum/σταθερότητα
+  const surfaceW = surfaceWeight(surface);
 
-  // ------ συνολικό momentum υπέρ A ------
-  let momentumA =
-    clamp(curLead * 0.9 + deltaLead * 0.6 + pointLead * 0.35 + serveBias + bpDeltaA, -6, 6);
-
-  // ελαφρύ surface adjust
+  // ------ total momentum for A ------
+  let momentumA = clamp(
+    curLead * 0.9 + deltaLead * 0.6 + pointLead * 0.35 + serveBias + bpDeltaA,
+    -6, 6
+  );
   momentumA *= surfaceW.momentumScale;
 
-  // ------ εμπιστοσύνη (depth) ------
+  // ------ confidence by depth ------
   const totalGames = sum(sA) + sum(sB);
   let conf =
     totalGames > 40 ? 0.71 :
@@ -73,22 +73,25 @@ export default function analyzeMatch(match = {}) {
   if (momentumA > 0.8 && curTotal >= 6) ev += 0.002;
   ev += surfaceW.evBonus;
 
-  // ------ πρώτη ταξινόμηση ------
+  // ------ first pass label ------
   let label = 'AVOID';
   if (ev > 0.024 && conf > 0.60 && momentumA >= 0) label = 'SAFE';
   else if (ev > 0.020 && conf >= 0.56)              label = 'RISKY';
 
-  // ------ pick (όνομα) ------
+  // ------ pick name ------
   const leadAgg = (sum(sA) - sum(sB)) + momentumA; // global + momentum
   const pick = leadAgg >= 0
     ? (p1.name || p1['@name'] || 'Player 1')
     : (p2.name || p2['@name'] || 'Player 2');
 
-  // ------ Kelly post-filter (αν υπάρχουν odds) ------
+  // ------ Kelly post-filter (if odds exist) ------
   label = kellyGuard(label, pick, conf, match);
 
-  const reason = `set${setNum}, curLead=${curLead}, games=${curTotal}, m=${round(momentumA,2)}, surf=${surface||'n/a'}`;
-  return { label, pick, reason };
+  const reason =
+    `set${setNum}, curLead=${curLead}, games=${curTotal}, m=${round(momentumA,2)}, surf=${surface || 'n/a'}`;
+
+  // IMPORTANT: expose `tip` so UI can show it
+  return { label, pick, tip: pick, reason };
 }
 
 /* ================= helpers ================= */
@@ -147,7 +150,7 @@ function normalizePointToken(s){
   if (!s) return null;
   const str = String(s).replace(/\s+/g,'').toUpperCase(); // "15:30" / "40-AD"
   const parts = str.split(/[:\-]/);
-  return parts[0] || null; // token για τον παίκτη
+  return parts[0] || null; // token for the player
 }
 function pointTokenValue(tok){
   if (!tok) return null;
@@ -168,14 +171,11 @@ function breakDeltaForA(serveA, serveB, vA, vB){
   if (vA==null || vB==null) return 0;
   const isBreakForB_whenAserve = (vB===3 && vA<=2) || (vB===4 && vA===3);
   const isBreakForA_whenBserve = (vA===3 && vB<=2) || (vA===4 && vB===3);
-
   let delta = 0;
-  if (serveA && isBreakForB_whenAserve) delta -= 0.6; // εναντίον Α
-  if (serveB && isBreakForA_whenBserve) delta += 0.6; // υπέρ Α
-
-  if (serveA && vB===3 && vA===0) delta -= 0.2;
+  if (serveA && isBreakForB_whenAserve) delta -= 0.6;
+  if (serveB && isBreakForA_whenBserve) delta += 0.6;
+  if (serveA && vB===3 && vA===0) delta -= 0.2; // 0-40
   if (serveB && vA===3 && vB===0) delta += 0.2;
-
   return delta;
 }
 
@@ -188,7 +188,7 @@ function kellyGuard(label, pick, conf, match){
   const p = clamp(conf, 0.45, 0.85);
   if (b <= 0) return label;
 
-  const kelly = (b*p - (1-p)) / b; // <0 => αρνητικό value
+  const kelly = (b*p - (1-p)) / b; // <0 => negative value
   if (kelly < 0) {
     if (label === 'SAFE') return 'RISKY';
     if (label === 'RISKY') return 'AVOID';
@@ -199,10 +199,13 @@ function kellyGuard(label, pick, conf, match){
 }
 function pickOdds(pickName, odds){
   if (!odds) return null;
+
+  // 1) direct name mapping
   for (const key of Object.keys(odds)) {
     const v = odds[key];
     if (typeof v === 'number' && nameLike(key, pickName)) return v;
   }
+  // 2) market list
   if (Array.isArray(odds)) {
     for (const m of odds) {
       const v1 = m?.home || m?.player1 || m?.p1;
@@ -213,6 +216,7 @@ function pickOdds(pickName, odds){
       if (v2 && nameLike(n2, pickName) && typeof v2 === 'number') return v2;
     }
   }
+  // 3) common keys fallback
   const candidates = ['home','away','player1','player2','p1','p2'];
   for (const k of candidates) {
     const v = odds[k];
