@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
+import { logPredictionOnce } from '../utils/predictionLogger';
 
 const FINISHED = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
@@ -33,10 +34,11 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
   async function load() {
     setLoading(true);
     try {
-      const base = await fetchTennisLive(); // αναμένουμε [{...match...}]
-      // φιλτράρουμε τελειωμένα
-      const keep = (Array.isArray(base) ? base : []).filter(m => !isFinishedLike(m.status || m['@status']));
-      // enrich με AI
+      const base = await fetchTennisLive();
+      const keep = (Array.isArray(base) ? base : []).filter(
+        m => !isFinishedLike(m.status || m['@status'])
+      );
+
       const enriched = keep.map((m, idx) => {
         const players = Array.isArray(m.players) ? m.players
                       : Array.isArray(m.player)  ? m.player : [];
@@ -48,6 +50,11 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
         const status = m.status || m['@status'] || '';
         const setNum = currentSetFromScores(players);
         const ai = analyzeMatch(m);
+
+        // log SAFE/RISKY μία φορά
+        if (ai?.label === 'SAFE' || ai?.label === 'RISKY') {
+          logPredictionOnce(m, ai);
+        }
 
         return {
           id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}-${idx}`,
@@ -81,6 +88,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     onLiveCount(n);
   }, [rows, onLiveCount]);
 
+  // προτεραιότητες εμφάνισης
   const labelPriority = {
     SAFE: 1,
     RISKY: 2,
@@ -97,16 +105,14 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
       const s = m.status || '';
       const live = !!s && !isUpcoming(s) && !isFinishedLike(s);
 
-      // Αν δεν υπάρχει AI label, φτιάξε σωστό SET/ SOON
       if (!label || label === 'PENDING') {
         if (live) label = `SET ${m.setNum || 1}`;
         else label = 'SOON';
       }
-      // Αν το AI είπε SET X (λόγω gating), το κρατάμε ως έχει
       if (label.startsWith('SET')) {
-        // normalize spacing
         label = `SET ${label.split(' ')[1] || m.setNum || 1}`;
       }
+
       return {
         ...m,
         live,
@@ -115,16 +121,15 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
       };
     });
 
-    // ταξινόμηση
     return items.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
-      // μετά τα SAFE/RISKY/AVOID, τα live με μεγαλύτερο set πρώτα
+      // για ίδιες κατηγορίες, μεγαλύτερο set πρώτο
       if (a.live && b.live) return (b.setNum || 0) - (a.setNum || 0);
       return 0;
     });
   }, [rows]);
 
-  // play sound για SAFE (προαιρετικό)
+  // ήχος για SAFE (μία φορά/αγώνα)
   useEffect(() => {
     list.forEach((m) => {
       if (m.ai?.label === 'SAFE' && !notifiedRef.current.has(m.id)) {
@@ -135,7 +140,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     });
   }, [list]);
 
-  // ---------- UI helpers ----------
   const Pill = ({ label, kellyLevel }) => {
     let bg = '#5a5f68', fg = '#fff';
     let text = label;
@@ -145,7 +149,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     else if (label.startsWith('SET')) { bg = '#6e42c1'; }
     else if (label === 'SOON') { bg = '#5a5f68'; }
 
-    // Kelly ένδειξη (●, ●●, ●●●) χωρίς νούμερα
     let dots = '';
     if (kellyLevel === 'HIGH') dots = ' ●●●';
     else if (kellyLevel === 'MED') dots = ' ●●';
@@ -187,11 +190,9 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
             padding: '14px 16px',
             display: 'flex', alignItems: 'center', gap: 12,
           }}>
-            {/* live dot */}
             <Dot on={m.live} />
-            {/* names & meta */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.25, color: '#fff' }}>
+              <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.25 }}>
                 <span>{m.name1}</span>
                 <span style={{ color: '#98a0a6', fontWeight: 600 }}> &nbsp;vs&nbsp; </span>
                 <span>{m.name2}</span>
@@ -200,15 +201,14 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
                 {m.date} {m.time} · {m.categoryName}
               </div>
 
-              {/* TIP μόνο για SAFE/RISKY */}
-              {['SAFE','RISKY'].includes(m.ai?.label) && m.ai?.tip && (
+              {/* TIP μόνο για SAFE/RISKY (χωρίς EV/CONF) */}
+              {['SAFE','RISKY'].includes(m.ai?.label) && (m.ai?.tip || m.ai?.pick) && (
                 <div style={{ marginTop: 6, fontSize: 13, fontWeight: 800, color: '#1fdd73' }}>
-                  TIP: {m.ai.tip}
+                  TIP: {m.ai.tip || m.ai.pick}
                 </div>
               )}
             </div>
 
-            {/* right pill */}
             <Pill label={m.uiLabel} kellyLevel={m.ai?.kellyLevel} />
           </div>
         ))}
@@ -219,7 +219,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
             padding: '14px 16px',
             borderRadius: 12,
             background: '#121416',
-            border: '1px solid #22272c',
+            border: '1px solid '#22272c',
             color: '#c7d1dc',
             fontSize: 13,
           }}>

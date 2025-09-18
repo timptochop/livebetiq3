@@ -1,23 +1,18 @@
 // src/utils/analyzeMatch.js
-//
-// Self-contained έκδοση με mid-set-3 gating, momentum boost και Kelly indicator.
-// Δεν απαιτεί άλλα modules.
+// Senior build: phase-gated AI — ενεργοποιεί SAFE/RISKY μόνο
+// από τη ΜΕΣΗ του 3ου σετ και μετά. Πριν από εκεί => SET X / SOON (χειρίζεται το UI).
 
-function num(v) {
+const FINISHED = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
+const isFinishedLike = s => FINISHED.has(String(s||'').toLowerCase());
+const isUpcoming = s => String(s||'').toLowerCase() === 'not started';
+
+const num = (v) => {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
   if (!s) return null;
   const x = parseInt(s.split(/[.:]/)[0], 10);
   return Number.isFinite(x) ? x : null;
-}
-
-function isUpcoming(status) {
-  return String(status || '').toLowerCase() === 'not started';
-}
-function isFinishedLike(status) {
-  const x = String(status || '').toLowerCase();
-  return ['finished','cancelled','retired','abandoned','postponed','walk over'].includes(x);
-}
+};
 
 function currentSetFromScores(players) {
   const p = Array.isArray(players) ? players : [];
@@ -29,157 +24,109 @@ function currentSetFromScores(players) {
   return k || 0;
 }
 
-function extractSetArray(players) {
-  const p = Array.isArray(players) ? players : [];
-  const a = p[0] || {}, b = p[1] || {};
-  const sA = [num(a.s1)||0, num(a.s2)||0, num(a.s3)||0, num(a.s4)||0, num(a.s5)||0];
-  const sB = [num(b.s1)||0, num(b.s2)||0, num(b.s3)||0, num(b.s4)||0, num(b.s5)||0];
-  return { sA, sB };
+function toPlayers(match){
+  const players = Array.isArray(match?.players) ? match.players
+                : Array.isArray(match?.player)  ? match.player : [];
+  const p1 = players[0] || {}, p2 = players[1] || {};
+  const name1 = p1.name || p1['@name'] || '';
+  const name2 = p2.name || p2['@name'] || '';
+  const s = {
+    a: [num(p1.s1), num(p1.s2), num(p1.s3), num(p1.s4), num(p1.s5)],
+    b: [num(p2.s1), num(p2.s2), num(p2.s3), num(p2.s4), num(p2.s5)],
+  };
+  return { players, p1, p2, name1, name2, s };
 }
 
-function lastFinishedSetWinner(sA, sB, curIdx) {
-  // επιστρέφει 'p1' ή 'p2' ή null για τον τελευταίο *πλήρη* σετ πριν το τρέχον
-  for (let i = curIdx - 2; i >= 0; i--) {
-    const a = sA[i], b = sB[i];
-    if ((a + b) >= 6) {
-      if (a > b) return 'p1';
-      if (b > a) return 'p2';
-    }
+function setWins(s){
+  // ποιος κέρδισε κάθε ολοκληρωμένο σετ
+  let A=0, B=0;
+  for (let i=0;i<5;i++){
+    const a=s.a[i], b=s.b[i];
+    if (a===null || b===null) break;
+    if (a>b) A++; else if (b>a) B++;
   }
-  return null;
+  return {A,B};
 }
 
-function estimateEV(setNum, sA, sB) {
-  // EV proxy: βασισμένο στη διαφορά games του τρέχοντος σετ + συνολική φόρμα
-  const i = setNum - 1;
-  const curA = sA[i] || 0;
-  const curB = sB[i] || 0;
-  const curDiff = Math.abs(curA - curB); // 0..6
-  const finishedSets = Math.max(0, setNum - 1);
-  let baseEV = 0.018 + 0.0015 * finishedSets;     // λίγο ανεβαίνει σε μεταγενέστερα sets
-  baseEV += 0.002 * curDiff;                       // momentum εντός set
-  // clamp
-  if (baseEV < 0.012) baseEV = 0.012;
-  if (baseEV > 0.035) baseEV = 0.035;
-  return baseEV; // % επί decimal (0.02 = 2%)
+function isMidOfSet(a,b){
+  // "μέση" σετ ≈ 6+ games παιγμένα (3-3, 4-2, 5-1, ...)
+  const A = a ?? 0, B = b ?? 0;
+  return (A + B) >= 6;
 }
 
-function estimateConfidence(setNum, sA, sB, lastSetWinner) {
-  // Confidence baseline: ανεβαίνει με τα σετ + μικρό boost από momentum/last win
-  let c = 52 + (setNum >= 3 ? 6 : setNum === 2 ? 3 : 0); // 52→58 σε set3+
-  const i = setNum - 1;
-  const curA = sA[i] || 0;
-  const curB = sB[i] || 0;
-  const curDiff = Math.abs(curA - curB);
-  c += Math.min(6, curDiff * 1.5); // έως +6
-  if (lastSetWinner === 'p1' || lastSetWinner === 'p2') c += 2; // μικρό boost
-  // clamp
-  if (c < 50) c = 50;
-  if (c > 72) c = 72;
-  return Math.round(c);
-}
+function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
 
-function kellyIndicator(ev, confidence) {
-  // Δεν δείχνουμε νούμερο — μόνο qualitative level
-  // Θεωρούμε p ~ confidence/100, edge ~ ev
-  const score = ev * (confidence / 100); // 0.012..0.035 * 0.5..0.72 ≈ 0.006..0.025
-  if (score > 0.020) return 'HIGH';
-  if (score > 0.013) return 'MED';
-  return 'LOW';
-}
-
-function pickSide(players, setNum) {
-  // Επιλογή TIP: ποιος προηγείται στο τρέχον σετ, αλλιώς συνολικά games
-  const names = [
-    (players?.[0]?.name || players?.[0]?.['@name'] || '').trim(),
-    (players?.[1]?.name || players?.[1]?.['@name'] || '').trim(),
-  ];
-  const { sA, sB } = extractSetArray(players);
-  const i = setNum - 1;
-  if (i >= 0) {
-    if (sA[i] > sB[i]) return names[0];
-    if (sB[i] > sA[i]) return names[1];
-  }
-  const totalA = sA.reduce((a, b) => a + b, 0);
-  const totalB = sB.reduce((a, b) => a + b, 0);
-  if (totalA > totalB) return names[0];
-  if (totalB > totalA) return names[1];
-  return names[0] || names[1] || null;
-}
-
-function makeLabel(ev, confidence) {
-  if (ev > 0.026 && confidence >= 58) return 'SAFE';
-  if (ev > 0.020 && confidence >= 52) return 'RISKY';
-  return 'AVOID';
-}
-
-export default function analyzeMatch(match) {
-  try {
+export default function analyzeMatch(match){
+  try{
     const status = match?.status || match?.['@status'] || '';
-    const players = Array.isArray(match?.players) ? match.players
-                   : Array.isArray(match?.player)  ? match.player : [];
-    const live = !!status && !isUpcoming(status) && !isFinishedLike(status);
-    const setNum = currentSetFromScores(players);
-    const { sA, sB } = extractSetArray(players);
+    if (!status || isUpcoming(status)) return { label: 'SOON' };
+    if (isFinishedLike(status)) return { label: 'DONE' };
 
-    // --- Gating: AI υπολογισμοί ΜΟΝΟ από mid-Set-3 και μετά ---
-    if (!live) {
-      return {
-        label: isUpcoming(status) ? 'SOON' : 'AVOID',
-        kellyLevel: null,
-        tip: null,
-        reason: 'not_live',
-      };
-    }
-    if (setNum < 3) {
-      return {
-        label: `SET ${setNum || 1}`,
-        kellyLevel: null,
-        tip: null,
-        reason: 'pre-midset3',
-      };
-    }
-    const i = setNum - 1;
-    const curGames = (sA[i] || 0) + (sB[i] || 0); // mid-set ≈ 6+ games total
-    if (curGames < 6) {
-      return {
-        label: `SET ${setNum}`,
-        kellyLevel: null,
-        tip: null,
-        reason: 'early_set3',
-      };
+    const { name1, name2, s } = toPlayers(match);
+    const setNum = currentSetFromScores(match?.players || match?.player);
+
+    // ---- PHASE GATING ----
+    // Μέχρι 2ο σετ: ποτέ prediction -> αφήνουμε το UI να δείξει SET X
+    if (setNum < 3){
+      return { label: `SET ${setNum || 1}` };
     }
 
-    // --- Momentum & EV/Confidence ---
-    const lastWinner = lastFinishedSetWinner(sA, sB, setNum);
-    let ev = estimateEV(setNum, sA, sB);
-    let conf = estimateConfidence(setNum, sA, sB, lastWinner);
-
-    // Momentum small boost αν υπάρχει καθαρό προβάδισμα στο τρέχον σετ
-    const curA = sA[i] || 0;
-    const curB = sB[i] || 0;
-    const diff = Math.abs(curA - curB);
-    if (diff >= 2) {
-      ev += 0.002;   // +0.2%
-      conf += 2;
+    // Στο 3ο σετ, θέλουμε "μέση" του σετ και μετά για ενεργοποίηση AI
+    if (setNum === 3 && !isMidOfSet(s.a[2], s.b[2])){
+      return { label: 'SET 3' };
     }
+    // Σετ 4/5: πάντα ενεργό AI
+    // ----------------------
 
-    if (ev > 0.035) ev = 0.035;
-    if (conf > 75) conf = 75;
+    // --------- Core EV/Confidence proxy (χωρίς odds) ----------
+    const idx = Math.max(0, Math.min(4, setNum - 1)); // 0-based index του τρέχοντος σετ
+    const currLead = (s.a[idx] ?? 0) - (s.b[idx] ?? 0);
 
-    const label = makeLabel(ev, conf);
-    const tip = pickSide(players, setNum);
-    const kellyLevel = kellyIndicator(ev, conf);
+    const {A:setA,B:setB} = setWins(s);
+    const setDiff = setA - setB;
+
+    // Βασική πιθανότητα υπέρ του leader, με μικρά weights
+    // (ρυθμίσιμα αργότερα με calibration/odds)
+    let pA = 0.5 + 0.04*currLead + 0.02*setDiff; // πιθανότητα υπέρ Α
+    pA = clamp(pA, 0.05, 0.95);
+    const pB = 1 - pA;
+
+    // ποιος είναι το pick
+    const pickA = pA >= pB;
+    const prob  = pickA ? pA : pB;
+    const pick  = pickA ? name1 : name2;
+
+    // Confidence από games-played & lead
+    const gamesPlayed = (s.a[idx] ?? 0) + (s.b[idx] ?? 0);
+    let confidence = 50 + Math.min(25, gamesPlayed*2 + Math.abs(currLead)*4) + Math.max(-5, setDiff*3);
+    confidence = clamp(Math.round(confidence), 50, 92);
+
+    // Label thresholds
+    let label = 'AVOID';
+    if (prob >= 0.60 && confidence >= 58) label = 'SAFE';
+    else if (prob >= 0.53 && confidence >= 52) label = 'RISKY';
+
+    // Kelly "επίπεδο" (χωρίς τιμές) — για κουκίδες στο pill
+    let kellyLevel = null; // LOW | MED | HIGH
+    if (label === 'SAFE'){
+      if (prob >= 0.67) kellyLevel = 'HIGH';
+      else if (prob >= 0.62) kellyLevel = 'MED';
+      else kellyLevel = 'LOW';
+    } else if (label === 'RISKY'){
+      kellyLevel = 'LOW';
+    }
 
     return {
-      label,          // SAFE | RISKY | AVOID
-      tip,            // μόνο όνομα παίκτη
-      kellyLevel,     // LOW | MED | HIGH (μόνο για UI ένδειξη)
-      ev,             // (κρατάμε για εσωτερικό use — ΔΕΝ εμφανίζουμε)
-      confidence: conf,
-      reason: 'midset3+',
+      label,
+      pick,
+      tip: pick,          // TIP = όνομα παίκτη
+      confidence,         // (δεν προβάλλεται στο UI, αλλά το κρατάμε)
+      ev: null,           // placeholder αν θέλουμε αργότερα odds-aware EV
+      kellyLevel,
+      meta: { setNum, currLead, setDiff, gamesPlayed }
     };
-  } catch (e) {
-    return { label: 'AVOID', kellyLevel: null, tip: null, reason: 'analyze_error' };
+  }catch(e){
+    console.warn('[analyzeMatch] error:', e?.message);
+    return { label: 'SOON' };
   }
 }
