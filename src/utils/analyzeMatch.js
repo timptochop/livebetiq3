@@ -1,173 +1,246 @@
 // src/utils/analyzeMatch.js
 //
-// Senior-grade AI core with mid-Set3 gating, momentum, confidence and Kelly level.
-// UI ΔΕΝ δείχνει EV/Conf νούμερα· το label + tip είναι compact όπως ζητήθηκε.
+// AI v1.4 – mid-3rd gate + momentum + surface weighting + break-point awareness + Kelly post-filter
+// Επιστρέφει { label, pick, reason } (χωρίς ev/conf για καθαρό UI)
 
-const FINISHED = new Set([
-  'finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over'
-]);
-const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
-const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
+export default function analyzeMatch(match = {}) {
+  const players = Array.isArray(match.players) ? match.players
+                : (Array.isArray(match.player) ? match.player : []);
+  const p1 = players[0] || {};
+  const p2 = players[1] || {};
 
-const num = (v) => {
-  if (v === null || v === undefined) return null;
-  const s = String(v).trim();
-  if (!s) return null;
-  const x = parseInt(s.split(/[.:]/)[0], 10);
-  return Number.isFinite(x) ? x : null;
-};
+  // ------ helper data ------
+  const setNum = currentSetFromScores(players) ?? setFromStatus(match.status) ?? 0;
+  const surface = parseSurface(match.categoryName || match.category || match.surface || '');
 
-function getPlayers(match) {
-  const p =
-    Array.isArray(match?.players) ? match.players :
-    Array.isArray(match?.player)  ? match.player  : [];
-  const a = p[0] || {};
-  const b = p[1] || {};
-  return [
-    {
-      id: a.id || a['@id'] || '',
-      name: a.name || a['@name'] || '',
-      s: [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)],
-    },
-    {
-      id: b.id || b['@id'] || '',
-      name: b.name || b['@name'] || '',
-      s: [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)],
-    },
-  ];
-}
-
-function currentSetFromScores(players) {
-  const sA = players[0].s, sB = players[1].s;
-  let k = 0;
-  for (let i = 0; i < 5; i += 1) {
-    if (sA[i] !== null || sB[i] !== null) k = i + 1;
+  // Gate: κάνουμε predictions ΜΟΝΟ από "μέση 3ου" και μετά
+  if (!isAfterMidThirdSet(players, setNum, match)) {
+    return { label: null, pick: null, reason: 'pre-mid-3rd' };
   }
-  return k || 0;
+
+  // ------ set games ------
+  const sA = [n(p1.s1), n(p1.s2), n(p1.s3), n(p1.s4), n(p1.s5)];
+  const sB = [n(p2.s1), n(p2.s2), n(p2.s3), n(p2.s4), n(p2.s5)];
+  const lastIdx = lastPlayedSetIndex(sA, sB); // 0-based
+  const curA = sA[lastIdx] ?? 0;
+  const curB = sB[lastIdx] ?? 0;
+  const curLead = curA - curB;
+  const curTotal = curA + curB;
+
+  // ------ point-level & serve ------
+  const { vA, vB } = currentPointValues(p1.game_score, p2.game_score);
+  const serveA = asBool(p1.serve), serveB = asBool(p2.serve);
+  const pointLead = pointDiffToUnit(vA, vB);      // [-1..+1] ~ advantage
+  const serveBias = (serveA ? 0.22 : 0) - (serveB ? 0.22 : 0);
+
+  // ------ break-point awareness (δέλτα υπέρ A) ------
+  const bpDeltaA = breakDeltaForA(serveA, serveB, vA, vB);
+
+  // ------ historical momentum ------
+  const prevIdx = lastIdx > 0 ? lastIdx - 1 : -1;
+  const prevLead = prevIdx >= 0 ? ((sA[prevIdx] ?? 0) - (sB[prevIdx] ?? 0)) : 0;
+  const deltaLead = curLead - prevLead;
+
+  // ------ surface weighting ------
+  const surfaceW = surfaceWeight(surface); // μικρό bias σε momentum/σταθερότητα
+
+  // ------ συνολικό momentum υπέρ A ------
+  let momentumA =
+    clamp(curLead * 0.9 + deltaLead * 0.6 + pointLead * 0.35 + serveBias + bpDeltaA, -6, 6);
+
+  // ελαφρύ surface adjust
+  momentumA *= surfaceW.momentumScale;
+
+  // ------ εμπιστοσύνη (depth) ------
+  const totalGames = sum(sA) + sum(sB);
+  let conf =
+    totalGames > 40 ? 0.71 :
+    totalGames > 32 ? 0.66 :
+    totalGames > 24 ? 0.61 :
+    totalGames > 18 ? 0.58 : 0.55;
+
+  if (curTotal >= 8) conf += 0.03;
+  else if (curTotal >= 6) conf += 0.02;
+
+  conf = clamp(conf * surfaceW.confScale, 0.50, 0.82);
+
+  // ------ EV proxy ------
+  const absLead = Math.abs(curLead);
+  let ev =
+    absLead >= 2 ? 0.024 :
+    absLead === 1 ? 0.022 : 0.019;
+
+  if (momentumA > 0.8 && curTotal >= 6) ev += 0.002;
+  ev += surfaceW.evBonus;
+
+  // ------ πρώτη ταξινόμηση ------
+  let label = 'AVOID';
+  if (ev > 0.024 && conf > 0.60 && momentumA >= 0) label = 'SAFE';
+  else if (ev > 0.020 && conf >= 0.56)              label = 'RISKY';
+
+  // ------ pick (όνομα) ------
+  const leadAgg = (sum(sA) - sum(sB)) + momentumA; // global + momentum
+  const pick = leadAgg >= 0
+    ? (p1.name || p1['@name'] || 'Player 1')
+    : (p2.name || p2['@name'] || 'Player 2');
+
+  // ------ Kelly post-filter (αν υπάρχουν odds) ------
+  label = kellyGuard(label, pick, conf, match);
+
+  const reason = `set${setNum}, curLead=${curLead}, games=${curTotal}, m=${round(momentumA,2)}, surf=${surface||'n/a'}`;
+  return { label, pick, reason };
 }
 
-function totalGamesSoFar(players) {
-  const sA = players[0].s, sB = players[1].s;
-  let sum = 0;
-  for (let i = 0; i < 5; i += 1) {
-    sum += (sA[i] || 0) + (sB[i] || 0);
-  }
-  return sum;
+/* ================= helpers ================= */
+function n(v){ if(v===null||v===undefined) return null; const x=parseInt(String(v).split(/[.:]/)[0],10); return Number.isFinite(x)?x:null; }
+function sum(arr){ return (arr||[]).reduce((a,b)=>a+(b||0),0); }
+function clamp(x,min,max){ return Math.max(min, Math.min(max, x)); }
+function round(x, d=2){ const k=Math.pow(10,d); return Math.round(x*k)/k; }
+function asBool(x){ const s=String(x||'').toLowerCase(); return s==='true'||s==='1'||s==='yes'; }
+
+function lastPlayedSetIndex(sA, sB){
+  for(let i=4;i>=0;i--) if(sA[i]!==null || sB[i]!==null) return i;
+  return -1;
 }
 
-function setsWon(players) {
-  const sA = players[0].s, sB = players[1].s;
-  let a = 0, b = 0;
-  for (let i = 0; i < 5; i += 1) {
-    const A = sA[i] ?? null, B = sB[i] ?? null;
-    if (A === null && B === null) break;
-    if (A !== null && B !== null) {
-      if (A > B) a += 1;
-      else if (B > A) b += 1;
-    }
-  }
-  return { a, b };
+function setFromStatus(status){
+  const s=String(status||'').toLowerCase();
+  const m=s.match(/(?:^|\s)([1-5])(?:st|nd|rd|th)?\s*set|set\s*([1-5])/i);
+  if(!m) return null;
+  return parseInt(m[1]||m[2],10);
 }
 
-function momentumScore(players, setNum) {
-  // τρέχον σετ έχει βάρος 1.0, προηγούμενο 0.5
-  if (setNum <= 0) return 0;
-  const sA = players[0].s, sB = players[1].s;
-  const i = setNum - 1;
-
-  const cur = ((sA[i] || 0) - (sB[i] || 0));
-  const prev = i > 0 ? ((sA[i - 1] || 0) - (sB[i - 1] || 0)) : 0;
-  return cur + 0.5 * prev; // range περίπου -∞..+∞ αλλά στην πράξη -6..+6
+function currentSetFromScores(players){
+  const p = Array.isArray(players)?players:[];
+  const a = p[0]||{}, b=p[1]||{};
+  const sA=[n(a.s1),n(a.s2),n(a.s3),n(a.s4),n(a.s5)];
+  const sB=[n(b.s1),n(b.s2),n(b.s3),n(b.s4),n(b.s5)];
+  let k=0; for(let i=0;i<5;i++) if(sA[i]!==null||sB[i]!==null) k=i+1;
+  return k||null;
 }
 
-function estimateConfidence(totalGames) {
-  // πιο επιθετικό calibration
-  if (totalGames >= 30) return 66;
-  if (totalGames >= 24) return 62;
-  if (totalGames >= 18) return 58;
-  return 55;
-}
-
-function estimateEV({ momentum, setsLead }) {
-  // Base edge + boosts/penalties
-  let ev = 0.018; // base
-  if (momentum >= 2) ev += 0.008;
-  else if (momentum >= 1) ev += 0.004;
-  else if (momentum <= -2) ev -= 0.006;
-  else if (momentum <= -1) ev -= 0.003;
-
-  if (setsLead > 0) ev += 0.004;
-  else if (setsLead < 0) ev -= 0.004;
-
-  // clamp
-  if (ev < 0) ev = 0;
-  return ev;
-}
-
-function kellyLevelFrom(ev, conf) {
-  // ΔΕΝ επιστρέφουμε ποσοστά — μόνο επίπεδο για UI bullets
-  if (ev >= 0.026 && conf >= 62) return 'HIGH';
-  if (ev >= 0.021 && conf >= 58) return 'MED';
-  if (ev >= 0.017 && conf >= 55) return 'LOW';
+/* ---------- surface ---------- */
+function parseSurface(s){
+  const x = String(s||'').toLowerCase();
+  if (x.includes('clay')) return 'clay';
+  if (x.includes('grass')) return 'grass';
+  if (x.includes('hard'))  return x.includes('indoor') ? 'hard-indoor' : 'hard';
   return null;
 }
-
-function labelFrom(ev, conf) {
-  if (ev >= 0.026 && conf >= 62) return 'SAFE';
-  if (ev >= 0.021 && conf >= 56) return 'RISKY';
-  return 'AVOID';
+function surfaceWeight(surface){
+  switch(surface){
+    case 'hard-indoor': return { momentumScale: 1.05, confScale: 1.03, evBonus: 0.0010 };
+    case 'hard':       return { momentumScale: 1.02, confScale: 1.01, evBonus: 0.0005 };
+    case 'grass':      return { momentumScale: 0.98, confScale: 0.99, evBonus: 0.0000 };
+    case 'clay':       return { momentumScale: 0.96, confScale: 0.98, evBonus: -0.0010 };
+    default:           return { momentumScale: 1.00, confScale: 1.00, evBonus: 0.0000 };
+  }
 }
 
-export default function analyzeMatch(match) {
-  const status = match?.status || match?.['@status'] || '';
-  if (!status || isFinishedLike(status)) {
-    return { label: null, tip: null, kellyLevel: null };
+/* ---------- point score ---------- */
+function currentPointValues(gsA, gsB){
+  const aTok = normalizePointToken(gsA);
+  const bTok = normalizePointToken(gsB);
+  return { vA: pointTokenValue(aTok), vB: pointTokenValue(bTok) };
+}
+function normalizePointToken(s){
+  if (!s) return null;
+  const str = String(s).replace(/\s+/g,'').toUpperCase(); // "15:30" / "40-AD"
+  const parts = str.split(/[:\-]/);
+  return parts[0] || null; // token για τον παίκτη
+}
+function pointTokenValue(tok){
+  if (!tok) return null;
+  if (tok === 'AD' || tok === 'A') return 4;
+  if (tok === '40') return 3;
+  if (tok === '30') return 2;
+  if (tok === '15') return 1;
+  if (tok === '0' || tok === '00') return 0;
+  return null;
+}
+function pointDiffToUnit(vA, vB){
+  if (vA==null || vB==null) return 0;
+  return clamp((vA - vB)/3.0, -1, 1);
+}
+
+/* ---------- break-point awareness ---------- */
+function breakDeltaForA(serveA, serveB, vA, vB){
+  if (vA==null || vB==null) return 0;
+  const isBreakForB_whenAserve = (vB===3 && vA<=2) || (vB===4 && vA===3);
+  const isBreakForA_whenBserve = (vA===3 && vB<=2) || (vA===4 && vB===3);
+
+  let delta = 0;
+  if (serveA && isBreakForB_whenAserve) delta -= 0.6; // εναντίον Α
+  if (serveB && isBreakForA_whenBserve) delta += 0.6; // υπέρ Α
+
+  if (serveA && vB===3 && vA===0) delta -= 0.2;
+  if (serveB && vA===3 && vB===0) delta += 0.2;
+
+  return delta;
+}
+
+/* ---------- Kelly post-filter ---------- */
+function kellyGuard(label, pick, conf, match){
+  const odds = pickOdds(pick, match?.odds);
+  if (!odds) return label;
+
+  const b = Math.max(odds - 1, 0);
+  const p = clamp(conf, 0.45, 0.85);
+  if (b <= 0) return label;
+
+  const kelly = (b*p - (1-p)) / b; // <0 => αρνητικό value
+  if (kelly < 0) {
+    if (label === 'SAFE') return 'RISKY';
+    if (label === 'RISKY') return 'AVOID';
+  } else if (kelly < 0.01 && label === 'SAFE') {
+    return 'RISKY';
   }
-
-  const players = getPlayers(match);
-  const setNum = currentSetFromScores(players);
-  const live = !isUpcoming(status) && !isFinishedLike(status);
-
-  // --- Gating ---
-  // Πριν το Set 3 ⇒ δείχνουμε μόνο σετ/soon στο UI (AI δεν βγάζει πρόβλεψη)
-  if (!live) {
-    return { label: 'SOON', tip: null, kellyLevel: null };
+  return label;
+}
+function pickOdds(pickName, odds){
+  if (!odds) return null;
+  for (const key of Object.keys(odds)) {
+    const v = odds[key];
+    if (typeof v === 'number' && nameLike(key, pickName)) return v;
   }
-  if (setNum < 3) {
-    return { label: `SET ${setNum || 1}`, tip: null, kellyLevel: null };
+  if (Array.isArray(odds)) {
+    for (const m of odds) {
+      const v1 = m?.home || m?.player1 || m?.p1;
+      const v2 = m?.away || m?.player2 || m?.p2;
+      const n1 = m?.homeName || m?.name1 || m?.player1Name;
+      const n2 = m?.awayName || m?.name2 || m?.player2Name;
+      if (v1 && nameLike(n1, pickName) && typeof v1 === 'number') return v1;
+      if (v2 && nameLike(n2, pickName) && typeof v2 === 'number') return v2;
+    }
   }
-
-  // Από ΜΕΣΗ 3ου σετ και μετά θεωρούμε ότι έχουμε αρκετό σήμα:
-  const total = totalGamesSoFar(players);
-  const { a: setsA, b: setsB } = setsWon(players);
-  const setsLead = setsA - setsB;
-  const mom = momentumScore(players, setNum);
-
-  const conf = estimateConfidence(total);
-  const ev = estimateEV({ momentum: mom, setsLead });
-  const label = labelFrom(ev, conf);
-  const kellyLevel = kellyLevelFrom(ev, conf);
-
-  // Επιλογή TIP:
-  // 1) Αν στο τρέχον σετ προηγείται κάποιος, παίρνουμε αυτόν.
-  // 2) αλλιώς, όποιος προηγείται σε κερδισμένα σετ.
-  const i = Math.max(0, setNum - 1);
-  const gA = players[0].s[i] || 0;
-  const gB = players[1].s[i] || 0;
-  let pickIdx = 0;
-  if (gA > gB) pickIdx = 0;
-  else if (gB > gA) pickIdx = 1;
-  else {
-    if (setsA > setsB) pickIdx = 0;
-    else if (setsB > setsA) pickIdx = 1;
-    else pickIdx = mom >= 0 ? 0 : 1;
+  const candidates = ['home','away','player1','player2','p1','p2'];
+  for (const k of candidates) {
+    const v = odds[k];
+    if (typeof v === 'number') return v;
   }
+  return null;
+}
+function nameLike(a,b){
+  const x = String(a||'').toLowerCase().replace(/\s+/g,'').slice(0,12);
+  const y = String(b||'').toLowerCase().replace(/\s+/g,'').slice(0,12);
+  return !!x && !!y && (x.includes(y) || y.includes(x));
+}
 
-  const tip = players[pickIdx].name || null;
+/* ---------- gate helpers ---------- */
+function isAfterMidThirdSet(players, setNum, match){
+  if (setNum < 3) return false;
+  const p = Array.isArray(players)?players:[];
+  const a = p[0]||{}, b=p[1]||{};
+  const sA=[n(a.s1),n(a.s2),n(a.s3),n(a.s4),n(a.s5)];
+  const sB=[n(b.s1),n(b.s2),n(b.s3),n(b.s4),n(b.s5)];
+  const idx = lastPlayedSetIndex(sA, sB);
+  const curTotal = (sA[idx] ?? 0) + (sB[idx] ?? 0);
 
-  return {
-    label,       // 'SAFE' | 'RISKY' | 'AVOID'
-    tip,         // player name only (UI: "TIP: <name>")
-    kellyLevel,  // 'HIGH' | 'MED' | 'LOW' | null  (UI bullets)
-  };
+  if (curTotal >= 4) return true;
+
+  const st = String(match?.status || '').toLowerCase();
+  const gm = st.match(/game\s*(\d+)/i);
+  if (gm && parseInt(gm[1],10) >= 5) return true;
+
+  return false;
 }
