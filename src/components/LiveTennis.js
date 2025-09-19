@@ -7,6 +7,7 @@ import logger from '../utils/predictionLogger';
 const FINISHED = new Set(['finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over']);
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
 const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
+const SAFE_AUDIO_URL = '/notify.mp3';
 
 const num = (v) => {
   if (v === null || v === undefined) return null;
@@ -32,20 +33,20 @@ function currentSetFromScores(players) {
 export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = true }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const notifiedRef = useRef(new Set()); // one-shot SAFE sound per srcId
-  const loggedRef = useRef(new Set());   // one-shot logger per srcId
+  const notifiedRef = useRef(new Set());
+  const loggedRef = useRef(new Set());
 
   async function load() {
     setLoading(true);
     try {
       const base = await fetchTennisLive();
-      const feed = Array.isArray(base?.matches) ? base.matches : (Array.isArray(base) ? base : []);
+      const feed = Array.isArray(base) ? base : [];
 
-      // keep logger in sync with outcomes
+      // keep local logs in sync with finished matches
       logger.syncWithFeed(feed);
 
-      // UI data (filter out finished)
-      const keep = feed.filter((m) => !isFinishedLike(m?.status || m?.['@status']));
+      // filter finished from UI
+      const keep = feed.filter((m) => m && !isFinishedLike(m?.status || m?.['@status']));
 
       const enriched = keep.map((m, idx) => {
         const players = Array.isArray(m.players) ? m.players : (Array.isArray(m.player) ? m.player : []);
@@ -54,18 +55,18 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
 
         const name1 = p1.name || p1['@name'] || '';
         const name2 = p2.name || p2['@name'] || '';
-
         const date = m.date || m['@date'] || '';
         const time = m.time || m['@time'] || '';
         const status = m.status || m['@status'] || '';
-
         const setNum = currentSetFromScores(players);
-        const ai = analyzeMatch(m) || {};
+
+        let ai = {};
+        try { ai = analyzeMatch(m) || {}; } catch { ai = {}; }
 
         const srcId = String(m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`);
         return {
-          id: `${srcId}-${idx}`, // unique for UI list keys
-          srcId,
+          id: `${srcId}-${idx}`, // unique for UI
+          srcId,                 // stable for logging/notify
           name1, name2, date, time, status, setNum,
           categoryName: m.categoryName || m['@category'] || m.category || '',
           ai,
@@ -75,7 +76,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
 
       setRows(enriched);
     } catch (e) {
-      console.warn('[LiveTennis] load error:', e?.message);
+      console.warn('[LiveTennis] load error:', e?.message || e);
       setRows([]);
     } finally {
       setLoading(false);
@@ -88,10 +89,10 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
     return () => clearInterval(t);
   }, []);
 
-  // top bar live counter
+  // update live counter (top bar)
   useEffect(() => {
     const n = rows.reduce((acc, m) => {
-      const s = m.status || '';
+      const s = m?.status || '';
       const live = !!s && !isUpcoming(s) && !isFinishedLike(s);
       return acc + (live ? 1 : 0);
     }, 0);
@@ -114,11 +115,9 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
       const s = m.status || '';
       const live = !!s && !isUpcoming(s) && !isFinishedLike(s);
 
-      // fallback labels
       if (!label || label === 'PENDING') {
         label = live ? `SET ${m.setNum || 1}` : 'SOON';
       }
-      // normalize "SETx"
       if (label.startsWith('SET')) {
         const n = Number(label.split(/\s+/)[1]) || m.setNum || 1;
         label = `SET ${n}`;
@@ -132,8 +131,6 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
       };
     });
 
-    // Order: SAFE → RISKY → AVOID → SET3 → SET2 → SET1 → SOON
-    // Within live sets, higher set first
     return items.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
       if (a.live && b.live) return (b.setNum || 0) - (a.setNum || 0);
@@ -141,18 +138,16 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
     });
   }, [rows]);
 
-  // notifications + logging
+  // one-shot SAFE sound + one-shot logging per match
   useEffect(() => {
     list.forEach((m) => {
-      // one-shot SAFE sound
       if (notificationsOn && m.ai?.label === 'SAFE' && !notifiedRef.current.has(m.srcId)) {
         try {
-          const a = new Audio('/notify.mp3');
+          const a = new Audio(SAFE_AUDIO_URL);
           a.play().catch(() => {});
         } catch {}
         notifiedRef.current.add(m.srcId);
       }
-      // one-shot prediction log (SAFE/RISKY)
       if (['SAFE', 'RISKY'].includes(m.ai?.label) && !loggedRef.current.has(m.srcId)) {
         logger.logPrediction({
           id: m.srcId,
@@ -169,64 +164,40 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
     });
   }, [list, notificationsOn]);
 
-  // ---------- UI helpers ----------
+  // --- small UI helpers ---
   const Pill = ({ label, kellyLevel }) => {
-    let bg = '#5a5f68';
-    let fg = '#fff';
-    let text = label;
+    let bg = '#5a5f68', fg = '#fff', text = label;
+    if (label === 'SAFE') { bg = '#1fdd73'; text = 'SAFE'; }
+    else if (label === 'RISKY') { bg = '#ffbf0a'; fg = '#151515'; }
+    else if (label === 'AVOID') { bg = '#e53935'; }
+    else if (label.startsWith('SET')) { bg = '#6e42c1'; }
+    else if (label === 'SOON') { bg = '#5a5f68'; }
 
-    if (label === 'SAFE') {
-      bg = '#1fdd73';
-      text = 'SAFE';
-    } else if (label === 'RISKY') {
-      bg = '#ffbf0a';
-      fg = '#151515';
-    } else if (label === 'AVOID') {
-      bg = '#e53935';
-    } else if (label.startsWith('SET')) {
-      bg = '#6e42c1';
-    } else if (label === 'SOON') {
-      bg = '#5a5f68';
-    }
-
-    // Kelly dots (no numbers)
     let dots = '';
     if (kellyLevel === 'HIGH') dots = ' ●●●';
     else if (kellyLevel === 'MED') dots = ' ●●';
     else if (kellyLevel === 'LOW') dots = ' ●';
 
     return (
-      <span
-        style={{
-          padding: '10px 14px',
-          borderRadius: 14,
-          fontWeight: 800,
-          background: bg,
-          color: fg,
-          letterSpacing: 0.5,
-          boxShadow: '0 6px 18px rgba(0,0,0,0.25)',
-          display: 'inline-block',
-          minWidth: 96,
-          textAlign: 'center',
-        }}
-      >
-        {text}
-        {['SAFE', 'RISKY'].includes(label) ? dots : ''}
+      <span style={{
+        padding: '10px 14px',
+        borderRadius: 14,
+        fontWeight: 800,
+        background: bg, color: fg, letterSpacing: 0.5,
+        boxShadow: '0 6px 18px rgba(0,0,0,0.25)',
+        display: 'inline-block', minWidth: 96, textAlign: 'center',
+      }}>
+        {text}{['SAFE','RISKY'].includes(label) ? dots : ''}
       </span>
     );
   };
 
   const Dot = ({ on }) => (
-    <span
-      style={{
-        width: 10,
-        height: 10,
-        borderRadius: 999,
-        display: 'inline-block',
-        background: on ? '#1fdd73' : '#e53935',
-        boxShadow: on ? '0 0 0 2px rgba(31,221,115,0.25)' : 'none',
-      }}
-    />
+    <span style={{
+      width: 10, height: 10, borderRadius: 999, display: 'inline-block',
+      background: on ? '#1fdd73' : '#e53935',
+      boxShadow: on ? '0 0 0 2px rgba(31,221,115,0.25)' : 'none',
+    }} />
   );
 
   return (
@@ -237,71 +208,44 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {list.map((m) => (
-          <div
-            key={m.id}
-            style={{
-              borderRadius: 18,
-              background: '#1b1e22',
-              border: '1px solid #22272c',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
-              padding: '14px 16px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-            }}
-          >
+          <div key={m.id} style={{
+            borderRadius: 18,
+            background: '#1b1e22',
+            border: '1px solid #22272c',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+            padding: '14px 16px',
+            display: 'flex', alignItems: 'center', gap: 12,
+          }}>
             <Dot on={m.live} />
-
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div
-                style={{
-                  fontSize: 18,
-                  fontWeight: 800,
-                  lineHeight: 1.25,
-                  color: '#fff',
-                }}
-              >
+              <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.25, color: '#fff' }}>
                 <span>{m.name1}</span>
-                <span style={{ color: '#98a0a6', fontWeight: 600 }}>
-                  &nbsp;vs&nbsp;
-                </span>
+                <span style={{ color: '#98a0a6', fontWeight: 600 }}>&nbsp;vs&nbsp;</span>
                 <span>{m.name2}</span>
               </div>
-
               <div style={{ marginTop: 6, color: '#c2c7cc', fontSize: 14 }}>
                 {m.date} {m.time} · {m.categoryName}
               </div>
-
-              {['SAFE', 'RISKY'].includes(m.ai?.label) && m.ai?.tip && (
-                <div
-                  style={{
-                    marginTop: 6,
-                    fontSize: 13,
-                    fontWeight: 800,
-                    color: '#1fdd73',
-                  }}
-                >
+              {['SAFE','RISKY'].includes(m.ai?.label) && m.ai?.tip && (
+                <div style={{ marginTop: 6, fontSize: 13, fontWeight: 800, color: '#1fdd73' }}>
                   TIP: {m.ai.tip}
                 </div>
               )}
             </div>
-
             <Pill label={m.uiLabel} kellyLevel={m.ai?.kellyLevel} />
           </div>
         ))}
 
         {list.length === 0 && !loading && (
-          <div
-            style={{
-              marginTop: 12,
-              padding: '14px 16px',
-              borderRadius: 12,
-              background: '#121416',
-              border: '1px solid #22272c',
-              color: '#c7d1dc',
-              fontSize: 13,
-            }}
-          >
+          <div style={{
+            marginTop: 12,
+            padding: '14px 16px',
+            borderRadius: 12,
+            background: '#121416',
+            border: '1px solid #22272c',
+            color: '#c7d1dc',
+            fontSize: 13,
+          }}>
             No matches found (live or upcoming).
           </div>
         )}
