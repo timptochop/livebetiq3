@@ -6,7 +6,7 @@ import "./App.css";
 
 export default function App() {
   const [liveCount, setLiveCount] = useState(0);
-  const [notificationsOn, setNotificationsOn] = useState(false);
+  const [notificationsOn, setNotificationsOn] = useState(true);
 
   const handleLiveCount = useCallback((n) => {
     if (Number.isFinite(n)) setLiveCount(n);
@@ -30,7 +30,7 @@ export default function App() {
           paddingTop: `calc(${safeTop} + ${BAR_H}px)`,
         }}
       >
-        <LiveTennis onLiveCount={handleLiveCount} />
+        <LiveTennis onLiveCount={handleLiveCount} notificationsOn={notificationsOn} />
       </main>
     </>
   );
