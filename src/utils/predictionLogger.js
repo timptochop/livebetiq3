@@ -1,12 +1,12 @@
 // src/utils/predictionLogger.js
 //
-// Lightweight client-side logger for SAFE/RISKY picks and match outcomes.
-// Stores to localStorage (CSR-safe on Vercel). No UI dependency.
+// Lightweight client-side logger for SAFE/RISKY picks + match outcome once a match finishes.
+// Stores data in localStorage (safe on Vercel/CSR). No UI changes required.
 //
 // API:
 //  - logger.logPrediction({...})
-//  - logger.syncWithFeed(feedArray)   // close entries when a match finishes
-//  - logger.exportCSV()               // returns { filename, dataUrl }
+//  - logger.syncWithFeed(feedArray)   // close open entries when a match finishes
+//  - logger.exportCSV()               // returns { filename, dataUrl } for download (optional use)
 //  - logger.read() / logger.clear()
 
 const KEY = 'lbq_logs_v1';
@@ -24,9 +24,9 @@ function writeAll(arr) {
   try { localStorage.setItem(KEY, JSON.stringify(arr)); } catch {}
 }
 
-// Attempt to find winner name in various GoalServe shapes
+// Try to infer winner name from the GoalServe match object
 function extractWinnerNameFromMatch(m) {
-  const players = Array.isArray(m.players) ? m.players : Array.isArray(m.player) ? m.player : [];
+  const players = Array.isArray(m.players) ? m.players : (Array.isArray(m.player) ? m.player : []);
   if (players.length >= 2) {
     for (const p of players) {
       const w = (p.winner ?? p['@winner'] ?? p.won ?? p['@won'] ?? '').toString().toLowerCase();
@@ -38,13 +38,13 @@ function extractWinnerNameFromMatch(m) {
   return null;
 }
 
-// Stable id from the upstream feed
+// Stable source id from feed (fallback if no explicit id)
 function getSrcId(m) {
   const a = m.id ?? m['@id'];
   if (a) return String(a);
   const date = m.date ?? m['@date'] ?? '';
   const time = m.time ?? m['@time'] ?? '';
-  const p = Array.isArray(m.players) ? m.players : Array.isArray(m.player) ? m.player : [];
+  const p = Array.isArray(m.players) ? m.players : (Array.isArray(m.player) ? m.player : []);
   const p1 = p[0]?.name || p[0]?.['@name'] || '';
   const p2 = p[1]?.name || p[1]?.['@name'] || '';
   return `${date}-${time}-${p1}-${p2}`;
@@ -52,53 +52,38 @@ function getSrcId(m) {
 
 const logger = {
   read: () => readAll(),
+
   clear: () => writeAll([]),
 
-  // Extended fields for Phase-1 instrumentation:
-  //   surface, categoryName, setNum, gamesInSet, gameScoreA/B, serve ('A'|'B'|null),
-  //   oddsSnapshot, aiVersion, statusAtPick.
-  logPrediction: (row) => {
-    const {
-      id, label, name1 = '', name2 = '', setNum = null, tip = null,
-      kellyLevel = null, statusAtPick = '', surface = null, categoryName = '',
-      gamesInSet = null, gameScoreA = null, gameScoreB = null, serve = null,
-      oddsSnapshot = null, aiVersion = null
-    } = row || {};
-
+  // id: stable match id (use srcId you derive from feed)
+  // label: 'SAFE' | 'RISKY'
+  // tip: picked player name (string)
+  logPrediction: ({ id, name1, name2, setNum, label, tip, kellyLevel, statusAtPick }) => {
     if (!id || !label) return;
     const rows = readAll();
 
-    // do not duplicate open entry for the same match
+    // Avoid duplicates: if there's already an open entry for this match, skip
     const hasOpen = rows.some(r => r.id === id && !r.closedAt);
     if (hasOpen) return;
 
     rows.push({
       id,
       ts: nowISO(),
+      name1: name1 || '',
+      name2: name2 || '',
+      setNum: setNum ?? null,
       label,
-      tip,
-      kellyLevel,
-      name1,
-      name2,
-      setNum,
-      statusAtPick,
-      surface,
-      categoryName,
-      gamesInSet,
-      gameScoreA,
-      gameScoreB,
-      serve,
-      oddsSnapshot,
-      aiVersion,
-      result: null,   // 'HIT' | 'MISS'
+      tip: tip || null,
+      kellyLevel: kellyLevel || null,
+      statusAtPick: statusAtPick || '',
+      result: null,          // 'HIT' | 'MISS'
       winner: null,
       closedAt: null
     });
-
     writeAll(rows);
   },
 
-  // Sync with raw feed to close finished matches and mark HIT/MISS
+  // Feed sync: pass the raw feed array; closes open logs when a match finishes
   syncWithFeed: (feedArray) => {
     if (!Array.isArray(feedArray) || feedArray.length === 0) return;
     const rows = readAll();
@@ -109,7 +94,7 @@ const logger = {
 
     let changed = false;
     for (const r of rows) {
-      if (r.closedAt) continue;
+      if (r.closedAt) continue; // already closed
       const m = idx.get(r.id);
       if (!m) continue;
 
@@ -121,10 +106,11 @@ const logger = {
       if (winnerName) {
         const hit = (r.tip && winnerName && r.tip.toLowerCase() === winnerName.toLowerCase());
         r.result = hit ? 'HIT' : 'MISS';
-        r.winner  = winnerName;
+        r.winner = winnerName;
         r.closedAt = nowISO();
         changed = true;
       } else {
+        // If winner is missing, close as unknown (defaults to MISS for safety)
         r.result = r.result || 'MISS';
         r.closedAt = nowISO();
         changed = true;
@@ -134,20 +120,19 @@ const logger = {
     if (changed) writeAll(rows);
   },
 
+  // Optional CSV export (no UI dependency)
   exportCSV: () => {
     const rows = readAll();
     const headers = [
-      'ts','id','label','tip','kellyLevel','name1','name2','setNum','statusAtPick',
-      'surface','categoryName','gamesInSet','gameScoreA','gameScoreB','serve',
-      'oddsSnapshot','aiVersion','result','winner','closedAt'
+      'ts','id','name1','name2','setNum','label','tip','kellyLevel','statusAtPick','result','winner','closedAt'
     ];
     const lines = [headers.join(',')];
 
     for (const r of rows) {
       const vals = headers.map(h => {
         const v = r[h] ?? '';
-        const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
-        return `"${s.replace(/"/g, '""')}"`;
+        const s = String(v).replace(/"/g, '""'); // CSV escape
+        return `"${s}"`;
       });
       lines.push(vals.join(','));
     }
