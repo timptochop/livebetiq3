@@ -1,5 +1,6 @@
 // src/utils/fetchTennisLive.js
-// Robust fetcher. Can run in 'live-only' mode to bypass broken predictions API.
+// Try predictions first (has AI labels). Fallback to plain live feed.
+// Never throw to the UI; always resolve to an array.
 
 async function getJSON(url) {
   const r = await fetch(url, { cache: 'no-store' });
@@ -7,27 +8,24 @@ async function getJSON(url) {
   return r.json();
 }
 
-/**
- * mode:
- *  - 'live-only'         -> only /api/gs/tennis-live
- *  - 'pred-then-live'    -> try predictions first, fallback to live (default)
- */
-export default async function fetchTennisLive(mode = 'pred-then-live') {
-  const urls = mode === 'live-only'
-    ? ['/api/gs/tennis-live']
-    : ['/api/gs/tennis-predictions', '/api/gs/tennis-live'];
+export default async function fetchTennisLive() {
+  const CANDIDATES = [
+    '/api/gs/tennis-predictions', // might 500
+    '/api/gs/tennis-live',        // fallback
+  ];
 
-  for (const url of urls) {
+  for (const url of CANDIDATES) {
     try {
       const data = await getJSON(url);
       const arr = Array.isArray(data?.matches)
         ? data.matches
         : (Array.isArray(data) ? data : []);
-      return arr; // always an Array
+      if (Array.isArray(arr)) return arr;
     } catch (e) {
-      console.warn(`[fetchTennisLive] failed: ${url} - ${(e && e.message) || e}`);
-      // try next URL
+      // keep trying next; just log for visibility
+      // eslint-disable-next-line no-console
+      console.warn('[fetchTennisLive] failed:', url, e?.message || e);
     }
   }
-  return [];
+  return []; // never propagate failure
 }
