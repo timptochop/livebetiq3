@@ -4,7 +4,10 @@ import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
 import logger from '../utils/predictionLogger';
 
-const FINISHED = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
+// ---------- helpers ----------
+const FINISHED = new Set([
+  'finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over'
+]);
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
 const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
 
@@ -23,59 +26,70 @@ function currentSetFromScores(players) {
   const sA = [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)];
   const sB = [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)];
   let k = 0;
-  for (let i = 0; i < 5; i++) if (sA[i] !== null || sB[i] !== null) k = i + 1;
+  for (let i = 0; i < 5; i += 1) {
+    if (sA[i] !== null || sB[i] !== null) k = i + 1;
+  }
   return k || 0;
 }
 
+// ---------- component ----------
 export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = true }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const notifiedRef = useRef(new Set());
-  const loggedRef = useRef(new Set());
+  const notifiedRef = useRef(new Set()); // sound: play SAFE once per match
+  const loggedRef = useRef(new Set());   // logging: once per source match id
 
   async function load() {
     setLoading(true);
     try {
-      // Use 'pred-then-live' or force 'live-only' if predictions API is flaky
-      const base = await fetchTennisLive('pred-then-live');
-      const raw = Array.isArray(base) ? base : [];
+      // TEMP: bypass predictions (500) and use only live feed
+      const base = await fetchTennisLive('live-only'); // switch back to 'pred-then-live' when ready
 
-      // keep logger in sync with finished matches
-      logger.syncWithFeed(raw);
+      // update local logger with the raw feed (so finished matches get closed)
+      if (Array.isArray(base)) {
+        logger.syncWithFeed(base);
+      }
 
-      const keep = raw.filter(m => !isFinishedLike(m?.status || m?.['@status']));
+      // filter out finished for UI
+      const keep = (Array.isArray(base) ? base : []).filter(
+        (m) => !isFinishedLike(m.status || m['@status'])
+      );
+
       const enriched = keep.map((m, idx) => {
-        const players = Array.isArray(m?.players) ? m.players
-                      : Array.isArray(m?.player)  ? m.player : [];
+        const players = Array.isArray(m.players)
+          ? m.players
+          : Array.isArray(m.player)
+          ? m.player
+          : [];
         const p1 = players[0] || {};
         const p2 = players[1] || {};
-
         const name1 = p1.name || p1['@name'] || '';
         const name2 = p2.name || p2['@name'] || '';
         const date = m.date || m['@date'] || '';
         const time = m.time || m['@time'] || '';
         const status = m.status || m['@status'] || '';
         const setNum = currentSetFromScores(players);
-
-        let ai = {};
-        try { ai = analyzeMatch(m) || {}; } catch (err) {
-          console.warn('[analyzeMatch] error:', String(err?.message || err));
-          ai = {};
-        }
+        const ai = analyzeMatch(m) || {};
 
         const srcId = String(m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`);
         return {
-          id: `${srcId}-${idx}`, // unique for UI
-          srcId,                 // stable for logging
-          name1, name2, date, time, status, setNum,
+          id: `${srcId}-${idx}`, // unique for UI rendering
+          srcId,                 // stable source id for logging
+          name1,
+          name2,
+          date,
+          time,
+          status,
+          setNum,
           categoryName: m.categoryName || m['@category'] || m.category || '',
-          ai, players,
+          ai,
+          players,
         };
       });
 
       setRows(enriched);
     } catch (e) {
-      console.warn('[LiveTennis] load error:', String(e?.message || e));
+      console.warn('[LiveTennis] load error:', e?.message);
       setRows([]);
     } finally {
       setLoading(false);
@@ -88,10 +102,10 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
     return () => clearInterval(t);
   }, []);
 
-  // live counter for the top bar
+  // live counter (top bar)
   useEffect(() => {
-    const n = (Array.isArray(rows) ? rows : []).reduce((acc, m) => {
-      const s = m?.status || '';
+    const n = (rows || []).reduce((acc, m) => {
+      const s = m.status || '';
       const live = !!s && !isUpcoming(s) && !isFinishedLike(s);
       return acc + (live ? 1 : 0);
     }, 0);
@@ -109,17 +123,19 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
   };
 
   const list = useMemo(() => {
-    const base = Array.isArray(rows) ? rows : [];
-    const items = base.map((m) => {
-      let label = m?.ai?.label || null;
-      const s = m?.status || '';
+    const items = (rows || []).map((m) => {
+      let label = m.ai?.label || null;
+      const s = m.status || '';
       const live = !!s && !isUpcoming(s) && !isFinishedLike(s);
 
+      // default label when AI is not ready
       if (!label || label === 'PENDING') {
         label = live ? `SET ${m.setNum || 1}` : 'SOON';
       }
-      if (typeof label === 'string' && label.startsWith('SET')) {
-        const parts = label.split(/\s+/);
+
+      // normalize "SET x"
+      if (String(label).startsWith('SET')) {
+        const parts = String(label).split(/\s+/);
         const n = Number(parts[1]) || m.setNum || 1;
         label = `SET ${n}`;
       }
@@ -132,6 +148,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
       };
     });
 
+    // sort: SAFE → RISKY → AVOID → SET 3/2/1 → SOON ; for live, higher set first
     return items.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
       if (a.live && b.live) return (b.setNum || 0) - (a.setNum || 0);
@@ -139,17 +156,15 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
     });
   }, [rows]);
 
-  // SAFE sound once + prediction log once per srcId
+  // SAFE sound + log SAFE/RISKY once per source id
   useEffect(() => {
-    list.forEach((m) => {
-      if (m?.ai?.label === 'SAFE' && !notifiedRef.current.has(m.id)) {
-        if (notificationsOn) {
-          const a = new Audio('/notify.mp3');
-          a.play().catch(() => {});
-        }
+    (list || []).forEach((m) => {
+      if (notificationsOn && m.ai?.label === 'SAFE' && !notifiedRef.current.has(m.id)) {
+        const a = new Audio('/notify.mp3');
+        a.play().catch(() => {});
         notifiedRef.current.add(m.id);
       }
-      if (['SAFE','RISKY'].includes(m?.ai?.label) && !loggedRef.current.has(m.srcId)) {
+      if (['SAFE', 'RISKY'].includes(m.ai?.label) && !loggedRef.current.has(m.srcId)) {
         logger.logPrediction({
           id: m.srcId,
           name1: m.name1,
@@ -158,95 +173,151 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
           label: m.ai.label,
           tip: m.ai.tip,
           kellyLevel: m.ai.kellyLevel,
-          statusAtPick: m.status
+          statusAtPick: m.status,
         });
         loggedRef.current.add(m.srcId);
       }
     });
   }, [list, notificationsOn]);
 
+  // ---------- UI helpers ----------
   const Pill = ({ label, kellyLevel }) => {
-    let bg = '#5a5f68', fg = '#fff';
-    let text = label || '—';
-    if (label === 'SAFE') { bg = '#1fdd73'; text = 'SAFE'; }
-    else if (label === 'RISKY') { bg = '#ffbf0a'; fg = '#151515'; }
-    else if (label === 'AVOID') { bg = '#e53935'; }
-    else if (label && label.startsWith('SET')) { bg = '#6e42c1'; }
-    else if (label === 'SOON') { bg = '#5a5f68'; }
+    let bg = '#5a5f68';
+    let fg = '#fff';
+    let text = label;
 
+    if (label === 'SAFE') {
+      bg = '#1fdd73';
+      text = 'SAFE';
+    } else if (label === 'RISKY') {
+      bg = '#ffbf0a';
+      fg = '#151515';
+    } else if (label === 'AVOID') {
+      bg = '#e53935';
+    } else if (String(label).startsWith('SET')) {
+      bg = '#6e42c1';
+    } else if (label === 'SOON') {
+      bg = '#5a5f68';
+    }
+
+    // Kelly dots (no numbers)
     let dots = '';
     if (kellyLevel === 'HIGH') dots = ' ●●●';
     else if (kellyLevel === 'MED') dots = ' ●●';
     else if (kellyLevel === 'LOW') dots = ' ●';
 
     return (
-      <span style={{
-        padding: '10px 14px',
-        borderRadius: 14,
-        fontWeight: 800,
-        background: bg, color: fg, letterSpacing: .5,
-        boxShadow: '0 6px 18px rgba(0,0,0,0.25)',
-        display: 'inline-block', minWidth: 96, textAlign: 'center'
-      }}>
-        {text}{['SAFE','RISKY'].includes(label) ? dots : ''}
+      <span
+        style={{
+          padding: '10px 14px',
+          borderRadius: 14,
+          fontWeight: 800,
+          background: bg,
+          color: fg,
+          letterSpacing: 0.5,
+          boxShadow: '0 6px 18px rgba(0,0,0,0.25)',
+          display: 'inline-block',
+          minWidth: 96,
+          textAlign: 'center',
+        }}
+      >
+        {text}
+        {['SAFE', 'RISKY'].includes(label) ? dots : ''}
       </span>
     );
   };
 
   const Dot = ({ on }) => (
-    <span style={{
-      width: 10, height: 10, borderRadius: 999, display: 'inline-block',
-      background: on ? '#1fdd73' : '#e53935',
-      boxShadow: on ? '0 0 0 2px rgba(31,221,115,0.25)' : 'none',
-    }} />
+    <span
+      style={{
+        width: 10,
+        height: 10,
+        borderRadius: 999,
+        display: 'inline-block',
+        background: on ? '#1fdd73' : '#e53935',
+        boxShadow: on ? '0 0 0 2px rgba(31,221,115,0.25)' : 'none',
+      }}
+    />
   );
 
+  // ---------- render ----------
   return (
     <div style={{ padding: '12px 14px 24px', color: '#fff' }}>
-      {loading && list.length === 0 ? (
+      {loading && (!(list && list.length) ? (
         <div style={{ color: '#cfd3d7', padding: '8px 2px' }}>Loading...</div>
-      ) : null}
+      ) : null)}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {list.map((m) => (
-          <div key={m.id} style={{
-            borderRadius: 18,
-            background: '#1b1e22',
-            border: '1px solid #22272c',   // ✅ fixed quotes
-            boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
-            padding: '14px 16px',
-            display: 'flex', alignItems: 'center', gap: 12,
-          }}>
+        {(list || []).map((m) => (
+          <div
+            key={m.id}
+            style={{
+              borderRadius: 18,
+              background: '#1b1e22',
+              border: '1px solid #22272c',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+              padding: '14px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
+            {/* live dot */}
             <Dot on={m.live} />
+
+            {/* names & meta */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.25, color: '#fff' }}>
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 800,
+                  lineHeight: 1.25,
+                  color: '#fff',
+                }}
+              >
                 <span>{m.name1}</span>
-                <span style={{ color: '#98a0a6', fontWeight: 600 }}> &nbsp;vs&nbsp; </span>
+                <span style={{ color: '#98a0a6', fontWeight: 600 }}>
+                  &nbsp;vs&nbsp;
+                </span>
                 <span>{m.name2}</span>
               </div>
+
               <div style={{ marginTop: 6, color: '#c2c7cc', fontSize: 14 }}>
                 {m.date} {m.time} · {m.categoryName}
               </div>
-              {['SAFE','RISKY'].includes(m?.ai?.label) && m?.ai?.tip && (
-                <div style={{ marginTop: 6, fontSize: 13, fontWeight: 800, color: '#1fdd73' }}>
+
+              {/* TIP only for SAFE/RISKY */}
+              {['SAFE', 'RISKY'].includes(m.ai?.label) && m.ai?.tip && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontSize: 13,
+                    fontWeight: 800,
+                    color: '#1fdd73',
+                  }}
+                >
                   TIP: {m.ai.tip}
                 </div>
               )}
             </div>
-            <Pill label={m.uiLabel} kellyLevel={m?.ai?.kellyLevel} />
+
+            {/* right pill */}
+            <Pill label={m.uiLabel} kellyLevel={m.ai?.kellyLevel} />
           </div>
         ))}
 
-        {list.length === 0 && !loading && (
-          <div style={{
-            marginTop: 12,
-            padding: '14px 16px',
-            borderRadius: 12,
-            background: '#121416',
-            border: '1px solid #22272c',
-            color: '#c7d1dc',
-            fontSize: 13,
-          }}>
+        {(!list || list.length === 0) && !loading && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: '14px 16px',
+              borderRadius: 12,
+              background: '#121416',
+              border: '1px solid #22272c',
+              color: '#c7d1dc',
+              fontSize: 13,
+            }}
+          >
             No matches found (live or upcoming).
           </div>
         )}

@@ -1,38 +1,33 @@
 // src/utils/fetchTennisLive.js
-// Try predictions first (has AI labels), otherwise fall back to raw live.
+// Robust fetcher. Can run in 'live-only' mode to bypass broken predictions API.
 
 async function getJSON(url) {
   const r = await fetch(url, { cache: 'no-store' });
-  if (!r.ok) {
-    const err = new Error(`HTTP ${r.status}`);
-    err.status = r.status;
-    err.url = url;
-    throw err;
-  }
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
 
-export default async function fetchTennisLive() {
-  const CANDIDATES = [
-    '/api/gs/tennis-predictions', // preferred (AI)
-    '/api/gs/tennis-live',        // fallback (no AI or PENDING)
-  ];
+/**
+ * mode:
+ *  - 'live-only'         -> only /api/gs/tennis-live
+ *  - 'pred-then-live'    -> try predictions first, fallback to live (default)
+ */
+export default async function fetchTennisLive(mode = 'pred-then-live') {
+  const urls = mode === 'live-only'
+    ? ['/api/gs/tennis-live']
+    : ['/api/gs/tennis-predictions', '/api/gs/tennis-live'];
 
-  for (const url of CANDIDATES) {
+  for (const url of urls) {
     try {
       const data = await getJSON(url);
       const arr = Array.isArray(data?.matches)
         ? data.matches
-        : Array.isArray(data)
-        ? data
-        : [];
-      return Array.isArray(arr) ? arr : [];
+        : (Array.isArray(data) ? data : []);
+      return arr; // always an Array
     } catch (e) {
-      // move to next candidate
-      console.warn('[fetchTennisLive] failed:', e?.url, e?.message || e);
+      console.warn(`[fetchTennisLive] failed: ${url} - ${(e && e.message) || e}`);
+      // try next URL
     }
   }
-
-  // last resort
   return [];
 }
