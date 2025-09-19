@@ -1,10 +1,11 @@
-// src/components/LiveTennis.js
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
+import logger from '../utils/predictionLogger';
 
-// ---------- helpers ----------
-const FINISHED = new Set(['finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over']);
+const FINISHED = new Set([
+  'finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over'
+]);
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
 const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
 
@@ -23,29 +24,30 @@ function currentSetFromScores(players) {
   const sA = [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)];
   const sB = [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)];
   let k = 0;
-  for (let i = 0; i < 5; i += 1) {
-    if (sA[i] !== null || sB[i] !== null) k = i + 1;
-  }
+  for (let i = 0; i < 5; i += 1) if (sA[i] !== null || sB[i] !== null) k = i + 1;
   return k || 0;
 }
 
-// ---------- component ----------
 export default function LiveTennis({ onLiveCount = () => {} }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const notifiedRef = useRef(new Set()); // audio once per match id
+  const notifiedRef = useRef(new Set()); // play SAFE sound once per match
+  const loggedRef = useRef(new Set());   // log SAFE/RISKY once per source id
 
   async function load() {
     setLoading(true);
     try {
       const base = await fetchTennisLive(); // expect array of matches
 
-      // remove finished-like for UI
+      // keep logger in sync with the raw feed (to close finished entries)
+      logger.syncWithFeed(Array.isArray(base) ? base : []);
+
+      // filter out finished matches for the UI
       const keep = (Array.isArray(base) ? base : []).filter(
         (m) => !isFinishedLike(m.status || m['@status'])
       );
 
-      // enrich with AI & normalized fields
+      // enrich
       const enriched = keep.map((m, idx) => {
         const players = Array.isArray(m.players)
           ? m.players
@@ -54,7 +56,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
           : [];
         const p1 = players[0] || {};
         const p2 = players[1] || {};
-
         const name1 = p1.name || p1['@name'] || '';
         const name2 = p2.name || p2['@name'] || '';
         const date = m.date || m['@date'] || '';
@@ -63,8 +64,12 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
         const setNum = currentSetFromScores(players);
         const ai = analyzeMatch(m) || {};
 
+        const srcId =
+          String(m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`);
+
         return {
-          id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}-${idx}`,
+          id: `${srcId}-${idx}`, // unique for React list
+          srcId,                 // stable id for logging
           name1,
           name2,
           date,
@@ -92,7 +97,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     return () => clearInterval(t);
   }, []);
 
-  // live counter for top bar
+  // live counter (top bar)
   useEffect(() => {
     const n = rows.reduce((acc, m) => {
       const s = m.status || '';
@@ -102,7 +107,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     onLiveCount(n);
   }, [rows, onLiveCount]);
 
-  // ordering priority
   const labelPriority = {
     SAFE: 1,
     RISKY: 2,
@@ -119,12 +123,12 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
       const s = m.status || '';
       const live = !!s && !isUpcoming(s) && !isFinishedLike(s);
 
-      // fallback label
+      // if no AI label yet, show live SET X or SOON
       if (!label || label === 'PENDING') {
         label = live ? `SET ${m.setNum || 1}` : 'SOON';
       }
 
-      // normalize "SET x"
+      // normalize "SETx" to "SET x"
       if (label.startsWith('SET')) {
         const parts = label.split(/\s+/);
         const n = Number(parts[1]) || m.setNum || 1;
@@ -139,7 +143,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
       };
     });
 
-    // sort: SAFE→RISKY→AVOID→SET3→SET2→SET1→SOON, and within live by larger set first
     return items.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
       if (a.live && b.live) return (b.setNum || 0) - (a.setNum || 0);
@@ -147,18 +150,31 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     });
   }, [rows]);
 
-  // SAFE sound (once per id)
+  // SAFE sound (one-shot) + prediction logging (once per match)
   useEffect(() => {
     list.forEach((m) => {
-      if (m.ai?.label === 'SAFE' && !notifiedRef.current.has(m.id)) {
+      if (m.ai?.label === 'SAFE' && !notifiedRef.current.has(m.srcId)) {
         const a = new Audio('/notify.mp3');
         a.play().catch(() => {});
-        notifiedRef.current.add(m.id);
+        notifiedRef.current.add(m.srcId);
+      }
+      if (['SAFE', 'RISKY'].includes(m.ai?.label) && !loggedRef.current.has(m.srcId)) {
+        logger.logPrediction({
+          id: m.srcId,
+          name1: m.name1,
+          name2: m.name2,
+          setNum: m.setNum,
+          label: m.ai.label,
+          tip: m.ai.tip,
+          kellyLevel: m.ai.kellyLevel,
+          statusAtPick: m.status,
+        });
+        loggedRef.current.add(m.srcId);
       }
     });
   }, [list]);
 
-  // ---------- UI helpers ----------
+  // ---- UI helpers ----
   const Pill = ({ label, kellyLevel }) => {
     let bg = '#5a5f68';
     let fg = '#fff';
@@ -178,7 +194,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
       bg = '#5a5f68';
     }
 
-    // optional Kelly dots (no numbers)
     let dots = '';
     if (kellyLevel === 'HIGH') dots = ' ●●●';
     else if (kellyLevel === 'MED') dots = ' ●●';
@@ -218,7 +233,7 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
     />
   );
 
-  // ---------- render ----------
+  // ---- render ----
   return (
     <div style={{ padding: '12px 14px 24px', color: '#fff' }}>
       {loading && list.length === 0 ? (
@@ -240,10 +255,8 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
               gap: 12,
             }}
           >
-            {/* live dot */}
             <Dot on={m.live} />
 
-            {/* names & meta */}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
@@ -264,7 +277,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
                 {m.date} {m.time} · {m.categoryName}
               </div>
 
-              {/* TIP only for SAFE/RISKY */}
               {['SAFE', 'RISKY'].includes(m.ai?.label) && m.ai?.tip && (
                 <div
                   style={{
@@ -279,7 +291,6 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
               )}
             </div>
 
-            {/* right pill */}
             <Pill label={m.uiLabel} kellyLevel={m.ai?.kellyLevel} />
           </div>
         ))}
@@ -291,12 +302,12 @@ export default function LiveTennis({ onLiveCount = () => {} }) {
               padding: '14px 16px',
               borderRadius: 12,
               background: '#121416',
-              border: '1px solid #22272c', // <-- fixed quotes here
+              border: '1px solid #22272c',
               color: '#c7d1dc',
               fontSize: 13,
             }}
           >
-            No matches found (live or upcoming).
+            No matches (live or upcoming) found.
           </div>
         )}
       </div>
