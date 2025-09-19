@@ -4,7 +4,7 @@ import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
 import logger from '../utils/predictionLogger';
 
-const FINISHED = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
+const FINISHED = new Set(['finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over']);
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
 const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
 
@@ -18,7 +18,8 @@ const num = (v) => {
 
 function currentSetFromScores(players) {
   const p = Array.isArray(players) ? players : [];
-  const a = p[0] || {}, b = p[1] || {};
+  const a = p[0] || {};
+  const b = p[1] || {};
   const sA = [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)];
   const sB = [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)];
   let k = 0;
@@ -29,27 +30,28 @@ function currentSetFromScores(players) {
 export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = true }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const notifiedRef = useRef(new Set()); // for SAFE sound (one-shot)
-  const loggedRef = useRef(new Set());   // for prediction logger (per match srcId)
+  const notifiedRef = useRef(new Set()); // one-shot SAFE sound per match (UI id)
+  const loggedRef = useRef(new Set());   // one-shot log per match (srcId)
 
   async function load() {
     setLoading(true);
     try {
       const base = await fetchTennisLive(); // expect [{...match...}]
 
-      // Keep logger in sync with the raw feed to close finished entries
+      // keep logger in sync so finished entries get closed
       logger.syncWithFeed(Array.isArray(base) ? base : []);
 
-      // Filter out finished
+      // filter out finished matches for UI
       const keep = (Array.isArray(base) ? base : []).filter(
-        m => !isFinishedLike(m.status || m['@status'])
+        (m) => !isFinishedLike(m.status || m['@status'])
       );
 
-      // Enrich with AI
+      // enrich
       const enriched = keep.map((m, idx) => {
         const players = Array.isArray(m.players) ? m.players
                       : Array.isArray(m.player)  ? m.player : [];
-        const p1 = players[0] || {}, p2 = players[1] || {};
+        const p1 = players[0] || {};
+        const p2 = players[1] || {};
         const name1 = p1.name || p1['@name'] || '';
         const name2 = p2.name || p2['@name'] || '';
         const date = m.date || m['@date'] || '';
@@ -61,10 +63,16 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
         const srcId = String(m.id || m['@id'] || `${date}-${time}-${name1}-${name2}`);
         return {
           id: `${srcId}-${idx}`, // UI-unique
-          srcId,                 // stable for logging
-          name1, name2, date, time, status, setNum,
+          srcId,
+          name1,
+          name2,
+          date,
+          time,
+          status,
+          setNum,
           categoryName: m.categoryName || m['@category'] || m.category || '',
-          ai, players,
+          ai,
+          players,
         };
       });
 
@@ -83,7 +91,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
     return () => clearInterval(t);
   }, []);
 
-  // live counter for top bar
+  // live count for top bar
   useEffect(() => {
     const n = rows.reduce((acc, m) => {
       const s = m.status || '';
@@ -109,11 +117,11 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
       const s = m.status || '';
       const live = !!s && !isUpcoming(s) && !isFinishedLike(s);
 
-      // If no AI label yet, show SET or SOON
+      // if AI not ready, show SET / SOON
       if (!label || label === 'PENDING') {
         label = live ? `SET ${m.setNum || 1}` : 'SOON';
       }
-      // Normalize any "SETx" to "SET N"
+      // normalize "SETx" -> "SET N"
       if (typeof label === 'string' && label.startsWith('SET')) {
         const parts = label.split(/\s+/);
         const n = Number(parts[1]) || m.setNum || 1;
@@ -128,7 +136,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
       };
     });
 
-    // Sort: SAFE→RISKY→AVOID→SET 3→2→1→SOON; for live, larger set first
+    // sort groups, then by bigger set for live
     return items.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
       if (a.live && b.live) return (b.setNum || 0) - (a.setNum || 0);
@@ -136,7 +144,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
     });
   }, [rows]);
 
-  // 🔔 SAFE sound (once per match) + ✍️ log SAFE/RISKY once per srcId
+  // SAFE sound (once) + prediction log (once per srcId)
   useEffect(() => {
     list.forEach((m) => {
       if (m.ai?.label === 'SAFE' && !notifiedRef.current.has(m.id)) {
@@ -146,7 +154,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
         }
         notifiedRef.current.add(m.id);
       }
-      if (['SAFE','RISKY'].includes(m.ai?.label) && !loggedRef.current.has(m.srcId)) {
+      if (['SAFE', 'RISKY'].includes(m.ai?.label) && !loggedRef.current.has(m.srcId)) {
         logger.logPrediction({
           id: m.srcId,
           name1: m.name1,
@@ -155,7 +163,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
           label: m.ai.label,
           tip: m.ai.tip,               // plain pick name
           kellyLevel: m.ai.kellyLevel, // HIGH/MED/LOW or null
-          statusAtPick: m.status
+          statusAtPick: m.status,
         });
         loggedRef.current.add(m.srcId);
       }
@@ -164,56 +172,84 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
 
   // ---------- UI helpers ----------
   const Pill = ({ label, kellyLevel }) => {
-    let bg = '#5a5f68', fg = '#fff';
+    let bg = '#5a5f68',
+      fg = '#fff';
     let text = label || '—';
-    if (label === 'SAFE') { bg = '#1fdd73'; text = 'SAFE'; }
-    else if (label === 'RISKY') { bg = '#ffbf0a'; fg = '#151515'; }
-    else if (label === 'AVOID') { bg = '#e53935'; }
-    else if (label && label.startsWith('SET')) { bg = '#6e42c1'; }
-    else if (label === 'SOON') { bg = '#5a5f68'; }
+    if (label === 'SAFE') {
+      bg = '#1fdd73';
+      text = 'SAFE';
+    } else if (label === 'RISKY') {
+      bg = '#ffbf0a';
+      fg = '#151515';
+    } else if (label === 'AVOID') {
+      bg = '#e53935';
+    } else if (label && label.startsWith('SET')) {
+      bg = '#6e42c1';
+    } else if (label === 'SOON') {
+      bg = '#5a5f68';
+    }
 
-    // Kelly dots (●, ●●, ●●●) – only for SAFE/RISKY
     let dots = '';
     if (kellyLevel === 'HIGH') dots = ' ●●●';
     else if (kellyLevel === 'MED') dots = ' ●●';
     else if (kellyLevel === 'LOW') dots = ' ●';
 
     return (
-      <span style={{
-        padding: '10px 14px',
-        borderRadius: 14,
-        fontWeight: 800,
-        background: bg, color: fg, letterSpacing: .5,
-        boxShadow: '0 6px 18px rgba(0,0,0,0.25)',
-        display: 'inline-block', minWidth: 96, textAlign: 'center'
-      }}>{text}{['SAFE','RISKY'].includes(label) ? dots : ''}</span>
+      <span
+        style={{
+          padding: '10px 14px',
+          borderRadius: 14,
+          fontWeight: 800,
+          background: bg,
+          color: fg,
+          letterSpacing: 0.5,
+          boxShadow: '0 6px 18px rgba(0,0,0,0.25)',
+          display: 'inline-block',
+          minWidth: 96,
+          textAlign: 'center',
+        }}
+      >
+        {text}
+        {['SAFE', 'RISKY'].includes(label) ? dots : ''}
+      </span>
     );
   };
 
   const Dot = ({ on }) => (
-    <span style={{
-      width: 10, height: 10, borderRadius: 999, display: 'inline-block',
-      background: on ? '#1fdd73' : '#e53935',
-      boxShadow: on ? '0 0 0 2px rgba(31,221,115,0.25)' : 'none',
-    }} />
+    <span
+      style={{
+        width: 10,
+        height: 10,
+        borderRadius: 999,
+        display: 'inline-block',
+        background: on ? '#1fdd73' : '#e53935',
+        boxShadow: on ? '0 0 0 2px rgba(31,221,115,0.25)' : 'none',
+      }}
+    />
   );
 
+  // ---------- render ----------
   return (
     <div style={{ padding: '12px 14px 24px', color: '#fff' }}>
       {loading && list.length === 0 ? (
-        <div style={{ color: '#cfd3d7', padding: '8px 2px' }}>Loading…</div>
+        <div style={{ color: '#cfd3d7', padding: '8px 2px' }}>Loading...</div>
       ) : null}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {list.map((m) => (
-          <div key={m.id} style={{
-            borderRadius: 18,
-            background: '#1b1e22',
-            border: '1px solid #22272c',
-            boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
-            padding: '14px 16px',
-            display: 'flex', alignItems: 'center', gap: 12,
-          }}>
+          <div
+            key={m.id}
+            style={{
+              borderRadius: 18,
+              background: '#1b1e22',
+              border: '1px solid #22272c',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+              padding: '14px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
             <Dot on={m.live} />
 
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -227,7 +263,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
               </div>
 
               {/* TIP for SAFE/RISKY – plain pick name */}
-              {['SAFE','RISKY'].includes(m.ai?.label) && m.ai?.tip && (
+              {['SAFE', 'RISKY'].includes(m.ai?.label) && m.ai?.tip && (
                 <div style={{ marginTop: 6, fontSize: 13, fontWeight: 800, color: '#1fdd73' }}>
                   TIP: {m.ai.tip}
                 </div>
@@ -239,15 +275,17 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
         ))}
 
         {list.length === 0 && !loading && (
-          <div style={{
-            marginTop: 12,
-            padding: '14px 16px',
-            borderRadius: 12,
-            background: '#121416',
-            border: '1px solid '#22272c',
-            color: '#c7d1dc',
-            fontSize: 13,
-          }}>
+          <div
+            style={{
+              marginTop: 12,
+              padding: '14px 16px',
+              borderRadius: 12,
+              background: '#121416',
+              border: '1px solid #22272c',
+              color: '#c7d1dc',
+              fontSize: 13,
+            }}
+          >
             No matches found (live or upcoming).
           </div>
         )}
