@@ -19,9 +19,8 @@ export default async function fetchTennisLive() {
       const arr = Array.isArray(data?.matches) ? data.matches
                 : Array.isArray(data) ? data : [];
       return arr;
-    } catch (e) {
-      // swallow 500/404/etc and try next without console noise
-      // console.debug('[fetchTennisLive] fallback from', url, e?.message);
+    } catch {
+      // swallow and try next, no console noise
     }
   }
   return [];
