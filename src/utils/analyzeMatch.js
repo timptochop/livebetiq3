@@ -1,9 +1,11 @@
 // src/utils/analyzeMatch.js
 //
-// AI v1.5 – mid-3rd gating + momentum + surface weighting + break-point awareness + Kelly guard
-// Returns { label, tip, pick, kellyLevel, reason }  (no EV/Conf numbers in UI)
+// AI v1.6 — mid-3rd gating + momentum + surface weighting + break-point awareness
+//        + line-movement boost/guard + Kelly guard
+// Returns: { label, tip, pick, kellyLevel, reason }
 
 import { findOddsForPick, guardLabelByKelly } from "./oddsUtils";
+import { updateAndGetMovement, stableMatchId } from "./oddsTracker";
 
 export default function analyzeMatch(match = {}) {
   const players = Array.isArray(match.players)
@@ -11,6 +13,9 @@ export default function analyzeMatch(match = {}) {
     : (Array.isArray(match.player) ? match.player : []);
   const p1 = players[0] || {};
   const p2 = players[1] || {};
+
+  const name1 = p1.name || p1["@name"] || "Player 1";
+  const name2 = p2.name || p2["@name"] || "Player 2";
 
   // --- which set / surface ---
   const setNum = currentSetFromScores(players) ?? setFromStatus(match.status) ?? 0;
@@ -70,27 +75,43 @@ export default function analyzeMatch(match = {}) {
   if (momentumA > 0.8 && curTotal >= 6) ev += 0.002;
   ev += w.evBonus;
 
-  // --- initial label (before Kelly) ---
+  // --- initial label (before movement & Kelly) ---
   let label = "AVOID";
   if (ev > 0.024 && conf > 0.60 && momentumA >= 0) label = "SAFE";
   else if (ev > 0.020 && conf >= 0.56)              label = "RISKY";
 
   // --- pick name (A if overall + momentum ≥ 0 else B) ---
   const leadAgg = (sum(sA) - sum(sB)) + momentumA;
-  const pick = leadAgg >= 0
-    ? (p1.name || p1["@name"] || "Player 1")
-    : (p2.name || p2["@name"] || "Player 2");
+  const pick = (leadAgg >= 0) ? name1 : name2;
 
-  // --- Kelly guard with market odds (if available) ---
+  // --- odds for both, then line movement tracking ---
+  const o1 = findOddsForPick(name1, match?.odds);
+  const o2 = findOddsForPick(name2, match?.odds);
+
+  if (o1 || o2) {
+    const { move1, move2 } = updateAndGetMovement(match, name1, name2, o1, o2);
+    const pickMove = (pick === name1 ? move1 : move2) || 0;
+
+    // movement thresholds (relative change since last snapshot)
+    // +0.05 => ~+5% shorten (good), -0.05 => ~-5% drift (bad)
+    if (pickMove >= 0.05) {
+      if (label === "RISKY" && conf >= 0.60) label = "SAFE";
+    } else if (pickMove <= -0.05) {
+      if (label === "SAFE") label = "RISKY";
+      else if (label === "RISKY") label = "AVOID";
+    }
+  }
+
+  // --- Kelly guard with market odds (final sanity) ---
   let kellyLevel = null;
-  const oddsForPick = findOddsForPick(pick, match?.odds);
+  const oddsForPick = (pick === name1 ? o1 : o2) || findOddsForPick(pick, match?.odds);
   if (typeof conf === "number" && oddsForPick) {
     const { label: guarded, level } = guardLabelByKelly(label, conf, oddsForPick);
     label = guarded;
-    kellyLevel = level; // "LOW" | "MED" | "HIGH" (UI shows ● bullets)
+    kellyLevel = level; // "LOW" | "MED" | "HIGH"
   }
 
-  const reason = `set=${setNum}, curLead=${curLead}, games=${curTotal}, m=${round(momentumA,2)}, surface=${surface||"n/a"}`;
+  const reason = `set=${setNum}, curLead=${curLead}, games=${curTotal}, m=${round(momentumA,2)}, surf=${surface||"n/a"}`;
   return { label, tip: pick, pick, kellyLevel, reason };
 }
 
@@ -105,14 +126,12 @@ function lastPlayedSetIndex(sA, sB){
   for(let i=4;i>=0;i--) if(sA[i]!==null || sB[i]!==null) return i;
   return -1;
 }
-
 function setFromStatus(status){
   const s=String(status||"").toLowerCase();
   const m=s.match(/(?:^|\s)([1-5])(?:st|nd|rd|th)?\s*set|set\s*([1-5])/i);
   if(!m) return null;
   return parseInt(m[1]||m[2],10);
 }
-
 function currentSetFromScores(players){
   const p = Array.isArray(players)?players:[];
   const a = p[0]||{}, b=p[1]||{};
@@ -171,12 +190,11 @@ function breakDeltaForA(serveA, serveB, vA, vB){
   if (vA==null || vB==null) return 0;
   const isBreakForB_whenAserve = (vB===3 && vA<=2) || (vB===4 && vA===3);
   const isBreakForA_whenBserve = (vA===3 && vB<=2) || (vA===4 && vB===3);
-
   let delta = 0;
   if (serveA && isBreakForB_whenAserve) delta -= 0.6; // against A
   if (serveB && isBreakForA_whenBserve) delta += 0.6; // for A
-  if (serveA && vB===3 && vA===0) delta -= 0.2; // 0-40 against A
-  if (serveB && vA===3 && vB===0) delta += 0.2; // 0-40 for A
+  if (serveA && vB===3 && vA===0) delta -= 0.2;
+  if (serveB && vA===3 && vB===0) delta += 0.2;
   return delta;
 }
 
@@ -189,7 +207,6 @@ function isAfterMidThirdSet(players, setNum, match){
   const sB=[n(b.s1),n(b.s2),n(b.s3),n(b.s4),n(b.s5)];
   const idx = lastPlayedSetIndex(sA, sB);
   const curTotal = (sA[idx] ?? 0) + (sB[idx] ?? 0);
-
   if (curTotal >= 4) return true;
 
   const st = String(match?.status || "").toLowerCase();
