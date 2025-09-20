@@ -1,6 +1,5 @@
 // src/utils/fetchTennisLive.js
-// Try predictions first (has AI labels). Fallback to plain live feed.
-// Never throw to the UI; always resolve to an array.
+// Try predictions first; if it 500/throws, fall back to live quietly.
 
 async function getJSON(url) {
   const r = await fetch(url, { cache: 'no-store' });
@@ -10,22 +9,20 @@ async function getJSON(url) {
 
 export default async function fetchTennisLive() {
   const CANDIDATES = [
-    '/api/gs/tennis-predictions', // might 500
-    '/api/gs/tennis-live',        // fallback
+    '/api/gs/tennis-predictions', // AI predictions
+    '/api/gs/tennis-live',        // fallback (no AI / or PENDING)
   ];
 
   for (const url of CANDIDATES) {
     try {
       const data = await getJSON(url);
-      const arr = Array.isArray(data?.matches)
-        ? data.matches
-        : (Array.isArray(data) ? data : []);
-      if (Array.isArray(arr)) return arr;
+      const arr = Array.isArray(data?.matches) ? data.matches
+                : Array.isArray(data) ? data : [];
+      return arr;
     } catch (e) {
-      // keep trying next; just log for visibility
-      // eslint-disable-next-line no-console
-      console.warn('[fetchTennisLive] failed:', url, e?.message || e);
+      // swallow 500/404/etc and try next without console noise
+      // console.debug('[fetchTennisLive] fallback from', url, e?.message);
     }
   }
-  return []; // never propagate failure
+  return [];
 }
