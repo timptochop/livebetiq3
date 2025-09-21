@@ -9,11 +9,12 @@
     "eject": "react-scripts eject"
   },
   "dependencies": {
+    "nanoid": "^4.0.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-scripts": "5.0.1",
-    "web-vitals": "^3.5.2",
-    "nanoid": "^4.0.2"
+    "web-push": "^3.6.7",
+    "web-vitals": "^3.5.2"
   },
   "eslintConfig": {
     "extends": [
