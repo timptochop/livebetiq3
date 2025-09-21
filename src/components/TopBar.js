@@ -1,131 +1,116 @@
 // src/components/TopBar.js
 import React from 'react';
 
+function TennisBallIcon({ size = 18 }) {
+  // simple yellow tennis ball with white seams (inline SVG)
+  const s = size;
+  return (
+    <svg width={s} height={s} viewBox="0 0 24 24" aria-hidden="true" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+      <circle cx="12" cy="12" r="10" fill="#FFD54A" />
+      {/* seams */}
+      <path d="M3.5 9.5c3.5 0 5 1.5 7 3.5s3.5 3.5 7 3.5" stroke="#FFFFFF" strokeWidth="2" fill="none" opacity="0.85"/>
+      <path d="M20.5 14.5c-3.5 0-5-1.5-7-3.5s-3.5-3.5-7-3.5" stroke="#FFFFFF" strokeWidth="2" fill="none" opacity="0.85"/>
+    </svg>
+  );
+}
+
 export default function TopBar({
   liveCount = 0,
-  notificationsOn = false,
-  onToggleNotifications = () => {},
-  audioOn = false,
-  onToggleAudio = () => {},
+  notificationsOn = true,
+  onToggleNotifications,
+  setNotificationsOn, // fallback prop name used in some versions
 }) {
-  const S = {
-    bar: {
-      height: 56,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '0 14px',
-      background: '#0f1115',
-      borderBottom: '1px solid #1d222b',
-      position: 'sticky',
-      top: 0,
-      zIndex: 10,
-    },
-    left: { display: 'flex', alignItems: 'center', gap: 10 },
-    logo: { fontWeight: 800, color: '#e8f0ff', letterSpacing: 0.4, fontSize: 16 },
-    livePill: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 8,
-      padding: '6px 10px',
-      borderRadius: 999,
-      background: '#11161c',
-      border: '1px solid #273142',
-      color: '#c7d1dc',
-      fontSize: 13,
-      fontWeight: 600,
-    },
-    dot: {
-      width: 8, height: 8, borderRadius: 999,
-      background: '#2bd576',
-      boxShadow: '0 0 0 2px rgba(43,213,118,0.15)',
-    },
-    right: { display: 'flex', alignItems: 'center', gap: 10 },
-    iconBtn: (active) => ({
-      width: 36, height: 36,
-      display: 'inline-flex',
-      alignItems: 'center', justifyContent: 'center',
-      borderRadius: 10,
-      background: active ? 'rgba(43,213,118,0.12)' : '#12161c',
-      color: active ? '#2bd576' : '#9fb0c3',
-      border: `1px solid ${active ? 'rgba(43,213,118,0.35)' : '#222c3a'}`,
-      cursor: 'pointer',
-      transition: 'all 120ms ease',
-      userSelect: 'none',
-    }),
-    tooltip: {
-      position: 'absolute',
-      transform: 'translateY(34px)',
-      background: '#0e1217',
-      border: '1px solid #1f2632',
-      color: '#c7d1dc',
-      padding: '4px 8px',
-      borderRadius: 6,
-      fontSize: 12,
-      whiteSpace: 'nowrap',
-      pointerEvents: 'none',
-      opacity: 0.95,
-    },
-    btnWrap: { position: 'relative' }
+  const handleToggle = () => {
+    if (typeof onToggleNotifications === 'function') {
+      onToggleNotifications(!notificationsOn);
+    } else if (typeof setNotificationsOn === 'function') {
+      // support older signature setNotificationsOn(prev => !prev)
+      try {
+        setNotificationsOn((prev) => !prev);
+      } catch {
+        setNotificationsOn(!notificationsOn);
+      }
+    }
   };
 
-  const IconBell = ({ filled=false }) => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path d="M12 3a6 6 0 0 0-6 6v3.1l-1.3 2.4A1 1 0 0 0 5.6 16h12.8a1 1 0 0 0 .9-1.5L18 12.1V9a6 6 0 0 0-6-6Z" stroke="currentColor" strokeWidth="1.6" fill={filled ? 'currentColor' : 'none'} />
-      <path d="M9.5 18a2.5 2.5 0 0 0 5 0" stroke="currentColor" strokeWidth="1.6" />
-    </svg>
-  );
-
-  const IconSpeaker = ({ muted=false }) => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path d="M4 10v4h3l5 4V6L7 10H4Z" stroke="currentColor" strokeWidth="1.6" fill="none"/>
-      {muted ? (
-        <path d="M16 9l4 6M20 9l-4 6" stroke="currentColor" strokeWidth="1.6" />
-      ) : (
-        <>
-          <path d="M16 8c1.5 1.5 1.5 6.5 0 8" stroke="currentColor" strokeWidth="1.6" />
-          <path d="M18.5 6.5c2.6 2.6 2.6 8.4 0 11" stroke="currentColor" strokeWidth="1.6" />
-        </>
-      )}
-    </svg>
-  );
-
   return (
-    <header style={S.bar}>
-      <div style={S.left}>
-        <div style={S.logo}>LIVE<span style={{color:'#2bd576'}}>BET</span> IQ</div>
-        <div style={S.livePill} title="Live matches">
-          <span style={S.dot} />
-          <span style={{opacity:.85}}>LIVE</span>
-          <span style={{fontWeight:800,color:'#e8f0ff'}}>{liveCount}</span>
-        </div>
+    <div
+      style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 50,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '12px 16px',
+        background: '#0f1317',
+        borderBottom: '1px solid #1e242b',
+        boxShadow: '0 8px 22px rgba(0,0,0,0.25)',
+        color: '#e8edf2',
+      }}
+    >
+      {/* Left: logo + title */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 900, letterSpacing: 0.3 }}>
+        <TennisBallIcon size={18} />
+        <span style={{ fontSize: 16 }}>LiveBet IQ</span>
       </div>
 
-      <div style={S.right}>
-        <div style={S.btnWrap}>
-          <button
-            type="button"
-            onClick={onToggleNotifications}
-            style={S.iconBtn(notificationsOn)}
-            aria-label={`Notifications ${notificationsOn ? 'on' : 'off'}`}
-            title={`Notifications ${notificationsOn ? 'ON' : 'OFF'}`}
-          >
-            <IconBell filled={notificationsOn} />
-          </button>
-        </div>
+      {/* Spacer */}
+      <div style={{ flex: 1 }} />
 
-        <div style={S.btnWrap}>
-          <button
-            type="button"
-            onClick={onToggleAudio}
-            style={S.iconBtn(audioOn)}
-            aria-label={`Audio ${audioOn ? 'on' : 'off'}`}
-            title={`Audio ${audioOn ? 'ON' : 'OFF'}`}
-          >
-            <IconSpeaker muted={!audioOn} />
-          </button>
-        </div>
+      {/* Live count pill */}
+      <div
+        title="Live matches right now"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '8px 12px',
+          borderRadius: 999,
+          fontWeight: 800,
+          fontSize: 13,
+          background: '#122017',
+          color: '#25df7a',
+          border: '1px solid rgba(37,223,122,0.25)',
+          boxShadow: '0 6px 18px rgba(0,0,0,0.25)',
+          minWidth: 72,
+          justifyContent: 'center',
+        }}
+      >
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 999,
+            background: '#25df7a',
+            display: 'inline-block',
+            boxShadow: '0 0 0 2px rgba(37,223,122,0.25)',
+          }}
+        />
+        <span>LIVE</span>
+        <span>•</span>
+        <span>{liveCount}</span>
       </div>
-    </header>
+
+      {/* Notifications toggle */}
+      <button
+        onClick={handleToggle}
+        type="button"
+        style={{
+          marginLeft: 12,
+          padding: '8px 12px',
+          borderRadius: 10,
+          background: notificationsOn ? '#1b2a1f' : '#2a1b1b',
+          color: notificationsOn ? '#25df7a' : '#ff7d7d',
+          border: `1px solid ${notificationsOn ? 'rgba(37,223,122,0.25)' : 'rgba(255,125,125,0.25)'}`,
+          fontWeight: 800,
+          cursor: 'pointer',
+          boxShadow: '0 6px 18px rgba(0,0,0,0.25)',
+        }}
+        title={notificationsOn ? 'Notifications: ON' : 'Notifications: OFF'}
+      >
+        {notificationsOn ? '🔔 ON' : '🔕 OFF'}
+      </button>
+    </div>
   );
 }
