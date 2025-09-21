@@ -1,40 +1,35 @@
-// api/push/subscribe.js
-import webpush from 'web-push';
+// CommonJS + manual JSON parse (Vercel Node function)
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    res.status(405).json({ ok: false, error: 'method_not_allowed' });
-    return;
-  }
-
-  try {
-    const { subscription } = req.body || {};
-    if (!subscription) {
-      res.status(400).json({ ok: false, error: 'missing_subscription' });
-      return;
-    }
-
-    const PUBLIC = process.env.VAPID_PUBLIC_KEY || '';
-    const PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
-    const SUBJECT = process.env.VAPID_SUBJECT || 'mailto:admin@example.com';
-
-    if (!PUBLIC || !PRIVATE) {
-      res.status(200).json({ ok: true, info: 'no_vapid_keys_configured' });
-      return;
-    }
-
-    webpush.setVapidDetails(SUBJECT, PUBLIC, PRIVATE);
-
-    // Send a welcome/demo push
-    const payload = JSON.stringify({
-      title: 'LiveBet IQ',
-      body: 'Web Push enabled. You will receive SAFE alerts.',
-      url: '/'
-    });
-
-    await webpush.sendNotification(subscription, payload);
-    res.status(200).json({ ok: true });
-  } catch (e) {
-    res.status(200).json({ ok: false, error: String(e?.message || e) });
-  }
+async function readJson(req) {
+  const chunks = [];
+  for await (const ch of req) chunks.push(ch);
+  const raw = Buffer.concat(chunks).toString("utf8");
+  return raw ? JSON.parse(raw) : {};
 }
+
+module.exports = async (req, res) => {
+  try {
+    if (req.method !== "POST") {
+      res.statusCode = 405;
+      res.setHeader("Content-Type", "application/json");
+      return res.end(JSON.stringify({ ok: false, error: "Method not allowed" }));
+    }
+
+    const { subscription } = await readJson(req);
+    if (!subscription) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      return res.end(JSON.stringify({ ok: false, error: "Missing subscription" }));
+    }
+
+    // Δεν αποθηκεύουμε σε DB εδώ. Απλά επιβεβαιώνουμε.
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ ok: true }));
+  } catch (err) {
+    console.error("subscribe error:", err);
+    res.statusCode = 500;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ ok: false, error: "Server error" }));
+  }
+};

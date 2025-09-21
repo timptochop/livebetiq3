@@ -1,39 +1,48 @@
-// api/push/notify.js
-import webpush from 'web-push';
+// CommonJS + web-push. Στέλνουμε ΣΕ subscription που μας στέλνεις στο body.
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    res.status(405).json({ ok: false, error: 'method_not_allowed' });
-    return;
-  }
+const webpush = require("web-push");
 
-  try {
-    const { subscription, title, body, url } = req.body || {};
-    if (!subscription) {
-      res.status(400).json({ ok: false, error: 'missing_subscription' });
-      return;
-    }
+const PUBLIC = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
+const PRIVATE = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
+const CONTACT = process.env.PUSH_CONTACT || "mailto:tptochop@gmail.com";
 
-    const PUBLIC = process.env.VAPID_PUBLIC_KEY || '';
-    const PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
-    const SUBJECT = process.env.VAPID_SUBJECT || 'mailto:admin@example.com';
-
-    if (!PUBLIC || !PRIVATE) {
-      res.status(200).json({ ok: false, error: 'no_vapid_keys_configured' });
-      return;
-    }
-
-    webpush.setVapidDetails(SUBJECT, PUBLIC, PRIVATE);
-
-    const payload = JSON.stringify({
-      title: title || 'LiveBet IQ',
-      body: body || 'New Alert',
-      url: url || '/'
-    });
-
-    await webpush.sendNotification(subscription, payload);
-    res.status(200).json({ ok: true });
-  } catch (e) {
-    res.status(200).json({ ok: false, error: String(e?.message || e) });
-  }
+if (PUBLIC && PRIVATE) {
+  webpush.setVapidDetails(CONTACT, PUBLIC, PRIVATE);
 }
+
+async function readJson(req) {
+  const chunks = [];
+  for await (const ch of req) chunks.push(ch);
+  const raw = Buffer.concat(chunks).toString("utf8");
+  return raw ? JSON.parse(raw) : {};
+}
+
+module.exports = async (req, res) => {
+  try {
+    if (req.method !== "POST") {
+      res.statusCode = 405;
+      res.setHeader("Content-Type", "application/json");
+      return res.end(JSON.stringify({ ok: false, error: "Method not allowed" }));
+    }
+
+    const { subscription, title = "LiveBet IQ", body = "Push test ✅", url = "/" } = await readJson(req);
+
+    if (!subscription) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      return res.end(JSON.stringify({ ok: false, error: "Missing subscription" }));
+    }
+
+    const payload = JSON.stringify({ title, body, url });
+    await webpush.sendNotification(subscription, payload);
+
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ ok: true }));
+  } catch (err) {
+    console.error("notify error:", err);
+    res.statusCode = 500;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ ok: false, error: err.message || "Server error" }));
+  }
+};
