@@ -1,58 +1,46 @@
-// api/push/notify.js
+// api/push/notify.js (CommonJS + safe JSON parse)
 const webpush = require('web-push');
 
-const PUB = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
-const PRIV = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
-const CONTACT = process.env.PUSH_CONTACT || 'mailto:tptochop@gmail.com';
-
-if (!PUB || !PRIV) {
-  console.warn('[notify] Missing VAPID keys in env');
+function parseJSON(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      try { resolve(body ? JSON.parse(body) : {}); }
+      catch (e) { reject(e); }
+    });
+    req.on('error', reject);
+  });
 }
-webpush.setVapidDetails(CONTACT, PUB, PRIV);
 
 module.exports = async (req, res) => {
+  if (req.method !== 'POST') {
+    res.statusCode = 405;
+    res.setHeader('Allow', 'POST');
+    return res.end('Method Not Allowed');
+  }
   try {
-    if (req.method !== 'POST') {
-      res.setHeader('Allow', 'POST');
-      return res.status(405).json({ ok: false, error: 'Method Not Allowed' });
-    }
-
-    let body = req.body;
-    if (typeof body === 'string') {
-      try { body = JSON.parse(body); } catch {}
-    }
-
-    const {
-      subscription,
-      title = 'LiveBet IQ',
-      body: text = 'New update',
-      url = '/',
-      tag,
-      icon,
-      data
-    } = body || {};
-
+    const { subscription, title = 'LiveBet IQ', body = 'Push test 🔔', url = '/' } = await parseJSON(req);
     if (!subscription || !subscription.endpoint) {
-      return res.status(400).json({ ok: false, error: 'Missing push subscription' });
+      res.statusCode = 400;
+      return res.end('Missing subscription');
     }
 
-    const payload = JSON.stringify({
-      title,
-      body: text,
-      icon: icon || '/icon-192.PNG',     // στο project σου το αρχείο είναι με .PNG
-      badge: '/icon-192.PNG',
-      tag,
-      data: { url, ...(data || {}) }
-    });
+    const { WEB_PUSH_VAPID_PUBLIC_KEY, WEB_PUSH_VAPID_PRIVATE_KEY, PUSH_CONTACT } = process.env;
+    if (!WEB_PUSH_VAPID_PUBLIC_KEY || !WEB_PUSH_VAPID_PRIVATE_KEY || !PUSH_CONTACT) {
+      res.statusCode = 500;
+      return res.end('Missing VAPID envs');
+    }
+    webpush.setVapidDetails(PUSH_CONTACT, WEB_PUSH_VAPID_PUBLIC_KEY, WEB_PUSH_VAPID_PRIVATE_KEY);
 
-    const result = await webpush.sendNotification(subscription, payload, { TTL: 30 });
+    const payload = JSON.stringify({ title, body, url });
+    await webpush.sendNotification(subscription, payload);
 
-    return res.status(200).json({ ok: true, status: result?.statusCode ?? 201 });
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ ok: true }));
   } catch (err) {
-    console.error('[notify] error', err);
-    return res.status(500).json({
-      ok: false,
-      error: err?.body || err?.message || 'server_error'
-    });
+    res.statusCode = 500;
+    res.end('ERR: ' + err.message);
   }
 };
