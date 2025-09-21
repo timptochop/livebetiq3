@@ -1,52 +1,58 @@
-// CommonJS + web-push
+// api/push/notify.js
+const webpush = require('web-push');
 
-const webpush = require("web-push");
+const PUB = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
+const PRIV = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
+const CONTACT = process.env.PUSH_CONTACT || 'mailto:tptochop@gmail.com';
 
-const PUBLIC  = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
-const PRIVATE = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
-const CONTACT = process.env.PUSH_CONTACT || "mailto:tptochop@gmail.com";
-
-function ensureVapid() {
-  if (!PUBLIC || !PRIVATE) {
-    throw new Error("Missing VAPID keys (check Vercel env vars)");
-  }
-  webpush.setVapidDetails(CONTACT, PUBLIC, PRIVATE);
+if (!PUB || !PRIV) {
+  console.warn('[notify] Missing VAPID keys in env');
 }
-
-async function readJson(req) {
-  const chunks = [];
-  for await (const ch of req) chunks.push(ch);
-  const raw = Buffer.concat(chunks).toString("utf8");
-  return raw ? JSON.parse(raw) : {};
-}
+webpush.setVapidDetails(CONTACT, PUB, PRIV);
 
 module.exports = async (req, res) => {
   try {
-    if (req.method !== "POST") {
-      res.statusCode = 405;
-      res.setHeader("Content-Type", "application/json");
-      return res.end(JSON.stringify({ ok: false, error: "Method not allowed" }));
+    if (req.method !== 'POST') {
+      res.setHeader('Allow', 'POST');
+      return res.status(405).json({ ok: false, error: 'Method Not Allowed' });
     }
 
-    ensureVapid();
-
-    const { subscription, title = "LiveBet IQ", body = "Push test ✅", url = "/" } = await readJson(req);
-    if (!subscription) {
-      res.statusCode = 400;
-      res.setHeader("Content-Type", "application/json");
-      return res.end(JSON.stringify({ ok: false, error: "Missing subscription" }));
+    let body = req.body;
+    if (typeof body === 'string') {
+      try { body = JSON.parse(body); } catch {}
     }
 
-    const payload = JSON.stringify({ title, body, url });
-    await webpush.sendNotification(subscription, payload);
+    const {
+      subscription,
+      title = 'LiveBet IQ',
+      body: text = 'New update',
+      url = '/',
+      tag,
+      icon,
+      data
+    } = body || {};
 
-    res.statusCode = 200;
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ ok: true }));
+    if (!subscription || !subscription.endpoint) {
+      return res.status(400).json({ ok: false, error: 'Missing push subscription' });
+    }
+
+    const payload = JSON.stringify({
+      title,
+      body: text,
+      icon: icon || '/icon-192.PNG',     // στο project σου το αρχείο είναι με .PNG
+      badge: '/icon-192.PNG',
+      tag,
+      data: { url, ...(data || {}) }
+    });
+
+    const result = await webpush.sendNotification(subscription, payload, { TTL: 30 });
+
+    return res.status(200).json({ ok: true, status: result?.statusCode ?? 201 });
   } catch (err) {
-    console.error("notify error:", err);
-    res.statusCode = 500;
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ ok: false, error: err.message || "Server error" }));
+    console.error('[notify] error', err);
+    return res.status(500).json({
+      ok: false,
+      error: err?.body || err?.message || 'server_error'
+    });
   }
 };

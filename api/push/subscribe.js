@@ -1,35 +1,40 @@
-// CommonJS + safe JSON parse
+// api/push/subscribe.js
+const webpush = require('web-push');
 
-async function readJson(req) {
-  const chunks = [];
-  for await (const ch of req) chunks.push(ch);
-  const raw = Buffer.concat(chunks).toString("utf8");
-  return raw ? JSON.parse(raw) : {};
+const PUB = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
+const PRIV = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
+const CONTACT = process.env.PUSH_CONTACT || 'mailto:tptochop@gmail.com';
+
+if (!PUB || !PRIV) {
+  console.warn('[subscribe] Missing VAPID keys in env');
 }
+webpush.setVapidDetails(CONTACT, PUB, PRIV);
 
 module.exports = async (req, res) => {
   try {
-    if (req.method !== "POST") {
-      res.statusCode = 405;
-      res.setHeader("Content-Type", "application/json");
-      return res.end(JSON.stringify({ ok: false, error: "Method not allowed" }));
+    if (req.method !== 'POST') {
+      res.setHeader('Allow', 'POST');
+      return res.status(405).json({ ok: false, error: 'Method Not Allowed' });
     }
 
-    const { subscription } = await readJson(req);
-    if (!subscription) {
-      res.statusCode = 400;
-      res.setHeader("Content-Type", "application/json");
-      return res.end(JSON.stringify({ ok: false, error: "Missing subscription" }));
+    let body = req.body;
+    if (typeof body === 'string') {
+      try { body = JSON.parse(body); } catch {}
+    }
+    const sub = body && body.subscription;
+
+    if (!sub || !sub.endpoint) {
+      return res.status(400).json({ ok: false, error: 'Missing push subscription' });
     }
 
-    // εδώ απλά απαντάμε OK (δεν κρατάμε DB στο demo)
-    res.statusCode = 200;
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ ok: true }));
+    // Δεν αποθηκεύουμε server-side (serverless). Ο client θα ξαναστέλνει το sub όπου χρειάζεται.
+    return res.status(200).json({
+      ok: true,
+      received: true,
+      endpointTail: sub.endpoint.slice(-16)
+    });
   } catch (err) {
-    console.error("subscribe error:", err);
-    res.statusCode = 500;
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ ok: false, error: "Server error" }));
+    console.error('[subscribe] error', err);
+    return res.status(500).json({ ok: false, error: err?.message || 'server_error' });
   }
 };
