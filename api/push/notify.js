@@ -1,12 +1,15 @@
-// CommonJS + web-push. Στέλνουμε ΣΕ subscription που μας στέλνεις στο body.
+// CommonJS + web-push
 
 const webpush = require("web-push");
 
-const PUBLIC = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
+const PUBLIC  = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
 const PRIVATE = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
 const CONTACT = process.env.PUSH_CONTACT || "mailto:tptochop@gmail.com";
 
-if (PUBLIC && PRIVATE) {
+function ensureVapid() {
+  if (!PUBLIC || !PRIVATE) {
+    throw new Error("Missing VAPID keys (check Vercel env vars)");
+  }
   webpush.setVapidDetails(CONTACT, PUBLIC, PRIVATE);
 }
 
@@ -25,8 +28,9 @@ module.exports = async (req, res) => {
       return res.end(JSON.stringify({ ok: false, error: "Method not allowed" }));
     }
 
-    const { subscription, title = "LiveBet IQ", body = "Push test ✅", url = "/" } = await readJson(req);
+    ensureVapid();
 
+    const { subscription, title = "LiveBet IQ", body = "Push test ✅", url = "/" } = await readJson(req);
     if (!subscription) {
       res.statusCode = 400;
       res.setHeader("Content-Type", "application/json");

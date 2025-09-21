@@ -1,4 +1,4 @@
-// CommonJS + manual JSON parse (Vercel Node function)
+// CommonJS + safe JSON parse
 
 async function readJson(req) {
   const chunks = [];
@@ -22,7 +22,7 @@ module.exports = async (req, res) => {
       return res.end(JSON.stringify({ ok: false, error: "Missing subscription" }));
     }
 
-    // Δεν αποθηκεύουμε σε DB εδώ. Απλά επιβεβαιώνουμε.
+    // εδώ απλά απαντάμε OK (δεν κρατάμε DB στο demo)
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ ok: true }));
