@@ -1,6 +1,13 @@
 // src/utils/predictionLogger.js
-// Client-side logger for SAFE/RISKY picks + outcome when match finishes.
-// Stores in localStorage. No UI changes.
+//
+// Client-side prediction logger (localStorage).
+// - Default export: `logger` with read/clear/logPrediction/syncWithFeed/exportCSV
+// - Named exports (shims) to keep older imports working:
+//     { event }              -> calls logPrediction() with a forgiving payload
+//     { trackPrediction }    -> alias of logPrediction()
+//     { sync }               -> alias of syncWithFeed()
+//     { logs }               -> alias of read()
+//     { reset }              -> alias of clear()
 
 const KEY = 'lbq_logs_v1';
 
@@ -17,27 +24,28 @@ function writeAll(arr) {
   try { localStorage.setItem(KEY, JSON.stringify(arr)); } catch {}
 }
 
+// Winner extraction from GoalServe-like objects
 function extractWinnerNameFromMatch(m) {
-  const players = Array.isArray(m?.players) ? m.players
-                : Array.isArray(m?.player)  ? m.player : [];
+  const players = Array.isArray(m.players) ? m.players : (Array.isArray(m.player) ? m.player : []);
   if (players.length >= 2) {
     for (const p of players) {
-      const w = (p?.winner ?? p?.['@winner'] ?? p?.won ?? p?.['@won'] ?? '')
+      const w = (p.winner ?? p['@winner'] ?? p.won ?? p['@won'] ?? '')
         .toString().toLowerCase();
-      if (w === 'true' || w === '1') return p?.name || p?.['@name'] || null;
+      if (w === 'true' || w === '1') return p.name || p['@name'] || null;
     }
   }
-  const topWinner = m?.winner ?? m?.['@winner'];
+  const topWinner = m.winner ?? m['@winner'];
   if (topWinner) return String(topWinner);
   return null;
 }
 
+// Stable-ish id from feed
 function getSrcId(m) {
-  const a = m?.id ?? m?.['@id'];
+  const a = m.id ?? m['@id'];
   if (a) return String(a);
-  const date = m?.date ?? m?.['@date'] ?? '';
-  const time = m?.time ?? m?.['@time'] ?? '';
-  const p = Array.isArray(m?.players) ? m.players : Array.isArray(m?.player) ? m.player : [];
+  const date = m.date ?? m['@date'] ?? '';
+  const time = m.time ?? m['@time'] ?? '';
+  const p = Array.isArray(m.players) ? m.players : (Array.isArray(m.player) ? m.player : []);
   const p1 = p[0]?.name || p[0]?.['@name'] || '';
   const p2 = p[1]?.name || p[1]?.['@name'] || '';
   return `${date}-${time}-${p1}-${p2}`;
@@ -45,11 +53,14 @@ function getSrcId(m) {
 
 const logger = {
   read: () => readAll(),
+
   clear: () => writeAll([]),
 
   logPrediction: ({ id, name1, name2, setNum, label, tip, kellyLevel, statusAtPick }) => {
     if (!id || !label) return;
     const rows = readAll();
+
+    // avoid duplicate open record for same match
     const hasOpen = rows.some(r => r.id === id && !r.closedAt);
     if (hasOpen) return;
 
@@ -63,23 +74,21 @@ const logger = {
       tip: tip || null,
       kellyLevel: kellyLevel || null,
       statusAtPick: statusAtPick || '',
-      result: null, // 'HIT' | 'MISS'
+      result: null,      // 'HIT' | 'MISS'
       winner: null,
-      closedAt: null,
+      closedAt: null
     });
     writeAll(rows);
   },
 
-  // Defensive: ignore non-objects/nulls; early return on empty
+  // feed sync to close finished matches with outcome
   syncWithFeed: (feedArray) => {
-    const feed = Array.isArray(feedArray) ? feedArray.filter(m => m && typeof m === 'object') : [];
-    if (feed.length === 0) return;
-
+    if (!Array.isArray(feedArray) || feedArray.length === 0) return;
     const rows = readAll();
     if (rows.length === 0) return;
 
     const idx = new Map();
-    for (const m of feed) idx.set(getSrcId(m), m);
+    for (const m of feedArray) idx.set(getSrcId(m), m);
 
     let changed = false;
     for (const r of rows) {
@@ -87,8 +96,8 @@ const logger = {
       const m = idx.get(r.id);
       if (!m) continue;
 
-      const status = String(m?.status || m?.['@status'] || '').toLowerCase();
-      const finished = ['finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over'].includes(status);
+      const status = String(m.status || m['@status'] || '').toLowerCase();
+      const finished = ['finished','cancelled','retired','abandoned','postponed','walk over'].includes(status);
       if (!finished) continue;
 
       const winnerName = extractWinnerNameFromMatch(m);
@@ -107,6 +116,55 @@ const logger = {
 
     if (changed) writeAll(rows);
   },
+
+  exportCSV: () => {
+    const rows = readAll();
+    const headers = [
+      'ts','id','name1','name2','setNum','label','tip','kellyLevel','statusAtPick','result','winner','closedAt'
+    ];
+    const lines = [headers.join(',')];
+
+    for (const r of rows) {
+      const vals = headers.map(h => {
+        const v = r[h] ?? '';
+        const s = String(v).replace(/"/g, '""'); // CSV escape
+        return `"${s}"`;
+      });
+      lines.push(vals.join(','));
+    }
+    const csv = lines.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const dataUrl = URL.createObjectURL(blob);
+    const filename = `lbq_logs_${Date.now()}.csv`;
+    return { filename, dataUrl };
+  }
 };
 
 export default logger;
+
+/* ===== Named exports (compat shims) ===== */
+
+// Older code may do: import { event as log } from './utils/predictionLogger'
+export function event(payload = {}) {
+  // Try to map a generic payload into logPrediction shape
+  const id = payload.id || payload.srcId || payload.matchId || null;
+  const name1 = payload.name1 || payload.p1 || payload.home || '';
+  const name2 = payload.name2 || payload.p2 || payload.away || '';
+  const setNum = payload.setNum ?? payload.set ?? null;
+  const label = payload.label || payload.tag || payload.type || '';
+  const tip = payload.tip || payload.pick || payload.target || null;
+  const kellyLevel = payload.kellyLevel || payload.kelly || null;
+  const statusAtPick = payload.statusAtPick || payload.status || '';
+
+  try {
+    logger.logPrediction({ id, name1, name2, setNum, label, tip, kellyLevel, statusAtPick });
+  } catch (e) {
+    // swallow
+  }
+}
+
+// Convenience aliases
+export const trackPrediction = (p) => logger.logPrediction(p);
+export const sync  = (feed) => logger.syncWithFeed(feed);
+export const logs  = () => logger.read();
+export const reset = () => logger.clear();
