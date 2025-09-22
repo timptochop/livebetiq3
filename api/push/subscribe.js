@@ -1,31 +1,15 @@
 // api/push/subscribe.js
 export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   try {
-    if (req.method !== 'POST') {
-      res.status(405).send('Method Not Allowed'); return;
-    }
-    const body = await readJSON(req);
-    const { subscription } = body || {};
-    if (!subscription || !subscription.endpoint) {
-      res.status(400).send('Missing subscription'); return;
-    }
-    // εδώ θα το έγραφες σε DB αν θες. Για τώρα απλά OK
-    res.setHeader('Content-Type','application/json');
-    res.status(200).send(JSON.stringify({ ok: true }));
-  } catch (err) {
-    console.error('subscribe error:', err);
-    res.status(500).send('ERR: ' + (err?.message || 'unknown'));
-  }
-}
+    const raw = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const sub = raw?.subscription;
+    if (!sub) return res.status(400).json({ error: 'Missing subscription' });
 
-function readJSON(req) {
-  return new Promise((resolve, reject) => {
-    let data = '';
-    req.on('data', c => (data += c));
-    req.on('end', () => {
-      try { resolve(JSON.parse(data || '{}')); }
-      catch (e) { reject(e); }
-    });
-    req.on('error', reject);
-  });
+    // Εδώ απλώς επιβεβαιώνουμε ότι το πήραμε (δεν αποθηκεύουμε DB προς το παρόν)
+    return res.status(200).json({ ok: true, received: sub.endpoint ? 'ok' : 'no-endpoint' });
+  } catch (e) {
+    console.error('subscribe error:', e);
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
 }
