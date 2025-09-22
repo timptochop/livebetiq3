@@ -1,7 +1,10 @@
 {
   "name": "livebetiq3",
-  "version": "0.97.6",
+  "version": "0.97.7",
   "private": true,
+  "engines": {
+    "node": "18.x"
+  },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
