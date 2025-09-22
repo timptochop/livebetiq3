@@ -1,39 +1,34 @@
 // api/push/send.js
 import webpush from 'web-push';
 
-const PUB  = process.env.VAPID_PUBLIC_KEY || process.env.REACT_APP_VAPID_PUBLIC_KEY;
-const PRIV = process.env.VAPID_PRIVATE_KEY;
-const SUBJ = process.env.VAPID_SUBJECT || 'mailto:admin@example.com';
+const contact = process.env.PUSH_CONTACT;
+const pub     = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
+const priv    = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
 
-if (PUB && PRIV) {
-  webpush.setVapidDetails(SUBJ, PUB, PRIV);
-}
+webpush.setVapidDetails(contact, pub, priv);
 
 export default async function handler(req, res) {
-  try {
-    if (req.method !== 'POST') {
-      res.status(405).json({ ok: false, error: 'Method Not Allowed' });
-      return;
-    }
-    if (!PUB || !PRIV) {
-      res.status(500).json({ ok: false, error: 'Missing VAPID keys' });
-      return;
-    }
+  if (!globalThis.__PUSH_STORE) globalThis.__PUSH_STORE = new Map();
+  const subs = [...globalThis.__PUSH_STORE.values()];
 
-    // Vercel parses JSON automatically when header is application/json
-    const { subscription, title, body, url } = req.body || {};
-    if (!subscription) {
-      res.status(400).json({ ok: false, error: 'Missing subscription' });
-      return;
+  const payload = req.body?.payload || {
+    title: 'LiveBet IQ',
+    body:  'Test push ✅',
+    tag:   'livebetiq:test',
+    url:   '/'
+  };
+
+  const results = await Promise.all(subs.map(async (s) => {
+    try {
+      await webpush.sendNotification(s, JSON.stringify(payload));
+      return { ok: true, endpoint: s.endpoint };
+    } catch (e) {
+      if (e.statusCode === 410 || e.statusCode === 404) {
+        globalThis.__PUSH_STORE.delete(s.endpoint); // καθάρισμα
+      }
+      return { ok:false, endpoint:s.endpoint, error:e.message };
     }
+  }));
 
-    await webpush.sendNotification(
-      subscription,
-      JSON.stringify({ title: title || 'LiveBet IQ', body: body || 'SAFE detected', url: url || '/' })
-    );
-
-    res.status(201).json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e?.message || 'push_failed' });
-  }
+  res.json({ sent: results.filter(r=>r.ok).length, total: subs.length, results });
 }
