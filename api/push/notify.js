@@ -1,86 +1,51 @@
-// Στέλνει push σε ΜΙΑ subscription που δίνεται στο body
-// Body: { subscription, title, body, url }
-// Απαιτεί env: WEB_PUSH_VAPID_PUBLIC_KEY, WEB_PUSH_VAPID_PRIVATE_KEY, PUSH_CONTACT
+const webpush = require('web-push');
 
-function ok(res, code, data) {
-  res.statusCode = code;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify(data));
-}
-function bad(res, code, message, details) {
-  ok(res, code, { ok: false, code, message, details: details || null });
-}
-function allowCors(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-}
+const VAPID_PUBLIC  = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
+const VAPID_PRIVATE = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
+const CONTACT       = process.env.PUSH_CONTACT || 'mailto:admin@example.com';
 
-async function readJson(req) {
-  return new Promise((resolve, reject) => {
-    let raw = '';
-    req.on('data', c => (raw += c));
+// set once (αν λείπουν envs, θα ρίξει στο sendNotification)
+try { if (VAPID_PUBLIC && VAPID_PRIVATE) {
+  webpush.setVapidDetails(CONTACT, VAPID_PUBLIC, VAPID_PRIVATE);
+}} catch {}
+
+const parseJson = (req) =>
+  new Promise((resolve) => {
+    let data = '';
+    req.on('data', (c) => (data += c));
     req.on('end', () => {
-      try {
-        resolve(raw ? JSON.parse(raw) : {});
-      } catch {
-        reject(new Error('ERR_BAD_JSON'));
-      }
+      try { resolve(JSON.parse(data || '{}')); } catch { resolve({}); }
     });
-    req.on('error', reject);
   });
-}
 
-export default async function handler(req, res) {
-  allowCors(res);
-  if (req.method === 'OPTIONS') return ok(res, 204, { ok: true });
-  if (req.method !== 'POST') return bad(res, 405, 'Method Not Allowed');
-
-  const PUB = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
-  const PRIV = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
-  const CONTACT = process.env.PUSH_CONTACT;
-
-  if (!PUB || !PRIV || !CONTACT) {
-    return bad(res, 500, 'Missing VAPID envs', {
-      have: { PUB: !!PUB, PRIV: !!PRIV, CONTACT: !!CONTACT }
-    });
+module.exports = async (req, res) => {
+  if (req.method === 'OPTIONS') { res.statusCode = 204; return res.end(); }
+  if (req.method !== 'POST') {
+    res.statusCode = 405;
+    res.setHeader('Allow', 'POST, OPTIONS');
+    return res.end('Method Not Allowed');
   }
 
   try {
-    const { subscription, title, body, url } = await readJson(req);
+    const body = (req.body && Object.keys(req.body).length) ? req.body : await parseJson(req);
+    const { subscription, title, body: text, url } = body || {};
     if (!subscription || !subscription.endpoint) {
-      return bad(res, 400, 'Invalid subscription payload');
+      res.statusCode = 400; return res.end('No subscription');
     }
-
-    const webpush = (await import('web-push')).default;
-    webpush.setVapidDetails(CONTACT, PUB, PRIV);
 
     const payload = JSON.stringify({
       title: title || 'LiveBet IQ',
-      body: body || 'Test push',
-      data: { url: url || '/' }
+      body:  text  || 'Push',
+      url:   url   || '/'
     });
 
-    const start = Date.now();
-    const result = await webpush.sendNotification(subscription, payload);
-    const ms = Date.now() - start;
-
-    // result.statusCode μπορεί να είναι 201. Αν 410 => expired
-    return ok(res, 200, {
-      ok: true,
-      statusCode: result.statusCode || 200,
-      elapsedMs: ms
-    });
-  } catch (err) {
-    // χειρισμός γνωστών περιπτώσεων
-    const e = err || {};
-    const detail = {
-      name: e.name,
-      message: e.message,
-      statusCode: e.statusCode,
-      headers: e.headers
-    };
-    const code = e.statusCode === 410 ? 410 : 500;
-    return bad(res, code, 'Notify failed', detail);
+    const rsp = await webpush.sendNotification(subscription, payload);
+    res.setHeader('Content-Type', 'application/json');
+    // web-push συνήθως δεν επιστρέφει body, αλλά κρατάμε status αν υπάρχει
+    return res.end(JSON.stringify({ ok: true, statusCode: rsp && rsp.statusCode || 201 }));
+  } catch (e) {
+    // π.χ. 410 = Gone (άκυρο subscription), 400 = VAPID error, αλλιώς 500
+    res.statusCode = e && e.statusCode ? e.statusCode : 500;
+    return res.end(String(e && (e.body || e.message) || e));
   }
-}
+};

@@ -1,56 +1,36 @@
-// Node 22 (CJS-compatible) – Vercel Serverless Function
-// Stores/validates a subscription. Εδώ για demo επιστρέφουμε ok.
-// Αν θες persistence, πρόσθεσε DB/KV.
-
-function ok(res, code, data) {
-  res.statusCode = code;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify(data));
-}
-function bad(res, code, message, details) {
-  ok(res, code, { ok: false, code, message, details: details || null });
-}
-function allowCors(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-}
-
-async function readJson(req) {
-  return new Promise((resolve, reject) => {
-    let raw = '';
-    req.on('data', c => (raw += c));
+// CommonJS για Vercel Node runtime
+const parseJson = (req) =>
+  new Promise((resolve) => {
+    let data = '';
+    req.on('data', (c) => (data += c));
     req.on('end', () => {
-      try {
-        resolve(raw ? JSON.parse(raw) : {});
-      } catch (e) {
-        reject(new Error('ERR_BAD_JSON'));
-      }
+      try { resolve(JSON.parse(data || '{}')); } catch { resolve({}); }
     });
-    req.on('error', reject);
   });
-}
 
-export default async function handler(req, res) {
-  allowCors(res);
-  if (req.method === 'OPTIONS') return ok(res, 204, { ok: true });
-
-  if (req.method !== 'POST') return bad(res, 405, 'Method Not Allowed');
+module.exports = async (req, res) => {
+  // Προαιρετικό preflight
+  if (req.method === 'OPTIONS') { res.statusCode = 204; return res.end(); }
+  if (req.method !== 'POST') {
+    res.statusCode = 405;
+    res.setHeader('Allow', 'POST, OPTIONS');
+    return res.end('Method Not Allowed');
+  }
 
   try {
-    const body = await readJson(req);
+    // Σε Vercel μπορεί να ΜΗΝ υπάρχει αυτόματο parsing — το κάνουμε safe
+    const body = (req.body && Object.keys(req.body).length) ? req.body : await parseJson(req);
     const sub = body && body.subscription;
-
-    // very light validation
-    if (!sub || typeof sub !== 'object' || !sub.endpoint) {
-      return bad(res, 400, 'Invalid subscription payload');
+    if (!sub || !sub.endpoint) {
+      res.statusCode = 400;
+      return res.end('No subscription');
     }
 
-    // (προαιρετικά) αποθήκευση sub σε DB/KV εδώ.
-
-    return ok(res, 200, { ok: true, message: 'subscription stored' });
-  } catch (err) {
-    const message = err && err.message ? err.message : 'Internal';
-    return bad(res, 500, 'Subscribe failed', { message });
+    // (εδώ θα έκανες persist σε DB – προς το παρόν απλώς απαντάμε OK)
+    res.setHeader('Content-Type', 'application/json');
+    return res.end(JSON.stringify({ ok: true, endpoint: sub.endpoint.slice(0, 40) + '…' }));
+  } catch (e) {
+    res.statusCode = 500;
+    return res.end('ERR ' + (e && e.message ? e.message : String(e)));
   }
-}
+};
