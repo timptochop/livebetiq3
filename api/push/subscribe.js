@@ -1,36 +1,25 @@
-// CommonJS για Vercel Node runtime
-const parseJson = (req) =>
-  new Promise((resolve) => {
-    let data = '';
-    req.on('data', (c) => (data += c));
-    req.on('end', () => {
-      try { resolve(JSON.parse(data || '{}')); } catch { resolve({}); }
-    });
-  });
+export default async function handler(req, res) {
+  // CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.status(204).end();
 
-module.exports = async (req, res) => {
-  // Προαιρετικό preflight
-  if (req.method === 'OPTIONS') { res.statusCode = 204; return res.end(); }
   if (req.method !== 'POST') {
-    res.statusCode = 405;
-    res.setHeader('Allow', 'POST, OPTIONS');
-    return res.end('Method Not Allowed');
+    return res.status(405).json({ ok: false, error: 'Method not allowed' });
   }
 
   try {
-    // Σε Vercel μπορεί να ΜΗΝ υπάρχει αυτόματο parsing — το κάνουμε safe
-    const body = (req.body && Object.keys(req.body).length) ? req.body : await parseJson(req);
-    const sub = body && body.subscription;
-    if (!sub || !sub.endpoint) {
-      res.statusCode = 400;
-      return res.end('No subscription');
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const sub = body?.subscription;
+    if (!sub?.endpoint) {
+      return res.status(400).json({ ok: false, error: 'No subscription' });
     }
 
-    // (εδώ θα έκανες persist σε DB – προς το παρόν απλώς απαντάμε OK)
-    res.setHeader('Content-Type', 'application/json');
-    return res.end(JSON.stringify({ ok: true, endpoint: sub.endpoint.slice(0, 40) + '…' }));
+    // (Προαιρετικά: αποθήκευση σε DB). Προς το παρόν απλώς OK.
+    return res.status(200).json({ ok: true });
   } catch (e) {
-    res.statusCode = 500;
-    return res.end('ERR ' + (e && e.message ? e.message : String(e)));
+    console.error('subscribe error:', e);
+    return res.status(500).json({ ok: false, error: e?.message || 'subscribe failed' });
   }
-};
+}
