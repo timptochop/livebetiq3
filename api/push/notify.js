@@ -1,10 +1,10 @@
+// api/push/notify.js
 export default async function handler(req, res) {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(204).end();
-
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'Method not allowed' });
   }
@@ -20,13 +20,12 @@ export default async function handler(req, res) {
       return res.status(400).json({ ok: false, error: 'No subscription' });
     }
 
-    // ✅ ESM dynamic import (όχι require)
+    // ESM dynamic import για web-push (παίζει σωστά σε Vercel/Node 22)
     const { default: webPush } = await import('web-push');
 
     const contact = process.env.PUSH_CONTACT || 'mailto:you@example.com';
     const pub = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
     const priv = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
-
     if (!pub || !priv) {
       return res.status(500).json({ ok: false, error: 'Missing VAPID envs' });
     }
