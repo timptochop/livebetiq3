@@ -20,8 +20,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ ok: false, error: 'No subscription' });
     }
 
-    // Lazy require για να μην σπάει το bundling
-    const webPush = require('web-push');
+    // ✅ ESM dynamic import (όχι require)
+    const { default: webPush } = await import('web-push');
 
     const contact = process.env.PUSH_CONTACT || 'mailto:you@example.com';
     const pub = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
@@ -36,10 +36,15 @@ export default async function handler(req, res) {
     const payload = JSON.stringify({ title, body: message, url });
     const result = await webPush.sendNotification(sub, payload);
 
-    return res.status(200).json({ ok: true, id: result && result.headers ? result.headers.get?.('x-vercel-id') : null });
+    return res.status(200).json({
+      ok: true,
+      status: result?.statusCode || 200
+    });
   } catch (e) {
     console.error('notify error:', e);
-    // Το web-push πολλές φορές έχει e.body με λεπτομέρειες
-    return res.status(500).json({ ok: false, error: e?.body || e?.message || 'notify failed' });
+    return res.status(500).json({
+      ok: false,
+      error: e?.body || e?.message || 'notify failed'
+    });
   }
 }
