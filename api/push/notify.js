@@ -1,7 +1,9 @@
-// api/push/notify.js
+'use strict';
+
+// CommonJS import για να αποφύγουμε ESM interop θέματα
 const webPush = require('web-push');
 
-module.exports = async (req, res) => {
+module.exports = async function notifyHandler(req, res) {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
@@ -14,20 +16,18 @@ module.exports = async (req, res) => {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const sub = body && body.subscription;
+    const title = (body && body.title) || 'LiveBet IQ';
+    const message = (body && body.body) || 'Hello 👋';
+    const url = (body && body.url) || '/';
 
-    const sub = body?.subscription;
-    const title = body?.title || 'LiveBet IQ';
-    const message = body?.body || 'Hello 👋';
-    const url = body?.url || '/';
-
-    if (!sub?.endpoint) {
+    if (!sub || !sub.endpoint) {
       return res.status(400).json({ ok: false, error: 'No subscription' });
     }
 
     const contact = process.env.PUSH_CONTACT || 'mailto:you@example.com';
     const pub = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
     const priv = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
-
     if (!pub || !priv) {
       return res.status(500).json({ ok: false, error: 'Missing VAPID envs' });
     }
@@ -37,9 +37,15 @@ module.exports = async (req, res) => {
     const payload = JSON.stringify({ title, body: message, url });
     const result = await webPush.sendNotification(sub, payload);
 
-    return res.status(200).json({ ok: true, status: result?.statusCode || 200 });
+    return res.status(200).json({
+      ok: true,
+      status: result && result.statusCode ? result.statusCode : 200,
+    });
   } catch (e) {
     console.error('notify error:', e);
-    return res.status(500).json({ ok: false, error: e?.body || e?.message || 'notify failed' });
+    return res.status(500).json({
+      ok: false,
+      error: (e && (e.body || e.message)) || 'notify failed',
+    });
   }
 };
