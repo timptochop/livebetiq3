@@ -1,6 +1,4 @@
-'use strict';
-
-module.exports = (req, res) => {
+module.exports = async function handler(req, res) {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
@@ -11,14 +9,17 @@ module.exports = (req, res) => {
     return res.status(405).json({ ok: false, error: 'Method not allowed' });
   }
 
-  // echo για διάγνωση
-  const isString = typeof req.body === 'string';
-  let body = req.body;
-  try { if (isString) body = JSON.parse(req.body); } catch (_) {}
+  try {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const sub = body && body.subscription;
+    if (!sub || !sub.endpoint) {
+      return res.status(400).json({ ok: false, error: 'No subscription' });
+    }
 
-  return res.status(200).json({
-    ok: true,
-    typeofBody: typeof req.body,
-    body
-  });
+    // εδώ θα έκανες persist σε DB – προς το παρόν απλά OK
+    return res.status(200).json({ ok: true, saved: true });
+  } catch (e) {
+    console.error('subscribe error:', e);
+    return res.status(500).json({ ok: false, error: e.message || 'subscribe failed' });
+  }
 };

@@ -1,8 +1,6 @@
-'use strict';
-
 const webPush = require('web-push');
 
-module.exports = async (req, res) => {
+module.exports = async function handler(req, res) {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
@@ -15,18 +13,24 @@ module.exports = async (req, res) => {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const sub = body?.subscription;
+    const sub = body && body.subscription;
     const title = body?.title || 'LiveBet IQ';
     const message = body?.body || 'Hello 👋';
     const url = body?.url || '/';
-    if (!sub?.endpoint) return res.status(400).json({ ok: false, error: 'No subscription' });
+
+    if (!sub?.endpoint) {
+      return res.status(400).json({ ok: false, error: 'No subscription' });
+    }
 
     const contact = process.env.PUSH_CONTACT || 'mailto:you@example.com';
     const pub = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
     const priv = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
-    if (!pub || !priv) return res.status(500).json({ ok: false, error: 'Missing VAPID envs' });
+    if (!pub || !priv) {
+      return res.status(500).json({ ok: false, error: 'Missing VAPID envs' });
+    }
 
     webPush.setVapidDetails(contact, pub, priv);
+
     const payload = JSON.stringify({ title, body: message, url });
     const result = await webPush.sendNotification(sub, payload);
 
