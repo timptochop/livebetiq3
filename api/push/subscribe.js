@@ -1,6 +1,6 @@
 'use strict';
 
-module.exports = async function subscribeHandler(req, res) {
+module.exports = (req, res) => {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
@@ -11,17 +11,14 @@ module.exports = async function subscribeHandler(req, res) {
     return res.status(405).json({ ok: false, error: 'Method not allowed' });
   }
 
-  try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const sub = body && body.subscription;
-    if (!sub || !sub.endpoint) {
-      return res.status(400).json({ ok: false, error: 'No subscription' });
-    }
+  // echo για διάγνωση
+  const isString = typeof req.body === 'string';
+  let body = req.body;
+  try { if (isString) body = JSON.parse(req.body); } catch (_) {}
 
-    // εδώ απλώς αποδεχόμαστε το sub (δεν το αποθηκεύουμε σε DB στο demo)
-    return res.status(200).json({ ok: true });
-  } catch (e) {
-    console.error('subscribe error:', e);
-    return res.status(500).json({ ok: false, error: e && (e.message || String(e)) });
-  }
+  return res.status(200).json({
+    ok: true,
+    typeofBody: typeof req.body,
+    body
+  });
 };
