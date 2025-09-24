@@ -1,8 +1,23 @@
-// api/push/subscribe.js
-module.exports = (req, res) => {
+export default async function handler(req, res) {
+  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(204).end();
-  return res.status(200).json({ ok: true, method: req.method });
-};
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ ok: false, error: 'Method not allowed' });
+  }
+
+  try {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const sub = body?.subscription;
+    if (!sub?.endpoint) {
+      return res.status(400).json({ ok: false, error: 'No subscription' });
+    }
+    // εδώ απλά απαντάμε 200 (δεν αποθηκεύουμε DB στο παρόν βήμα)
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e?.message || 'subscribe failed' });
+  }
+}

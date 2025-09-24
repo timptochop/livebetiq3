@@ -1,34 +1,29 @@
-// public/sw.js
-self.addEventListener('push', (event) => {
-  try {
-    const data = event.data ? event.data.json() : {};
-    const title = data.title || 'LiveBet IQ';
-    const body = data.body || 'New update';
-    const url = data.url || '/';
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 
-    event.waitUntil(
-      self.registration.showNotification(title, {
-        body,
-        data: { url },
-        badge: '/favicon.ico',
-        icon: '/favicon.ico',
-      })
-    );
-  } catch (e) {
-    // fallback αν δεν είναι JSON
-    const text = event.data ? event.data.text() : 'New update';
-    event.waitUntil(
-      self.registration.showNotification('LiveBet IQ', {
-        body: text,
-        badge: '/favicon.ico',
-        icon: '/favicon.ico',
-      })
-    );
-  }
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (_) { data = {}; }
+
+  const title = data.title || 'LiveBet IQ';
+  const options = {
+    body: data.body || 'New SAFE signal',
+    icon: '/icon-192.PNG',
+    badge: '/icon-192.PNG',
+    data: { url: data.url || '/' }
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', (event) => {
-  const url = event.notification?.data?.url || '/';
   event.notification.close();
-  event.waitUntil(clients.openWindow(url));
+  const url = event.notification?.data?.url || '/';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if ('focus' in c) return c.focus();
+      }
+      if (clients.openWindow) return clients.openWindow(url);
+    })
+  );
 });
