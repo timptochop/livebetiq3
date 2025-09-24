@@ -1,7 +1,0 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "api/push/subscribe.js": { "runtime": "edge" },
-    "api/**/*.js": { "runtime": "nodejs22.x" }
-  }
-}
