@@ -1,60 +1,53 @@
 // src/push/pushClient.js
-const VAPID_PUBLIC = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+const VAPID_PUBLIC = process.env.REACT_APP_VAPID_PUBLIC_KEY;
 
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
-  return outputArray;
-}
-
-export async function ensureSW() {
-  if (!('serviceWorker' in navigator)) return null;
-  const reg = await navigator.serviceWorker.getRegistration() || await navigator.serviceWorker.register('/sw.js');
+export async function registerSW() {
+  if (!('serviceWorker' in navigator)) throw new Error('Service Worker not supported');
+  const reg = await navigator.serviceWorker.register('/sw.js');
   await navigator.serviceWorker.ready;
   return reg;
 }
 
-export function permissionState() {
-  return Notification?.permission || 'denied';
+export async function ensurePermission() {
+  if (!('Notification' in window)) throw new Error('Notification API not supported');
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') throw new Error('Permission denied');
 }
 
-export async function askPermission() {
-  if (!('Notification' in window)) return 'denied';
-  if (Notification.permission === 'default') {
-    try { return await Notification.requestPermission(); }
-    catch { return Notification.permission; }
+export async function getSubscription(reg) {
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC)
+    });
   }
-  return Notification.permission;
-}
-
-export async function getSubscription() {
-  const reg = await ensureSW();
-  return reg ? reg.pushManager.getSubscription() : null;
-}
-
-export async function subscribe() {
-  const reg = await ensureSW();
-  if (!reg) throw new Error('No service worker');
-  const sub = await reg.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC)
-  });
-  await fetch('/api/push/subscribe', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(sub)
-  });
   return sub;
 }
 
-export async function unsubscribe() {
-  const sub = await getSubscription();
-  if (!sub) return false;
-  try {
-    await fetch(`/api/push/subscribe?endpoint=${encodeURIComponent(sub.endpoint)}`, { method: 'DELETE' });
-  } catch {}
-  return sub.unsubscribe();
+export async function saveSubscription(sub) {
+  const r = await fetch('/api/push/subscribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subscription: sub })
+  });
+  return r.ok;
+}
+
+export async function sendNotify({ subscription, title, text, url, tag }) {
+  const r = await fetch('/api/push/notify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subscription, title, text, url, tag })
+  });
+  return r.ok;
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const output = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; ++i) output[i] = raw.charCodeAt(i);
+  return output;
 }

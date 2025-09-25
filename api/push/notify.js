@@ -1,38 +1,36 @@
-export const config = { runtime: 'nodejs' };
+// api/push/notify.js
+const webPush = require('web-push');
 
-export default async function handler(req, res) {
+const VAPID_PUBLIC_KEY  = process.env.VAPID_PUBLIC_KEY;
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
+const VAPID_SUBJECT     = process.env.VAPID_SUBJECT || 'mailto:you@example.com';
+
+webPush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+
+module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(204).end();
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ ok: false, error: 'Method not allowed' });
-  }
+  if (req.method === 'GET') return res.status(200).json({ ok: true, method: 'GET' });
+  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' });
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const sub = body?.subscription;
-    const title = body?.title || 'LiveBet IQ';
-    const message = body?.body || 'Hello 👋';
-    const url = body?.url || '/';
+    const { subscription, title, text, url, tag } = body || {};
+    if (!subscription) return res.status(400).json({ ok: false, error: 'Missing `subscription`' });
 
-    if (!sub?.endpoint) return res.status(400).json({ ok: false, error: 'No subscription' });
+    const payload = JSON.stringify({
+      title: title || 'LiveBet IQ',
+      body: text || '',
+      url: url || '/',
+      tag: tag || 'livebet',
+      ts: Date.now()
+    });
 
-    const { default: webPush } = await import('web-push');
-
-    const contact = process.env.PUSH_CONTACT || 'mailto:tptochop@gmail.com';
-    const pub = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
-    const priv = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
-    if (!pub || !priv) return res.status(500).json({ ok: false, error: 'Missing VAPID envs' });
-
-    webPush.setVapidDetails(contact, pub, priv);
-    const payload = JSON.stringify({ title, body: message, url });
-
-    const result = await webPush.sendNotification(sub, payload);
-    return res.status(200).json({ ok: true, status: result?.statusCode || 200 });
+    await webPush.sendNotification(subscription, payload, { TTL: 30, urgency: 'normal' });
+    return res.status(200).json({ ok: true });
   } catch (e) {
-    console.error('notify error:', e);
-    return res.status(500).json({ ok: false, error: e?.body || e?.message || 'notify failed' });
+    return res.status(500).json({ ok: false, error: e.message || 'push-failed' });
   }
-}
+};
