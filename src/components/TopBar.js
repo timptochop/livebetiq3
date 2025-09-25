@@ -1,4 +1,3 @@
-// src/components/TopBar.js
 import React from 'react';
 
 export default function TopBar({
@@ -7,6 +6,9 @@ export default function TopBar({
   onToggleNotifications = () => {},
   audioOn = false,
   onToggleAudio = () => {},
+  // NEW:
+  notifyMode = 'ONCE',
+  onCycleNotifyMode = () => {},
 }) {
   const S = {
     bar: {
@@ -22,7 +24,30 @@ export default function TopBar({
       zIndex: 10,
     },
     left: { display: 'flex', alignItems: 'center', gap: 10 },
+    logoRow: { display: 'flex', alignItems: 'center', gap: 8 },
     logo: { fontWeight: 800, color: '#e8f0ff', letterSpacing: 0.4, fontSize: 16 },
+    ball: {
+      width: 16,
+      height: 16,
+      borderRadius: 999,
+      background: '#E6FF4F', // tennis-ball yellow
+      boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.7)',
+      position: 'relative',
+    },
+    seamA: {
+      position: 'absolute',
+      left: 2, right: 2, top: '50%',
+      height: 2, transform: 'translateY(-50%)',
+      borderRadius: 2, background: '#ffffff',
+      opacity: 0.7,
+    },
+    seamB: {
+      position: 'absolute',
+      top: 2, bottom: 2, left: '50%',
+      width: 2, transform: 'translateX(-50%)',
+      borderRadius: 2, background: '#ffffff',
+      opacity: 0.7,
+    },
     livePill: {
       display: 'inline-flex',
       alignItems: 'center',
@@ -53,19 +78,21 @@ export default function TopBar({
       transition: 'all 120ms ease',
       userSelect: 'none',
     }),
-    tooltip: {
-      position: 'absolute',
-      transform: 'translateY(34px)',
-      background: '#0e1217',
-      border: '1px solid #1f2632',
-      color: '#c7d1dc',
-      padding: '4px 8px',
-      borderRadius: 6,
+    modeBtn: (active) => ({
+      height: 36,
+      padding: '0 10px',
+      display: 'inline-flex',
+      alignItems: 'center', justifyContent: 'center',
+      borderRadius: 10,
+      background: active ? 'rgba(43,213,118,0.12)' : '#12161c',
+      color: active ? '#2bd576' : '#9fb0c3',
+      border: `1px solid ${active ? 'rgba(43,213,118,0.35)' : '#222c3a'}`,
+      cursor: 'pointer',
+      transition: 'all 120ms ease',
+      userSelect: 'none',
+      fontWeight: 800,
       fontSize: 12,
-      whiteSpace: 'nowrap',
-      pointerEvents: 'none',
-      opacity: 0.95,
-    },
+    }),
     btnWrap: { position: 'relative' }
   };
 
@@ -93,7 +120,10 @@ export default function TopBar({
   return (
     <header style={S.bar}>
       <div style={S.left}>
-        <div style={S.logo}>LIVE<span style={{color:'#2bd576'}}>BET</span> IQ</div>
+        <div style={S.logoRow}>
+          <div style={S.ball}><span style={S.seamA}/><span style={S.seamB}/></div>
+          <div style={S.logo}>LIVE<span style={{color:'#2bd576'}}>BET</span> IQ</div>
+        </div>
         <div style={S.livePill} title="Live matches">
           <span style={S.dot} />
           <span style={{opacity:.85}}>LIVE</span>
@@ -102,6 +132,17 @@ export default function TopBar({
       </div>
 
       <div style={S.right}>
+        {/* Notify mode toggle */}
+        <button
+          type="button"
+          onClick={onCycleNotifyMode}
+          style={S.modeBtn(notifyMode === 'ON_CHANGE')}
+          title={`Notify mode: ${notifyMode}`}
+        >
+          {notifyMode === 'ONCE' ? 'Notify: Once' : 'Notify: Re-Arm'}
+        </button>
+
+        {/* Notifications toggle */}
         <div style={S.btnWrap}>
           <button
             type="button"
@@ -114,6 +155,7 @@ export default function TopBar({
           </button>
         </div>
 
+        {/* Audio toggle */}
         <div style={S.btnWrap}>
           <button
             type="button"
