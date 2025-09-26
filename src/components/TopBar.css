@@ -1,32 +1,67 @@
-.tb-wrap{
-  position:sticky; top:0; z-index:10;
-  display:flex; align-items:center; justify-content:space-between;
-  gap:12px; padding:10px 12px; background:#0b0b0b; border-bottom:1px solid #1f1f1f;
-}
-.tb-left{ display:flex; align-items:center; gap:8px; }
-.tb-logo{
-  width:34px; height:34px; border-radius:8px; background:#16a34a; color:#fff;
-  display:flex; align-items:center; justify-content:center; font-weight:800;
+/* src/components/TopBar.css */
+:root{
+  --topbar-h: 68px;
+  --topbar-h-mobile: 76px;
+  --topbar-bg: #0f1216cc;
 }
 
-.tb-center{ flex:1; display:flex; justify-content:center; }
-.tb-pill{
-  display:flex; align-items:center; gap:8px;
-  padding:6px 12px; border-radius:999px; border:1px solid #234;
-  background:#122; color:#9fe7c3; font-weight:800;
+.topbar{
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  height: var(--topbar-h);
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--topbar-bg);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
-.tb-dot{ width:8px; height:8px; border-radius:50%; background:#16e06e; box-shadow:0 0 8px rgba(22,224,110,.8); }
-.tb-live{ letter-spacing:.5px; }
-.tb-num{ background:#0b3; color:#fff; padding:2px 8px; border-radius:999px; }
 
-.tb-right{ display:flex; align-items:center; gap:8px; }
-.tb-icon{
-  display:flex; align-items:center; gap:8px;
-  background:#151515; color:#e5e7eb; border:1px solid #262626; border-radius:10px;
-  padding:8px 10px; cursor:pointer;
+.topbar .brand{
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: .4px;
+  line-height: 1;
 }
-.tb-icon:hover{ background:#1b1b1b; }
-.tb-toggle{
-  font-size:12px; font-weight:800; letter-spacing:.4px;
-  padding:2px 6px; border-radius:999px; background:#243; color:#a7f3d0;
+
+.topbar .tray{
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* pills & buttons look lower (more breathing room) */
+.pill{
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  transform: translateY(2px);
+}
+
+.icon-btn{
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  transform: translateY(2px);
+  background: #1c2230;
+  border: 1px solid #263147;
+  cursor: pointer;
+}
+
+@media (max-width: 768px){
+  .topbar{
+    height: var(--topbar-h-mobile);
+    padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+  }
+  .topbar .brand{ transform: translateY(2px); }
 }
