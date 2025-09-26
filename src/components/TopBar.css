@@ -1,22 +1,33 @@
-/* src/components/TopBar.css */
 :root{
-  --topbar-h: 68px;
-  --topbar-h-mobile: 76px;
+  --topbar-h-desktop: 56px;
+  --topbar-h-mobile: 60px;
   --topbar-bg: #0f1216cc;
 }
 
+/* Header */
 .topbar{
   position: sticky;
   top: 0;
   z-index: 50;
-  height: var(--topbar-h);
-  padding: calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px;
+
+  /* ensure space for the notch, but only once */
+  min-height: calc(var(--topbar-h-mobile) + env(safe-area-inset-top, 0px));
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 16px 8px;
+
   display: flex;
   align-items: center;
   gap: 12px;
+
   background: var(--topbar-bg);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
+}
+
+@media (min-width: 769px){
+  .topbar{
+    min-height: calc(var(--topbar-h-desktop) + env(safe-area-inset-top, 0px));
+    padding-top: calc(env(safe-area-inset-top, 0px) + 6px);
+  }
 }
 
 .topbar .brand{
@@ -26,6 +37,7 @@
   line-height: 1;
 }
 
+/* right tray */
 .topbar .tray{
   margin-left: auto;
   display: flex;
@@ -33,35 +45,25 @@
   gap: 8px;
 }
 
-/* pills & buttons look lower (more breathing room) */
+/* controls: compact, no manual shift */
 .pill{
   display: inline-flex;
   align-items: center;
-  height: 30px;
+  height: 28px;
   padding: 0 12px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
   line-height: 1;
-  transform: translateY(2px);
 }
 
 .icon-btn{
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 999px;
   display: grid;
   place-items: center;
-  transform: translateY(2px);
   background: #1c2230;
   border: 1px solid #263147;
   cursor: pointer;
-}
-
-@media (max-width: 768px){
-  .topbar{
-    height: var(--topbar-h-mobile);
-    padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
-  }
-  .topbar .brand{ transform: translateY(2px); }
 }
