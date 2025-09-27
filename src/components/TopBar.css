@@ -1,41 +1,35 @@
-:root {
-  /* ύψος μπάρας που σου άρεσε */
-  --topbar-height: 54px;
-}
+:root { --topbar-height: 48px; --topbar-z: 2147483000; }
 
-/* Global offset: σπρώξε ΟΛΟ το app κάτω από το fixed header */
-#root {
-  padding-top: calc(var(--topbar-height) + env(safe-area-inset-top));
-}
-
-/* Full-black, fixed, πάντα πάνω */
-.topbar {
+#topbar, .topbar, .TopBar {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
+  top: 0; left: 0; right: 0;
+  height: calc(var(--topbar-height) + env(safe-area-inset-top, 0px));
+  height: calc(var(--topbar-height) + constant(safe-area-inset-top, 0px)); /* old iOS */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: constant(safe-area-inset-top, 0px);
 
-  height: calc(var(--topbar-height) + env(safe-area-inset-top));
-  padding-top: env(safe-area-inset-top);
-
-  background: #000;        /* τελείως μαύρο */
+  display: flex; align-items: center; gap: 12px;
+  background: #000;                 /* ολόμαυρο */
   color: #fff;
-  z-index: 10000;          /* πάνω από τα cards πάντα */
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  box-shadow: 0 1px 0 rgba(255,255,255,0.04);
+  z-index: var(--topbar-z);
+  box-shadow: 0 2px 10px rgba(0,0,0,.45);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
-/* Εσωτερικό layout (προαιρετικά αν το χρησιμοποιείς) */
-.topbar__inner {
-  width: 100%;
-  max-width: 1200px;
-  padding: 0 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  justify-content: space-between;
+#topbar .brand, .topbar .brand, .TopBar .brand {
+  margin-left: 16px;
+  font-weight: 800;
+  letter-spacing: .3px;
+}
+
+#topbar .right, .topbar .right, .TopBar .right {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 8px;
+}
+
+.mute-btn, .notify-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: 10px;
+  background: #0f0f0f; border: 1px solid rgba(255,255,255,.06);
 }
