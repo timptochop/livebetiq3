@@ -1,6 +1,68 @@
+/* src/index.css */
+
+:root {
+  --topbar-height: 48px;        /* tweak if you want the bar shorter/taller */
+  --bg: #121212;
+  --text: #eaeaea;
+}
+
+html {
+  box-sizing: border-box;
+  -webkit-text-size-adjust: 100%;
+  color-scheme: dark;
+  scroll-behavior: smooth;
+}
+
+*, *::before, *::after {
+  box-sizing: inherit;
+}
+
 html, body, #root {
   height: 100%;
-  background: #121212;
   margin: 0;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  padding: 0;
+  background: var(--bg);
 }
+
+body {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  color: var(--text);
+  overscroll-behavior-y: none;
+}
+
+/* Keep content below the fixed TopBar, honoring iOS notch */
+#root {
+  padding-top: calc(env(safe-area-inset-top) + var(--topbar-height));
+}
+@supports not (padding-top: env(safe-area-inset-top)) {
+  #root { padding-top: var(--topbar-height); }
+}
+
+/* Ensure TopBar stays on top even if cards use z-index */
+.TopBar, .topbar, header[data-topbar], #TopBar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 10000;
+  background: #000;            /* solid black (no transparency) */
+}
+
+/* Avoid accidental stacking contexts above the TopBar */
+html, body, #root, .App, .page, .main, .container, [data-scroll-root] {
+  transform: none !important;
+  perspective: none !important;
+  contain: none !important;
+  will-change: auto !important;
+}
+
+/* Utility: safe-area spacer if ever needed in markup */
+.safe-top {
+  height: env(safe-area-inset-top);
+}
+
+/* Usability defaults */
+img { max-width: 100%; display: block; }
+button { font: inherit; }
+:focus:not(:focus-visible) { outline: none; }
+:focus-visible { outline: 2px solid #7c5cff; outline-offset: 2px; }
