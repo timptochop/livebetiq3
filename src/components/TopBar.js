@@ -1,59 +1,129 @@
 // src/components/TopBar.js
 import React from 'react';
-import './TopBar.css';
 
 export default function TopBar({
   liveCount = 0,
-  onBellClick,
-  bellActive = false,
-  onSoundClick,
-  soundOn = true,
+  notificationsOn = false,
+  onToggleNotifications = () => {},
+  audioOn = false,
+  onToggleAudio = () => {},
 }) {
-  return (
-    <header className="topbar">
-      <div className="topbar__inner">
-        <div className="topbar__left">
-          <div className="brand">LIVEBET IQ</div>
+  const BAR_H = 52;
 
-          <div className="live-pill" aria-label={`Live ${liveCount}`}>
-            <span className="dot" />
-            <span className="live-text">LIVE</span>
-            <span className="count">{liveCount}</span>
+  const S = {
+    bar: {
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: BAR_H,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '0 14px',
+      background: '#000000',
+      borderBottom: '1px solid #141414',
+      zIndex: 1000
+    },
+    spacer: { height: BAR_H }, // to offset the fixed header
+    left: { display: 'flex', alignItems: 'center', gap: 10 },
+    logo: { fontWeight: 800, color: '#e8f0ff', letterSpacing: 0.4, fontSize: 15, lineHeight: 1 },
+    livePill: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 8,
+      padding: '5px 10px',
+      borderRadius: 999,
+      background: '#0f1115',
+      border: '1px solid #273142',
+      color: '#c7d1dc',
+      fontSize: 12,
+      fontWeight: 600,
+      lineHeight: 1
+    },
+    dot: {
+      width: 8, height: 8, borderRadius: 999,
+      background: '#2bd576',
+      boxShadow: '0 0 0 2px rgba(43,213,118,0.15)'
+    },
+    right: { display: 'flex', alignItems: 'center', gap: 8 },
+    iconBtn: (active) => ({
+      width: 34, height: 34,
+      display: 'inline-flex',
+      alignItems: 'center', justifyContent: 'center',
+      borderRadius: 10,
+      background: active ? 'rgba(43,213,118,0.12)' : '#0f1115',
+      color: active ? '#2bd576' : '#9fb0c3',
+      border: `1px solid ${active ? 'rgba(43,213,118,0.35)' : '#222c3a'}`,
+      cursor: 'pointer',
+      transition: 'all 120ms ease',
+      userSelect: 'none'
+    }),
+    btnWrap: { position: 'relative' }
+  };
+
+  const IconBell = ({ filled=false }) => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 3a6 6 0 0 0-6 6v3.1l-1.3 2.4A1 1 0 0 0 5.6 16h12.8a1 1 0 0 0 .9-1.5L18 12.1V9a6 6 0 0 0-6-6Z" stroke="currentColor" strokeWidth="1.6" fill={filled ? 'currentColor' : 'none'} />
+      <path d="M9.5 18a2.5 2.5 0 0 0 5 0" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
+
+  const IconSpeaker = ({ muted=false }) => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 10v4h3l5 4V6L7 10H4Z" stroke="currentColor" strokeWidth="1.6" fill="none"/>
+      {muted ? (
+        <path d="M16 9l4 6M20 9l-4 6" stroke="currentColor" strokeWidth="1.6" />
+      ) : (
+        <>
+          <path d="M16 8c1.5 1.5 1.5 6.5 0 8" stroke="currentColor" strokeWidth="1.6" />
+          <path d="M18.5 6.5c2.6 2.6 2.6 8.4 0 11" stroke="currentColor" strokeWidth="1.6" />
+        </>
+      )}
+    </svg>
+  );
+
+  return (
+    <>
+      <header style={S.bar}>
+        <div style={S.left}>
+          <div style={S.logo}>LIVE<span style={{color:'#2bd576'}}>BET</span> IQ</div>
+          <div style={S.livePill} title="Live matches">
+            <span style={S.dot} />
+            <span style={{opacity:.85}}>LIVE</span>
+            <span style={{fontWeight:800,color:'#e8f0ff'}}>{liveCount}</span>
           </div>
         </div>
 
-        <div className="topbar__right">
-          <button
-            type="button"
-            className={`icon-btn ${bellActive ? 'is-active' : ''}`}
-            onClick={onBellClick}
-            aria-label={bellActive ? 'Notifications on' : 'Notifications off'}
-          >
-            {/* Bell */}
-            <svg viewBox="0 0 24 24" className="icon">
-              <path
-                d="M12 22a2.75 2.75 0 0 0 2.45-1.5.75.75 0 1 0-1.34-.7 1.25 1.25 0 0 1-2.22 0 .75.75 0 1 0-1.34.7A2.75 2.75 0 0 0 12 22Zm8-6.25c-1.69-1.64-2.5-3.48-2.5-6.25A5.5 5.5 0 1 0 6.5 9.5c0 2.77-.81 4.61-2.5 6.25a.75.75 0 0 0 .52 1.3H19.5a.75.75 0 0 0 .5-1.3Z"
-                fill="currentColor"
-              />
-            </svg>
-          </button>
+        <div style={S.right}>
+          <div style={S.btnWrap}>
+            <button
+              type="button"
+              onClick={onToggleNotifications}
+              style={S.iconBtn(notificationsOn)}
+              aria-label={`Notifications ${notificationsOn ? 'on' : 'off'}`}
+              title={`Notifications ${notificationsOn ? 'ON' : 'OFF'}`}
+            >
+              <IconBell filled={notificationsOn} />
+            </button>
+          </div>
 
-          <button
-            type="button"
-            className={`icon-btn ${soundOn ? 'is-active' : ''}`}
-            onClick={onSoundClick}
-            aria-label={soundOn ? 'Sound on' : 'Sound off'}
-          >
-            {/* Speaker */}
-            <svg viewBox="0 0 24 24" className="icon">
-              <path
-                d="M13 4.5a1 1 0 0 0-1.64-.77L7.7 6.5H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2.7l3.66 2.77A1 1 0 0 0 13 19.5v-15Zm4.2 2.05a.75.75 0 0 1 1.06 0A8 8 0 0 1 20.5 12a8 8 0 0 1-2.24 5.45.75.75 0 1 1-1.1-1.02A6.5 6.5 0 0 0 19 12a6.5 6.5 0 0 0-1.84-4.43.75.75 0 0 1 .04-1.02Zm-2.13 2.15a.75.75 0 0 1 1.06.02A5 5 0 0 1 17 12a5 5 0 0 1-1.87 3.28.75.75 0 1 1-.98-1.13A3.5 3.5 0 0 0 15.5 12c0-.95-.39-1.86-1.06-2.5a.75.75 0 0 1 .03-1.02Z"
-                fill="currentColor"
-              />
-            </svg>
-          </button>
+          <div style={S.btnWrap}>
+            <button
+              type="button"
+              onClick={onToggleAudio}
+              style={S.iconBtn(audioOn)}
+              aria-label={`Audio ${audioOn ? 'on' : 'off'}`}
+              title={`Audio ${audioOn ? 'ON' : 'OFF'}`}
+            >
+              <IconSpeaker muted={!audioOn} />
+            </button>
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+
+      {/* spacer to avoid content hiding under fixed bar */}
+      <div style={S.spacer} aria-hidden="true" />
+    </>
   );
 }
