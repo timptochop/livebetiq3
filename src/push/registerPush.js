@@ -1,61 +1,37 @@
-// Χρήση στο app όταν θες να κάνεις subscribe+save (π.χ. σε click στο καμπανάκι)
-
-const VAPID_PUBLIC = process.env.REACT_APP_VAPID_PUBLIC_KEY;
-
-// base64 (URL-safe) -> Uint8Array
-function urlB64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(base64);
-  const arr = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-  return arr;
-}
-
-export async function ensurePushSubscribed() {
+export async function registerPush() {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    throw new Error('Push not supported');
+    return { ok: false, reason: 'unsupported' };
   }
 
-  const perm = await Notification.requestPermission();
-  if (perm !== 'granted') throw new Error('Permission not granted');
+  const VAPID = (window.__PUBLIC_VAPID__ || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '').trim();
+  if (!VAPID) return { ok: false, reason: 'missing-vapid' };
 
-  const reg = await navigator.serviceWorker.ready;
+  const urlB64ToUint8Array = (s) => {
+    const p = '='.repeat((4 - (s.length % 4)) % 4);
+    const b = (s + p).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(b);
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  };
 
-  // Αν υπάρχει ήδη
+  let reg = await navigator.serviceWorker.getRegistration();
+  if (!reg) reg = await navigator.serviceWorker.register('/sw.js');
+  await navigator.serviceWorker.ready;
+
   let sub = await reg.pushManager.getSubscription();
   if (!sub) {
     sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlB64ToUint8Array(VAPID_PUBLIC)
+      applicationServerKey: urlB64ToUint8Array(VAPID)
     });
   }
 
-  // Save στον backend
-  const r1 = await fetch('/api/push/subscribe', {
+  await fetch('/api/push/subscribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ subscription: sub })
-  });
-  const t1 = await r1.json().catch(() => ({}));
-  if (!r1.ok || !t1.ok) throw new Error('subscribe api failed');
+  }).catch(() => {});
 
-  return sub;
-}
-
-// helper για άμεσο test push
-export async function testPushNow(sub, { title, body, url } = {}) {
-  const r2 = await fetch('/api/push/notify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      subscription: sub,
-      title: title || 'LiveBet IQ',
-      body: body || 'Test push ✅',
-      url: url || location.origin
-    })
-  });
-  const t2 = await r2.json().catch(() => ({}));
-  if (!r2.ok || !t2.ok) throw new Error('notify api failed');
-  return t2;
+  return { ok: true, subscription: sub };
 }

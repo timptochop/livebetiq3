@@ -3,11 +3,10 @@
   "version": "0.97.6",
   "private": true,
   "scripts": {
-    "start": "react-scripts start",
-    "build": "node node_modules/react-scripts/bin/react-scripts.js build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject",
-    "postinstall": "chmod +x node_modules/.bin/react-scripts"
+    "start": "node node_modules/react-scripts/scripts/start.js",
+    "build": "node node_modules/react-scripts/scripts/build.js",
+    "test": "node node_modules/react-scripts/scripts/test.js --env=jsdom",
+    "eject": "node node_modules/react-scripts/scripts/eject.js"
   },
   "dependencies": {
     "nanoid": "^4.0.2",
