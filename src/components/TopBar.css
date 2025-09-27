@@ -1,37 +1,41 @@
 :root {
-  --topbar-height: 54px; /* κράτα το ύψος που σου άρεσε */
+  /* ύψος μπάρας που σου άρεσε */
+  --topbar-height: 54px;
 }
 
+/* Global offset: σπρώξε ΟΛΟ το app κάτω από το fixed header */
+#root {
+  padding-top: calc(var(--topbar-height) + env(safe-area-inset-top));
+}
+
+/* Full-black, fixed, πάντα πάνω */
 .topbar {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
+
   height: calc(var(--topbar-height) + env(safe-area-inset-top));
   padding-top: env(safe-area-inset-top);
-  background: #000;            /* τελείως μαύρο, όχι διάφανο */
+
+  background: #000;        /* τελείως μαύρο */
   color: #fff;
+  z-index: 10000;          /* πάνω από τα cards πάντα */
+
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  z-index: 10000;              /* πάντα πάνω από τα cards */
+  justify-content: center;
+
   box-shadow: 0 1px 0 rgba(255,255,255,0.04);
 }
 
-/* περιθώρια/στοίχιση περιεχομένου μέσα στο bar */
+/* Εσωτερικό layout (προαιρετικά αν το χρησιμοποιείς) */
 .topbar__inner {
   width: 100%;
   max-width: 1200px;
-  margin: 0 auto;
   padding: 0 16px;
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-/* spacer για να ΜΗΝ περνάει από κάτω το feed */
-.topbar-spacer {
-  height: calc(var(--topbar-height) + env(safe-area-inset-top));
-  width: 100%;
-  flex: 0 0 auto;
+  justify-content: space-between;
 }
