@@ -8,12 +8,15 @@ export default function TopBar({
   audioOn = false,
   onToggleAudio = () => {},
 }) {
-  const BAR_H = 52;
+  const BAR_H = 52;      // visual bar height
+  const OFFSET = 10;     // drop the bar a bit from the very top
 
   const S = {
     bar: {
       position: 'fixed',
-      top: 0,
+      top: `calc(var(--safe-top, 0px) + ${OFFSET}px)`,
+      // provide the CSS var so iOS can use the safe-area when available
+      '--safe-top': 'env(safe-area-inset-top)',
       left: 0,
       right: 0,
       height: BAR_H,
@@ -25,7 +28,8 @@ export default function TopBar({
       borderBottom: '1px solid #141414',
       zIndex: 1000
     },
-    spacer: { height: BAR_H }, // to offset the fixed header
+    // spacer must account for the visual bar height + the offset
+    spacer: { height: BAR_H + OFFSET },
     left: { display: 'flex', alignItems: 'center', gap: 10 },
     logo: { fontWeight: 800, color: '#e8f0ff', letterSpacing: 0.4, fontSize: 15, lineHeight: 1 },
     livePill: {
@@ -122,7 +126,6 @@ export default function TopBar({
         </div>
       </header>
 
-      {/* spacer to avoid content hiding under fixed bar */}
       <div style={S.spacer} aria-hidden="true" />
     </>
   );
