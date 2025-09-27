@@ -1,83 +1,37 @@
 :root {
-  /* tweak once and it applies everywhere */
-  --topbar-h: 52px;     /* smaller height */
-  --topbar-bg: #000000; /* solid black (no transparency) */
-  --topbar-fg: #e7e7e7;
-  --topbar-accent: #1ee36f;
-  --pill-bg: #1b1f23;
-  --pill-fg: #cfd3d6;
-  --divider: rgba(255,255,255,0.06);
+  --topbar-height: 54px; /* κράτα το ύψος που σου άρεσε */
 }
 
 .topbar {
-  position: fixed;          /* fully stable */
+  position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  height: var(--topbar-h);
-  background: var(--topbar-bg);
-  color: var(--topbar-fg);
+  height: calc(var(--topbar-height) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  background: #000;            /* τελείως μαύρο, όχι διάφανο */
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 14px;
-  z-index: 1000;
-  border-bottom: 1px solid var(--divider);
+  z-index: 10000;              /* πάντα πάνω από τα cards */
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04);
 }
 
-.topbar__left {
+/* περιθώρια/στοίχιση περιεχομένου μέσα στο bar */
+.topbar__inner {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 16px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
+  gap: 12px;
 }
 
-.brand {
-  font-weight: 800;
-  letter-spacing: .4px;
-  font-size: 16px;
-  white-space: nowrap;
+/* spacer για να ΜΗΝ περνάει από κάτω το feed */
+.topbar-spacer {
+  height: calc(var(--topbar-height) + env(safe-area-inset-top));
+  width: 100%;
+  flex: 0 0 auto;
 }
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--pill-bg);
-  color: var(--pill-fg);
-  padding: 4px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  line-height: 1;
-}
-
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  display: inline-block;
-}
-.dot--green { background: var(--topbar-accent); }
-
-.pill__label { opacity: .9; font-weight: 700; }
-.pill__count { margin-left: 2px; font-weight: 800; }
-
-.topbar__right {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.icon-btn {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  border: 1px solid var(--divider);
-  background: #0f0f0f;
-  color: var(--topbar-fg);
-  display: inline-grid;
-  place-items: center;
-  cursor: pointer;
-}
-.icon-btn:hover { background: #141414; }
-.icon-btn:active { transform: translateY(1px); }
