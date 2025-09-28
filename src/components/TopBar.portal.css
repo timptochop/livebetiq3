@@ -1,0 +1,26 @@
+:root{
+  --tb-h: 48px;
+}
+
+/* fixed container πάνω απ’ όλα */
+.topbar-layer-inner{
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: calc(var(--tb-h) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #0b0b0c;              /* τελείως μαύρο */
+  z-index: 2147483647;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* λεπτή γραμμή διαχωρισμού */
+.topbar-layer-inner::after{
+  content:"";
+  position:absolute; left:0; right:0; bottom:-1px;
+  height:1px; background: rgba(255,255,255,0.06);
+}

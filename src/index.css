@@ -1,36 +1,42 @@
-:root {
+:root{
+  --tb-h: 48px;
+  --tb-total-h: calc(var(--tb-h) + env(safe-area-inset-top));
   --bg: #121212;
-  --topbar-height: 48px;           /* μικρότερο ύψος */
-  --topbar-z: 2147483000;          /* πολύ ψηλά, πάνω από όλα */
 }
 
-html, body, #root {
-  height: 100%;
-  margin: 0;
-  background: var(--bg);
-  -webkit-text-size-adjust: 100%;
+html, body, #root{
+  height:100%;
+  margin:0;
+  background:var(--bg);
+  color-scheme: dark;
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
 }
 
-/* Σπρώξε όλο το περιεχόμενο κάτω από το fixed TopBar + safe area */
-body {
-  padding-top: calc(var(--topbar-height) + env(safe-area-inset-top, 0px));
-  /* fallback για παλιό iOS Safari */
-  padding-top: calc(var(--topbar-height) + constant(safe-area-inset-top, 0px));
+/* χώρος κάτω από τη fixed μπάρα που έρχεται από portal */
+body{ padding-top: var(--tb-total-h); }
+
+/* μαύρο scrim πίσω από τη μπάρα για να μη «φαίνεται» τίποτα */
+body::before{
+  content:"";
+  position:fixed;
+  top:0; left:0; right:0;
+  height: calc(var(--tb-total-h) + 320px);
+  background:#0b0b0c;
+  z-index:2147483646;     /* ακριβώς κάτω από τη μπάρα */
+  pointer-events:none;
 }
 
-/* Μη δημιουργείς stacking contexts πάνω από το TopBar */
-#root, .App, main, .container {
-  transform: none !important;
-  will-change: auto !important;
-  contain: none !important;
-  perspective: none !important;
+/* ακυρώνουμε transforms που δημιουργούν stacking contexts */
+html, body, #root, .App, main, .container, [data-scroll-root]{
+  transform:none !important;
+  perspective:none !important;
+  contain:none !important;
+  will-change:auto !important;
 }
 
-/* helper αν το χρειαστείς σε markup */
-.safe-top { height: env(safe-area-inset-top, 0px); }
-
-/* a11y */
-img { max-width: 100%; display: block; }
-button { font: inherit; }
-:focus:not(:focus-visible) { outline: none; }
-:focus-visible { outline: 2px solid #7c5cff; outline-offset: 2px; }
+/* utilities */
+.safe-top{ height: var(--tb-total-h); }
+img{ max-width:100%; display:block; }
+button{ font:inherit; }
+:focus:not(.focus-visible){ outline:none; }
+.focus-visible{ outline:2px solid #7c5cff; outline-offset:2px; }
