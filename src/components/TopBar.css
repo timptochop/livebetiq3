@@ -21,20 +21,20 @@
   backdrop-filter: none;
 }
 
-/* ΥΠΟΔΙΠΛΑΣΙΟ πριν → τώρα ΔΙΠΛΑΣΙΟ χείλος κάλυψης */
+/* ΔΙΠΛΑΣΙΟ από το προηγούμενο: 56px “χείλος” κάλυψης */
 .topbar::before,
 .TopBar::before{
   content: "";
   position: absolute;
   left: 0;
   right: 0;
-  top: -28px;       /* ήταν -14px */
-  height: 28px;     /* ήταν 14px  */
+  top: -56px;
+  height: 56px;
   background: var(--tb-bg);
   pointer-events: none;
 }
 
-/* λεπτή γραμμή στο κάτω μέρος (προαιρετική) */
+/* κάτω γραμμή (προαιρετική) */
 .topbar::after,
 .TopBar::after{
   content: "";
@@ -46,7 +46,7 @@
   background: rgba(255,255,255,0.06);
 }
 
-/* helpers για να μείνουν όλα στη θέση τους */
+/* layout helpers */
 .topbar .left,
 .TopBar .left{
   display: flex;
