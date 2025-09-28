@@ -1,35 +1,92 @@
-:root { --topbar-height: 48px; --topbar-z: 2147483000; }
+:root{
+  --tb-body-h: 48px;
+  --tb-bg: #0b0b0c;
+}
 
-#topbar, .topbar, .TopBar {
+.topbar,
+.TopBar{
   position: fixed;
-  top: 0; left: 0; right: 0;
-  height: calc(var(--topbar-height) + env(safe-area-inset-top, 0px));
-  height: calc(var(--topbar-height) + constant(safe-area-inset-top, 0px)); /* old iOS */
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-top: constant(safe-area-inset-top, 0px);
-
-  display: flex; align-items: center; gap: 12px;
-  background: #000;                 /* ολόμαυρο */
-  color: #fff;
-  z-index: var(--topbar-z);
-  box-shadow: 0 2px 10px rgba(0,0,0,.45);
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--tb-body-h) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  background: var(--tb-bg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  z-index: 2147483647;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
 
-#topbar .brand, .topbar .brand, .TopBar .brand {
-  margin-left: 16px;
+/* solid “lip” upward to cover any bleed from content */
+.topbar::before,
+.TopBar::before{
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -14px;
+  height: 14px;
+  background: var(--tb-bg);
+  pointer-events: none;
+}
+
+/* subtle bottom divider (optional) */
+.topbar::after,
+.TopBar::after{
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: rgba(255,255,255,0.06);
+}
+
+/* layout helpers so existing children keep their positions */
+.topbar .left,
+.TopBar .left{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.topbar .right,
+.TopBar .right{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topbar .brand,
+.TopBar .brand{
   font-weight: 800;
+  font-size: 18px;
   letter-spacing: .3px;
 }
 
-#topbar .right, .topbar .right, .TopBar .right {
-  margin-left: auto;
-  display: flex; align-items: center; gap: 8px;
+.topbar .pill,
+.TopBar .pill{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: rgba(255,255,255,.06);
 }
 
-.mute-btn, .notify-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px; border-radius: 10px;
-  background: #0f0f0f; border: 1px solid rgba(255,255,255,.06);
+.topbar .icon-btn,
+.TopBar .icon-btn{
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,.06);
 }
