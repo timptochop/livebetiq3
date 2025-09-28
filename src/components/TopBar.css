@@ -1,6 +1,7 @@
 :root{
   --tb-body-h: 48px;
-  --tb-bg: #0b0b0c;
+  --tb-bg: #0b0b0c;            /* pure, non-transparent */
+  --tb-mask-overhang: 224px;   /* 4× larger blocker above the bar */
 }
 
 .topbar,
@@ -21,20 +22,18 @@
   backdrop-filter: none;
 }
 
-/* ΔΙΠΛΑΣΙΟ από το προηγούμενο: 56px “χείλος” κάλυψης */
 .topbar::before,
 .TopBar::before{
   content: "";
   position: absolute;
   left: 0;
   right: 0;
-  top: -56px;
-  height: 56px;
+  top: calc(-1 * var(--tb-mask-overhang));
+  height: var(--tb-mask-overhang);
   background: var(--tb-bg);
   pointer-events: none;
 }
 
-/* κάτω γραμμή (προαιρετική) */
 .topbar::after,
 .TopBar::after{
   content: "";
@@ -46,7 +45,6 @@
   background: rgba(255,255,255,0.06);
 }
 
-/* layout helpers */
 .topbar .left,
 .TopBar .left{
   display: flex;
