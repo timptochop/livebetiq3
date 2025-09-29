@@ -1,6 +1,5 @@
-import React from 'react';
-import './TopBar.css'; // για την .topbar-spacer
+import React from "react";
 
 export default function TopSpacer() {
-  return <div className="topbar-spacer" />;
+  return <div className="TopSpacer" aria-hidden="true" />;
 }

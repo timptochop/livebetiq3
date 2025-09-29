@@ -1,95 +1,55 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React from "react";
 import "./TopBar.css";
+import TopBarPortal from "./TopBarPortal";
 
-export default function TopBar({ liveCount = 0, onToggleMute }) {
-  const [granted, setGranted] = useState(
-    typeof Notification !== "undefined" ? Notification.permission === "granted" : false
-  );
-  const [muted, setMuted] = useState(
-    (() => {
-      try { return localStorage.getItem("lbq_muted") === "1"; } catch { return false; }
-    })()
-  );
-
-  useEffect(() => {
-    try { document.documentElement.style.setProperty("--tb-safe", "env(safe-area-inset-top)"); } catch {}
-  }, []);
-
-  const count = useMemo(() => (Number.isFinite(liveCount) ? liveCount : 0), [liveCount]);
-
-  async function handleBell() {
-    if (typeof Notification === "undefined") return;
-    if (Notification.permission === "granted") {
-      try { window.unsubscribePush?.(); } catch {}
-      setGranted(false);
-      return;
-    }
-    try {
-      const res = await Notification.requestPermission();
-      if (res === "granted") {
-        try { await window.subscribePush?.(); } catch {}
-        setGranted(true);
-      } else {
-        setGranted(false);
-      }
-    } catch {
-      setGranted(false);
-    }
-  }
-
-  function handleSound() {
-    const next = !muted;
-    setMuted(next);
-    try { localStorage.setItem("lbq_muted", next ? "1" : "0"); } catch {}
-    try { onToggleMute?.(next); } catch {}
-  }
-
+export default function TopBar({
+  liveCount = 0,
+  notificationsOn = true,
+  audioOn = true,
+  onToggleNotifications = () => {},
+  onToggleAudio = () => {},
+}) {
   return (
-    <div className="tb">
-      <div className="tb-left">
-        <div className="brand"><span className="brand-strong">LIVEBET</span>&nbsp;IQ</div>
-        <div className="live-badge" aria-label="live matches">
-          <span className="dot" />
-          <span className="live-text">LIVE</span>
-          <span className="count">{count}</span>
+    <TopBarPortal>
+      <div className="TopBar" role="banner">
+        <div className="topbar-inner">
+          <div className="brand">
+            LIVE<span className="bet">BET</span> <span>IQ</span>
+          </div>
+
+          <div className="live-pill" aria-label={`Live ${liveCount}`}>
+            <span className="live-dot" />
+            <span>LIVE</span>
+            <span className="live-num">{liveCount}</span>
+          </div>
+
+          <div className="actions">
+            <button
+              className={`icon-btn ${notificationsOn ? "on" : ""}`}
+              onClick={onToggleNotifications}
+              aria-label={notificationsOn ? "Disable notifications" : "Enable notifications"}
+              title="Notifications"
+            >
+              {/* bell */}
+              <svg className="icon" viewBox="0 0 24 24">
+                <path d="M12 22a2 2 0 0 0 1.98-1.75h-3.96A2 2 0 0 0 12 22Zm6-6V11a6 6 0 1 0-12 0v5l-2 2v1h16v-1l-2-2Z"/>
+              </svg>
+            </button>
+
+            <button
+              className={`icon-btn ${audioOn ? "on" : ""}`}
+              onClick={onToggleAudio}
+              aria-label={audioOn ? "Mute sounds" : "Enable sounds"}
+              title="Sound"
+            >
+              {/* speaker */}
+              <svg className="icon" viewBox="0 0 24 24">
+                <path d="M3 10v4h3l4 3V7L6 10H3zM16.5 12a4.5 4.5 0 0 0-2.25-3.897v7.794A4.5 4.5 0 0 0 16.5 12zm2.5 0a7 7 0 0 1-3.5 6.062V5.938A7 7 0 0 1 19 12z"/>
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
-
-      <div className="tb-actions">
-        <button
-          type="button"
-          className={"icon-btn" + (granted ? " active" : "")}
-          onClick={handleBell}
-          aria-label="notifications"
-        >
-          {/* bell */}
-          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm7-6V11a7 7 0 1 0-14 0v5l-2 2v1h18v-1l-2-2Z"
-              fill="currentColor"
-            />
-          </svg>
-        </button>
-
-        <button
-          type="button"
-          className={"icon-btn" + (!muted ? " active" : "")}
-          onClick={handleSound}
-          aria-label="sound"
-        >
-          {/* speaker */}
-          {muted ? (
-            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M14 4.5v15l-6-4.5H4v-6h4l6-4.5ZM19.5 8.5l-2 2m0 3 2 2m-4-5 2 2" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round"/>
-            </svg>
-          ) : (
-            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M14 4.5v15l-6-4.5H4v-6h4l6-4.5Z" fill="currentColor"/>
-              <path d="M17 9a5 5 0 0 1 0 6M19 7a8 8 0 0 1 0 10" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round"/>
-            </svg>
-          )}
-        </button>
-      </div>
-    </div>
+    </TopBarPortal>
   );
 }

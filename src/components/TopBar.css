@@ -1,90 +1,63 @@
 :root{
-  --tb-h: 44px;
-  --tb-safe: env(safe-area-inset-top);
-  --tb-total-h: calc(var(--tb-h) + var(--tb-safe));
+  --tb-base: 48px;                         /* ύψος μπάρας */
+  --tb-inset: env(safe-area-inset-top, 0); /* notch/iOS */
+  --tb-total-h: calc(var(--tb-base) + var(--tb-inset));
 }
 
-.tb{
+/* spacer για να μην κρύβεται το περιεχόμενο */
+.TopSpacer{ height: var(--tb-total-h); }
+
+.TopBar{
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
+  inset: 0 0 auto 0;              /* top:0, left/right:0 */
   height: var(--tb-total-h);
-  padding-top: var(--tb-safe);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  background: #0b0b0b;
-  color: #f5f5f5;
-  z-index: 9999;
-  box-shadow: 0 2px 14px rgba(0,0,0,.45);
-  -webkit-user-select: none;
-  user-select: none;
+  padding-top: var(--tb-inset);
+  background: #0b0b0b;            /* ολόμαυρο, όχι διαφανές */
+  color: #fff;
+  border-bottom: 1px solid rgba(255,255,255,.06);
 }
 
-.tb-left{
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding-left: 16px;
+.topbar-inner{
+  height: calc(var(--tb-total-h) - var(--tb-inset));
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 12px;
 }
 
-.brand{
-  font-weight: 800;
-  font-size: 18px;
-  letter-spacing: .5px;
-  color: #e8e8e8;
-}
-.brand-strong{ color: #3bd46a; }
+/* brand */
+.brand{ font-weight: 900; letter-spacing:.4px; }
+.brand .bet{ color:#1fdd73; }
 
-.live-badge{
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.10);
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 700;
-  font-size: 12px;
-  line-height: 1;
+/* LIVE pill */
+.live-pill{
+  display:flex; align-items:center; gap:6px;
+  margin-left: 10px;
+  background:#12171b;
+  color:#cfd6de;
+  border:1px solid #20262c;
+  border-radius:999px;
+  padding:4px 10px;
+  font-weight:800; font-size:12px;
 }
-
-.live-badge .dot{
-  width: 8px; height: 8px; border-radius: 50%;
-  background: #2ee370;
-  box-shadow: 0 0 8px #2ee370;
+.live-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:#1fdd73; box-shadow:0 0 0 2px rgba(31,221,115,.25);
 }
+.live-num{ color:#fff; font-weight:900; }
 
-.live-badge .live-text{ opacity: .9; }
-.live-badge .count{
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: rgba(0,0,0,.35);
-}
-
-.tb-actions{
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-right: 12px;
-}
-
+/* actions (εικονίδια) */
+.actions{ margin-left:auto; display:flex; gap:10px; }
 .icon-btn{
-  width: 36px; height: 36px;
-  display: grid; place-items: center;
-  border-radius: 12px;
-  background: #111;
-  color: #d7d7d7;
-  border: 1px solid rgba(255,255,255,0.08);
-  cursor: pointer;
-  transition: transform .12s ease, background .12s ease, color .12s ease, border-color .12s ease;
+  width:36px;height:36px;border-radius:10px;
+  display:grid;place-items:center; cursor:pointer;
+  background:#101417; border:1px solid #1e242b;
+  outline:none;
 }
-.icon-btn:active{ transform: translateY(1px); }
-.icon-btn.active{
-  background: #132318;
-  color: #8ff0b3;
-  border-color: rgba(46,227,112,.45);
+.icon-btn.on{ box-shadow:0 0 0 2px rgba(31,221,115,.25) inset; }
+.icon{ width:18px;height:18px; fill:#aeb6bf; }
+.icon-btn.on .icon{ fill:#1fdd73; }
+
+/* προληπτικά: μην δημιουργούνται stacking contexts πάνω από το TopBar */
+html, body, #root, .container, [data-scroll-root]{
+  transform:none !important; perspective:none !important;
+  contain:none !important; will-change:auto !important;
 }
