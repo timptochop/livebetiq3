@@ -3,8 +3,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
 import { showToast } from '../utils/toast';
+import { recordPrediction } from '../utils/telemetry'; // <-- NEW
 
-const FINISHED = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
+const FINISHED = new Set([
+  'finished','cancelled','retired','abandoned','postponed','walk over'
+]);
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
 const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
 
@@ -38,16 +41,17 @@ function emitLiveCount(n) {
 
 export default function LiveTennis({
   onLiveCount = () => {},
-  notifyMode = 'ONCE',          // 'ONCE' | 'ON_CHANGE'
-  notificationsOn = true,       // toast on SAFE
-  audioOn = true,               // sound on SAFE
+  notifyMode = 'ONCE',       // 'ONCE' | 'ON_CHANGE'
+  notificationsOn = true,    // toast on SAFE
+  audioOn = true,            // sound on SAFE
 }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
 
   // refs for notification behavior
-  const notifiedRef = useRef(new Set());      // ONCE lock
-  const lastLabelRef = useRef(new Map());     // ON_CHANGE detection
+  const notifiedRef   = useRef(new Set()); // ONCE lock
+  const lastLabelRef  = useRef(new Map()); // ON_CHANGE detection
+  const telSeenRef    = useRef(new Set()); // <-- telemetry: seen keys (id|label|set)
 
   async function load() {
     setLoading(true);
@@ -140,15 +144,37 @@ export default function LiveTennis({
     });
   }, [rows]);
 
+  // --- Telemetry: γράφουμε ΜΟΝΟ πρώτη φορά που βλέπουμε (id|label|setNum) ---
+  useEffect(() => {
+    list.forEach((m) => {
+      const key = `${m.id}|${m.ai?.label || m.uiLabel}|${m.setNum}`;
+      if (telSeenRef.current.has(key)) return;
+      telSeenRef.current.add(key);
+
+      recordPrediction({
+        ts: Date.now(),
+        matchId: m.id,
+        p1: m.name1,
+        p2: m.name2,
+        label: m.ai?.label || m.uiLabel,
+        prob: m.ai?.prob ?? null,
+        kelly: m.ai?.kellyLevel ?? null,
+        status: m.status,
+        setNum: m.setNum,
+        tip: m.ai?.tip || ''
+      });
+    });
+  }, [list]);
+
   // SAFE notifications (sound + toast) according to mode
   useEffect(() => {
     list.forEach((m) => {
-      const cur = m.ai?.label || null;
+      const cur  = m.ai?.label || null;
       const prev = lastLabelRef.current.get(m.id) || null;
 
-      const becameSafe = cur === 'SAFE' && prev !== 'SAFE';
-      const onceCondition = cur === 'SAFE' && !notifiedRef.current.has(m.id);
-      const shouldTrigger = notifyMode === 'ON_CHANGE' ? becameSafe : onceCondition;
+      const becameSafe   = cur === 'SAFE' && prev !== 'SAFE';
+      const onceCondition= cur === 'SAFE' && !notifiedRef.current.has(m.id);
+      const shouldTrigger= notifyMode === 'ON_CHANGE' ? becameSafe : onceCondition;
 
       if (!shouldTrigger) {
         lastLabelRef.current.set(m.id, cur);
