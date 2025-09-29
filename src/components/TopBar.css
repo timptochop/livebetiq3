@@ -1,51 +1,90 @@
 :root{
-  --tb-h: 48px;
-  --tb-bg: #0b0b0c;
+  --tb-h: 44px;
+  --tb-safe: env(safe-area-inset-top);
+  --tb-total-h: calc(var(--tb-h) + var(--tb-safe));
 }
 
-.topbar,
-.TopBar{
+.tb{
   position: fixed;
-  top: 0; left: 0; right: 0;
-  height: calc(var(--tb-h) + env(safe-area-inset-top));
-  padding-top: env(safe-area-inset-top);
-  background: var(--tb-bg);
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--tb-total-h);
+  padding-top: var(--tb-safe);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  z-index: 2147483647; /* above everything */
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
+  background: #0b0b0b;
+  color: #f5f5f5;
+  z-index: 9999;
+  box-shadow: 0 2px 14px rgba(0,0,0,.45);
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-.topbar::after,
-.TopBar::after{
-  content: "";
-  position: absolute;
-  left: 0; right: 0; bottom: -1px;
-  height: 1px;
+.tb-left{
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-left: 16px;
+}
+
+.brand{
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: .5px;
+  color: #e8e8e8;
+}
+.brand-strong{ color: #3bd46a; }
+
+.live-badge{
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
   background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1;
 }
 
-.topbar .left,
-.TopBar .left{ display:flex; align-items:center; gap:10px; min-width:0; }
-.topbar .right,
-.TopBar .right{ display:flex; align-items:center; gap:8px; }
-
-.topbar .brand,
-.TopBar .brand{ font-weight:800; font-size:18px; letter-spacing:.3px; }
-
-.topbar .pill,
-.TopBar .pill{
-  display:inline-flex; align-items:center; gap:6px;
-  padding:6px 10px; border-radius:999px; font-size:12px;
-  background: rgba(255,255,255,.06);
+.live-badge .dot{
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #2ee370;
+  box-shadow: 0 0 8px #2ee370;
 }
 
-.topbar .icon-btn,
-.TopBar .icon-btn{
-  width:36px; height:36px; border-radius:10px;
-  display:inline-flex; align-items:center; justify-content:center;
-  background: rgba(255,255,255,.06);
+.live-badge .live-text{ opacity: .9; }
+.live-badge .count{
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(0,0,0,.35);
+}
+
+.tb-actions{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 12px;
+}
+
+.icon-btn{
+  width: 36px; height: 36px;
+  display: grid; place-items: center;
+  border-radius: 12px;
+  background: #111;
+  color: #d7d7d7;
+  border: 1px solid rgba(255,255,255,0.08);
+  cursor: pointer;
+  transition: transform .12s ease, background .12s ease, color .12s ease, border-color .12s ease;
+}
+.icon-btn:active{ transform: translateY(1px); }
+.icon-btn.active{
+  background: #132318;
+  color: #8ff0b3;
+  border-color: rgba(46,227,112,.45);
 }
