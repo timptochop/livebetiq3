@@ -1,3 +1,4 @@
+// src/components/LiveTennis.js
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
@@ -25,18 +26,28 @@ function currentSetFromScores(players) {
   return k || 0;
 }
 
+// lightweight global live-count bus (keeps TopBar in sync even without props)
+const EVT_LIVE_COUNT = 'live-count';
+function emitLiveCount(n) {
+  const count = Number.isFinite(n) ? n : 0;
+  if (typeof window !== 'undefined') {
+    window.__LIVE_COUNT__ = count;
+    window.dispatchEvent(new CustomEvent(EVT_LIVE_COUNT, { detail: count }));
+  }
+}
+
 export default function LiveTennis({
   onLiveCount = () => {},
   notifyMode = 'ONCE',          // 'ONCE' | 'ON_CHANGE'
-  notificationsOn = true,       // show toast
-  audioOn = true,               // play sound
+  notificationsOn = true,       // toast on SAFE
+  audioOn = true,               // sound on SAFE
 }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
 
   // refs for notification behavior
-  const notifiedRef = useRef(new Set());      // for ONCE lock
-  const lastLabelRef = useRef(new Map());     // for ON_CHANGE detection
+  const notifiedRef = useRef(new Set());      // ONCE lock
+  const lastLabelRef = useRef(new Map());     // ON_CHANGE detection
 
   async function load() {
     setLoading(true);
@@ -79,7 +90,7 @@ export default function LiveTennis({
     return () => clearInterval(t);
   }, []);
 
-  // live counter for TopBar
+  // live counter for TopBar (prop + global bus)
   useEffect(() => {
     const n = rows.reduce((acc, m) => {
       const s = m.status || '';
@@ -87,6 +98,7 @@ export default function LiveTennis({
       return acc + (live ? 1 : 0);
     }, 0);
     onLiveCount(n);
+    emitLiveCount(n);
   }, [rows, onLiveCount]);
 
   const labelPriority = {
@@ -128,7 +140,7 @@ export default function LiveTennis({
     });
   }, [rows]);
 
-  // SAFE -> sound + toast (ONCE or ON_CHANGE)
+  // SAFE notifications (sound + toast) according to mode
   useEffect(() => {
     list.forEach((m) => {
       const cur = m.ai?.label || null;
@@ -136,17 +148,13 @@ export default function LiveTennis({
 
       const becameSafe = cur === 'SAFE' && prev !== 'SAFE';
       const onceCondition = cur === 'SAFE' && !notifiedRef.current.has(m.id);
-
-      const shouldTrigger =
-        notifyMode === 'ON_CHANGE' ? becameSafe : onceCondition;
+      const shouldTrigger = notifyMode === 'ON_CHANGE' ? becameSafe : onceCondition;
 
       if (!shouldTrigger) {
-        // always track last label
         lastLabelRef.current.set(m.id, cur);
         return;
       }
 
-      // SOUND
       if (audioOn) {
         try {
           const a = new Audio('/notify.mp3');
@@ -154,18 +162,14 @@ export default function LiveTennis({
         } catch {}
       }
 
-      // TOAST
       if (notificationsOn) {
-        const t = `SAFE: ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ''}`;
+        const t = `SAFE: ${m.name1} vs ${m.name2}${m.categoryName ? ` \u00B7 ${m.categoryName}` : ''}`;
         showToast(t, 3500);
       }
 
-      // lock ONCE
       if (notifyMode === 'ONCE') {
         notifiedRef.current.add(m.id);
       }
-
-      // update last label
       lastLabelRef.current.set(m.id, cur);
     });
   }, [list, notifyMode, notificationsOn, audioOn]);
@@ -180,10 +184,11 @@ export default function LiveTennis({
     else if (label.startsWith('SET')) { bg = '#6e42c1'; }
     else if (label === 'SOON') { bg = '#5a5f68'; }
 
+    // Kelly dots using safe unicode escapes
     let dots = '';
-    if (kellyLevel === 'HIGH') dots = ' ●●●';
-    else if (kellyLevel === 'MED') dots = ' ●●';
-    else if (kellyLevel === 'LOW') dots = ' ●';
+    if (kellyLevel === 'HIGH') dots = ' \u25CF\u25CF\u25CF';
+    else if (kellyLevel === 'MED') dots = ' \u25CF\u25CF';
+    else if (kellyLevel === 'LOW') dots = ' \u25CF';
 
     return (
       <span style={{
@@ -208,7 +213,7 @@ export default function LiveTennis({
   return (
     <div style={{ color: '#fff' }}>
       {loading && list.length === 0 ? (
-        <div style={{ color: '#cfd3d7', padding: '8px 2px' }}>Loading…</div>
+        <div style={{ color: '#cfd3d7', padding: '8px 2px' }}>Loading...</div>
       ) : null}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -229,7 +234,7 @@ export default function LiveTennis({
                 <span>{m.name2}</span>
               </div>
               <div style={{ marginTop: 6, color: '#c2c7cc', fontSize: 14 }}>
-                {m.date} {m.time} · {m.categoryName}
+                {m.date} {m.time} \u00B7 {m.categoryName}
               </div>
 
               {['SAFE','RISKY'].includes(m.ai?.label) && m.ai?.tip && (

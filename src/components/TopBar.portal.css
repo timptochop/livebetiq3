@@ -1,26 +1,62 @@
-:root{
-  --tb-h: 48px;
+:root {
+  /* compact height; actual offset comes from JS via --tb-offset */
+  --tb-base-h: 48px;
+  --tb-bg: #0b0b0b;
 }
 
-/* fixed container πάνω απ’ όλα */
-.topbar-layer-inner{
+.topbar {
   position: fixed;
-  top: 0; left: 0; right: 0;
-  height: calc(var(--tb-h) + env(safe-area-inset-top));
+  top: 0;
+  inset-inline: 0;
+  /* include iOS safe-area */
   padding-top: env(safe-area-inset-top);
+  min-height: var(--tb-base-h);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  background: #0b0b0c;              /* τελείως μαύρο */
-  z-index: 2147483647;
+  padding-inline: 16px;
+  background: var(--tb-bg);
+  color: #e8e8e8;
+  z-index: 1000;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04), 0 8px 20px rgba(0,0,0,0.35);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
 
-/* λεπτή γραμμή διαχωρισμού */
-.topbar-layer-inner::after{
-  content:"";
-  position:absolute; left:0; right:0; bottom:-1px;
-  height:1px; background: rgba(255,255,255,0.06);
+.tb-left { display: flex; align-items: center; gap: 12px; }
+.brand { font-weight: 800; letter-spacing: 0.5px; }
+.brand-accent { color: #39d353; }
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 18px;
+  background: #161616;
+  color: #cfd3d8;
+  border: 1px solid rgba(255,255,255,0.06);
 }
+.live-pill .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #18c26e; display: inline-block;
+}
+
+.tb-right { display: flex; align-items: center; gap: 10px; }
+.tb-btn {
+  display: inline-grid; place-items: center;
+  width: 38px; height: 38px; border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.06);
+  background: #161616; color: #dcdcdc; cursor: pointer;
+}
+.tb-btn:active { transform: translateY(0.5px); }
+
+.bell, .speaker { width: 18px; height: 18px; display: inline-block; }
+.bell { background: radial-gradient(circle at 50% 35%, #dcdcdc 0 40%, transparent 41%), conic-gradient(from 0deg, #dcdcdc 0 25%, transparent 0); mask: radial-gradient(circle at 50% 35%, black 0 40%, transparent 41%); }
+.speaker { background: linear-gradient(#dcdcdc,#dcdcdc); mask: polygon(0 30%,40% 30%,70% 0,70% 100%,40% 70%,0 70%); }
+
+/* make sure bar never gets hidden by any transformed wrapper */
+html, body, #root { height: 100%; background: #121212; margin: 0; }
+#root { isolation: isolate; }

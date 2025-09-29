@@ -1,31 +1,19 @@
-/* base layout */
+/* Βασικά */
 html, body, #root {
-  height: 100%;
   margin: 0;
-  background: #121212;
-  -webkit-text-size-adjust: 100%;
+  background: #111;   /* σκοτεινό φόντο */
+  color: #e9eef3;
 }
 
-/* topbar reserved space */
-:root{
-  --tb-h: 44px;
-  --tb-safe: env(safe-area-inset-top);
-  --tb-total-h: calc(var(--tb-h) + var(--tb-safe));
+/* Το περιεχόμενο να ξεκινά κάτω από το TopBar */
+.top-spacer {
+  height: var(--tb-total-h);
 }
 
-/* push content below the TopBar */
-body { padding-top: var(--tb-total-h); }
-#root > div, main { padding-top: 0; }
-
-/* avoid accidental stacking contexts above TopBar */
-html, body, #root, .App, main, .container, [data-scroll-root]{
-  transform: none !important;
-  perspective: none !important;
-  will-change: auto !important;
-}
-
-/* small usability */
+/* Ελαφρύ reset – τίποτα που να δημιουργεί transform/stacking issues */
+* { box-sizing: border-box; }
 img { max-width: 100%; display: block; }
 button { font: inherit; }
-:focus:not(:focus-visible){ outline: none; }
-:focus-visible{ outline: 2px solid #7c5cff; outline-offset: 2px; }
+
+/* Βοήθημα για anchors/scrollIntoView */
+:root { scroll-padding-top: var(--tb-total-h); }
