@@ -1,119 +1,44 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React from "react";
 import "./TopBar.css";
 
-function IconBtn({ onMouseDown, onMouseUp, onTouchStart, onTouchEnd, title, children, active }) {
+export default function TopBar({
+  liveCount = 0,
+  notificationsOn = true,
+  onToggleNotifications = () => {},
+  // Σκόπιμα αγνοούμε τυχόν audio props (ήχος παραμένει ενεργός από τη λογική σου)
+}) {
   return (
-    <button
-      type="button"
-      className={`tb-icon ${active ? "is-active" : ""}`}
-      aria-label={title}
-      title={title}
-      onMouseDown={onMouseDown}
-      onMouseUp={onMouseUp}
-      onMouseLeave={onMouseUp}
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
-    >
-      {children}
-    </button>
-  );
-}
+    <>
+      <header className="topbar">
+        <div className="brand">
+          <span>LIVE</span>
+          <span className="bet">BET</span>
+          <span className="muted"> IQ</span>
+        </div>
 
-export default function TopBar({ liveCount = 0, onToggleAudio, onToggleNotify }) {
-  const [notifyOn, setNotifyOn] = useState(() => localStorage.getItem("notifyOn") !== "0");
-  const [audioOn, setAudioOn] = useState(() => localStorage.getItem("audioOn") !== "0");
-
-  useEffect(() => {
-    localStorage.setItem("notifyOn", notifyOn ? "1" : "0");
-    if (typeof onToggleNotify === "function") onToggleNotify(notifyOn);
-  }, [notifyOn, onToggleNotify]);
-
-  useEffect(() => {
-    localStorage.setItem("audioOn", audioOn ? "1" : "0");
-    if (typeof onToggleAudio === "function") onToggleAudio(audioOn);
-  }, [audioOn, onToggleAudio]);
-
-  // Long-press timer for bell (test notification)
-  const holdTimer = useRef(null);
-  const startHold = () => {
-    clearTimeout(holdTimer.current);
-    holdTimer.current = setTimeout(() => {
-      void testNotification();
-    }, 600);
-  };
-  const endHold = () => {
-    clearTimeout(holdTimer.current);
-  };
-
-  const toggleNotify = () => setNotifyOn(v => !v);
-  const toggleAudio  = () => setAudioOn(v => !v);
-
-  return (
-    <div className="TopBar">
-      <div className="tb-left">
-        <span className="brand"><b>LIVE</b><span className="brand-green">BET</span> IQ</span>
-        <span className="live-pill">
+        <div className="live-pill" aria-label={`Live ${liveCount}`}>
           <span className="dot" />
-          <span className="txt">LIVE</span>
-          <span className="badge">{liveCount}</span>
-        </span>
-      </div>
+          <span style={{ fontWeight: 800 }}>LIVE</span>
+          <span style={{ opacity: 0.85, marginLeft: 6 }}>{liveCount}</span>
+        </div>
 
-      <div className="tb-right">
-        <IconBtn
-          title="Notifications"
-          active={notifyOn}
-          onMouseDown={startHold}
-          onMouseUp={(e) => { endHold(); toggleNotify(); }}
-          onTouchStart={startHold}
-          onTouchEnd={(e) => { endHold(); toggleNotify(); }}
-        >
-          {/* bell */}
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 3a6 6 0 0 0-6 6v3.38l-.894 2.236A1 1 0 0 0 6.03 16h11.94a1 1 0 0 0 .924-1.384L18 12.38V9a6 6 0 0 0-6-6Z" stroke="currentColor" strokeWidth="1.8" />
-            <path d="M9 18a3 3 0 0 0 6 0" stroke="currentColor" strokeWidth="1.8" />
-          </svg>
-        </IconBtn>
+        <div className="actions">
+          {/* ΜΟΝΟ το καμπανάκι – το εικονίδιο ήχου αφαιρέθηκε */}
+          <button
+            className={`btn ${notificationsOn ? "active" : ""}`}
+            title={notificationsOn ? "Notifications: ON" : "Notifications: OFF"}
+            onClick={onToggleNotifications}
+            aria-label="Toggle notifications"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Zm7-5v-5.5A7 7 0 0 0 12 4a7 7 0 0 0-7 7.5V17l-1.8 1.8a1 1 0 0 0 .7 1.7h17.9a1 1 0 0 0 .7-1.7L19 17Z"/>
+            </svg>
+          </button>
+        </div>
+      </header>
 
-        <IconBtn title="Sound" active={audioOn} onMouseDown={null} onMouseUp={toggleAudio} onTouchStart={null} onTouchEnd={toggleAudio}>
-          {/* speaker */}
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M4 10v4h3l5 4V6l-5 4H4Z" stroke="currentColor" strokeWidth="1.8"/>
-            <path d="M16 9a3 3 0 0 1 0 6" stroke="currentColor" strokeWidth="1.8"/>
-            <path d="M18.5 6.5a7 7 0 0 1 0 11" stroke="currentColor" strokeWidth="1.8"/>
-          </svg>
-        </IconBtn>
-      </div>
-    </div>
+      {/* spacer για να μη σκεπάζει το περιεχόμενο */}
+      <div className="top-spacer" />
+    </>
   );
-}
-
-/* ---- helpers ---- */
-async function testNotification() {
-  try {
-    if (!("Notification" in window)) return;
-    if (Notification.permission === "default") {
-      await Notification.requestPermission();
-    }
-    if (Notification.permission !== "granted") return;
-
-    // Prefer SW notification so it matches push behavior
-    const reg = await navigator.serviceWorker?.getRegistration();
-    const opts = {
-      body: "Test notification (LiveBet IQ)",
-      icon: "/logo192.png",
-      badge: "/logo192.png",
-      tag: "lbiq-test",
-      renotify: true,
-      silent: false,
-    };
-    if (reg && reg.showNotification) {
-      await reg.showNotification("LiveBet IQ", opts);
-    } else {
-      // fallback
-      new Notification("LiveBet IQ", opts);
-    }
-  } catch {
-    // no-op
-  }
 }
