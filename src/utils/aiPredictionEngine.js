@@ -1,27 +1,55 @@
-// utils/aiPredictionEngine.js
-import { getDrift } from "./oddsTracker";
+// src/utils/aiPredictionEngine.js
+import { computeFeatures, score, impliedProbFromMatch } from "./aiEngineV2";
 
-export function decideLabel(match, analysis) {
-  const { setNum = 1, live } = match || {};
-  const { score = 0.5, conf = 0.5 } = analysis || {};
+/** Επιστρέφει το όνομα του φαβορί (με βάση τις αποδόσεις) */
+function favoriteName(m = {}) {
+  const players = Array.isArray(m.players) ? m.players
+                : Array.isArray(m.player)  ? m.player  : [];
+  const p1 = players[0] || {}, p2 = players[1] || {};
+  const name1 = p1.name || p1["@name"] || "";
+  const name2 = p2.name || p2["@name"] || "";
 
-  // optional odds drift (%): αρνητικό = προς το φαβορί που υποστηρίζουμε
-  const drift = getDrift(match.id) ?? 0; // π.χ. -0.06 = -6%
+  const o = m.odds || m.liveOdds || {};
+  const h = Number(o.home ?? o.h ?? o.a1 ?? o.p1);
+  const a = Number(o.away ?? o.a ?? o.a2 ?? o.p2);
 
-  let label = "SOON";
-  if (live) {
-    // αυστηρό SAFE
-    if (conf >= 0.82 && drift <= -0.05) label = "SAFE";
-    else if (conf >= 0.68) label = "RISKY";
-    else label = `SET ${Math.max(1, setNum)}`;
-  } else {
-    label = "SOON";
+  if (Number.isFinite(h) && Number.isFinite(a)) {
+    return h <= a ? name1 : name2;
   }
+  // fallback: αν δεν έχουμε odds, πάρε τον πρώτο για συνέπεια
+  return name1 || name2 || "";
+}
 
-  // Kelly επίπεδο από την εμπιστοσύνη
-  let kellyLevel = "LOW";
-  if (conf >= 0.85) kellyLevel = "HIGH";
-  else if (conf >= 0.72) kellyLevel = "MED";
+/** Χαρτογράφηση conf -> label + kellyLevel */
+function decideLabel(conf, live, features) {
+  // Συγκρατημένα thresholds για λιγότερα false-positives
+  if (conf >= 0.86) return { label: "SAFE",       kellyLevel: "HIGH" };
+  if (conf >= 0.76) return { label: "RISKY",      kellyLevel: "MED"  };
+  if (!live)        return { label: "SOON",       kellyLevel: "LOW"  };
+  return             { label: "AVOID",            kellyLevel: "LOW"  };
+}
 
-  return { label, kellyLevel, conf, drift, score };
+/** Κύρια συνάρτηση ταξινόμησης */
+export default function classifyMatch(m = {}) {
+  const f = computeFeatures(m);
+  const conf = score(f);
+  const { label, kellyLevel } = decideLabel(conf, f.live, f);
+
+  // TIP: προς το φαβορί. Αν δεν υπάρχει, παραλείπεται.
+  const fav = favoriteName(m);
+  const tip = fav ? fav : undefined;
+
+  return {
+    label,
+    conf,
+    kellyLevel,
+    tip,
+    features: {
+      pOdds: f.pOdds,
+      momentum: f.momentum,
+      drift: f.drift,
+      setNum: f.setNum,
+      live: f.live
+    }
+  };
 }

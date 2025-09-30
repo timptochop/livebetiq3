@@ -1,162 +1,60 @@
 // src/utils/aiEngineV2.js
-// Pluggable AI scoring: features -> weighted score -> calibration -> outputs
-// Runtime-tunable weights via localStorage
+import { getDrift } from "./oddsTracker";
 
-// ---------- 1) Default weights ----------
-const DEFAULT_WEIGHTS = {
-  // odds features
-  favImplied    : 0.90,   // πόσο «δίκαιη» η τιμή του φαβορί (implied prob)
-  priceSpread   : -0.60,  // penalty όσο πιο κοντά οι τιμές (coinflip → λιγότερη άκρη)
-  plusMoneyEdge : 0.45,   // μικρό bonus όταν υπάρχει underdog spot
+/** Safe int */
+const inum = (v) => (v === undefined || v === null || v === "" ? 0 :
+  parseInt(String(v).split(/[.:]/)[0], 10) || 0);
 
-  // basic stats (έρχονται από mock ή αργότερα από API)
-  form          : 0.35,   // πρόσφατη φόρμα 0..100
-  momentum      : 0.30,   // live momentum 0..100
-  h2h           : 0.25,   // head-to-head υπέρ παίκτη 0..100
-  surfaceFit    : 0.20,   // καταλληλότητα επιφάνειας 0..100
-  fatiguePenalty: -0.40,  // penalty κούρασης 0..100
+/** Προσπάθεια εξαγωγής implied prob από διάφορα πιθανά πεδία odds */
+export function impliedProbFromMatch(m = {}) {
+  const o = m.odds || m.liveOdds || {};
+  const h = Number(o.home ?? o.h ?? o.a1 ?? o.p1);
+  const a = Number(o.away ?? o.a ?? o.a2 ?? o.p2);
+  const fav = [h, a].filter(x => Number.isFinite(x) && x > 1).sort((x, y) => x - y)[0];
+  return fav ? 1 / fav : null; // 0..1 (π.χ. 1/1.80 ≈ 0.555)
+}
 
-  // bias catch-all
-  volatility    : -0.25,  // υψηλή μεταβλητότητα μειώνει σιγουριά
-};
+/** Επιστρέφει { pOdds, momentum, driftSignal, setNum, live } */
+export function computeFeatures(m = {}) {
+  const players = Array.isArray(m.players) ? m.players
+                : Array.isArray(m.player)  ? m.player  : [];
+  const a = players[0] || {};
+  const b = players[1] || {};
 
-// ---------- 1b) Runtime overrides (localStorage) ----------
-const LS_KEY = 'ai_v2_weights';
-function loadWeights() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return { ...DEFAULT_WEIGHTS };
-    const obj = JSON.parse(raw);
-    return { ...DEFAULT_WEIGHTS, ...obj };
-  } catch {
-    return { ...DEFAULT_WEIGHTS };
+  // set counter & lead
+  const A = [a.s1, a.s2, a.s3, a.s4, a.s5].map(inum);
+  const B = [b.s1, b.s2, b.s3, b.s4, b.s5].map(inum);
+  let setNum = 0, wonA = 0, wonB = 0;
+  for (let i = 0; i < 5; i++) {
+    const sa = A[i], sb = B[i];
+    if (sa || sb) {
+      setNum = i + 1;
+      if (sa > sb) wonA++; else if (sb > sa) wonB++;
+    }
   }
+  const setLead = Math.max(-2, Math.min(2, wonA - wonB));
+
+  const status = String(m.status || m["@status"] || "").toLowerCase();
+  const live = status && status !== "not started";
+
+  const pOdds = impliedProbFromMatch(m) ?? 0.50;                 // 0..1
+  const momentum = 0.5 + 0.15 * setLead;                         // ~0.2..0.8
+  const drift = getDrift(m.id) ?? 0;                             // -0.10..+0.10 (συνήθως)
+  const driftSignal = 0.5 + Math.max(-0.15, Math.min(0.15, -drift)); // πτώση αποδόσεων υπέρ μας
+
+  return { pOdds, momentum, driftSignal, setNum, live, drift };
 }
 
-// expose helpers for quick tuning from DevTools
-export function setWeights(partial) {
-  try {
-    const curr = loadWeights();
-    const next = { ...curr, ...(partial || {}) };
-    localStorage.setItem(LS_KEY, JSON.stringify(next));
-    return next;
-  } catch {
-    return loadWeights();
-  }
-}
-export function getWeights() {
-  return loadWeights();
-}
+/** Sigmoid */
+export const sigmoid = (z) => 1 / (1 + Math.exp(-z));
 
-// ---------- 2) Calibration: raw score -> confidence/EV ----------
-function calibrateConfidence(raw) {
-  // raw περίπου -3..+3 (μετά από scaling) -> 30..90
-  const x = Math.max(-3, Math.min(3, raw));
-  const pct = (60 / 6) * (x + 3) + 30; // [-3,3] -> [30,90]
-  return Math.round(pct);
-}
-
-function calibrateEV(raw) {
-  // λογικό εύρος για live: [-10, +15], κέντρο ~2.5
-  const x = Math.max(-3, Math.min(3, raw));
-  const ev = (25 / 6) * x + 2.5;
-  return Math.round(ev * 10) / 10; // 1 δεκαδικό
-}
-
-// ---------- 3) Feature extraction (ασφαλές σε ελλιπή δεδομένα) ----------
-function featuresFromMatch(m) {
-  const odds1 = Number(m.odds1 ?? m.odds ?? 0);
-  const odds2 = Number(m.odds2 ?? 0);
-
-  // implied probs
-  const imp1 = odds1 > 0 ? 1 / odds1 : 0;
-  const imp2 = odds2 > 0 ? 1 / odds2 : 0;
-  const favImplied = Math.max(imp1, imp2); // 0..1
-
-  const priceSpread = Math.abs(odds1 - odds2); // μικρότερο spread → πιο coinflip
-  const plusMoneyEdge = (odds1 >= 2.2 || odds2 >= 2.2) ? 1 : 0; // underdog spot
-
-  // optional fields με defaults
-  const form       = clamp01((m.form ?? m.stats ?? 60) / 100);
-  const momentum   = clamp01((m.momentum ?? 50) / 100);
-  const h2h        = clamp01((m.h2h ?? 50) / 100);
-  const surfaceFit = clamp01((m.surfaceFit ?? 50) / 100);
-  const fatigue    = clamp01((m.fatigue ?? 30) / 100);
-  const volatility = clamp01((m.volatility ?? 40) / 100);
-
-  return {
-    favImplied,
-    priceSpread,
-    plusMoneyEdge,
-    form,
-    momentum,
-    h2h,
-    surfaceFit,
-    fatigue,
-    volatility,
-  };
-}
-
-// ---------- 4) Raw score (uses runtime weights) ----------
-function score(feat) {
-  const W = loadWeights(); // παίρνουμε τα τρέχοντα weights κάθε φορά
-  const s =
-    W.favImplied     * norm(feat.favImplied, 0, 1) +
-    W.priceSpread    * norm(feat.priceSpread, 0, 2.0) + // ήπιο cap
-    W.plusMoneyEdge  * feat.plusMoneyEdge +
-    W.form           * feat.form +
-    W.momentum       * feat.momentum +
-    W.h2h            * feat.h2h +
-    W.surfaceFit     * feat.surfaceFit +
-    W.fatiguePenalty * feat.fatigue +
-    W.volatility     * feat.volatility;
-
-  // συμπίεση σε περίπου -3..+3
-  return Math.max(-3, Math.min(3, s * 3.2));
-}
-
-// ---------- 5) Label rules ----------
-function labelFrom(ev, conf) {
-  if (ev >= 8 && conf >= 72) return 'SAFE';
-  if (ev >= 4 && conf >= 58) return 'RISKY';
-  if (ev < 0) return 'AVOID';
-  return 'STARTS SOON';
-}
-
-function noteFrom(label, ev, conf) {
-  switch (label) {
-    case 'SAFE':  return `Solid edge (${ev.toFixed(1)}% EV, ${conf}% conf).`;
-    case 'RISKY': return `Some edge (${ev.toFixed(1)}% EV) but lower confidence (${conf}%).`;
-    case 'AVOID': return `Negative EV (${ev.toFixed(1)}%). Skip.`;
-    default:      return `Match starting soon. Keep an eye on live odds.`;
-  }
-}
-
-// ---------- 6) Public API (drop-in) ----------
-export function calculateEV(odds1, odds2, m = {}) {
-  const f = featuresFromMatch({ ...m, odds1, odds2 });
-  const raw = score(f);
-  return calibrateEV(raw);
-}
-
-export function estimateConfidence(odds1, odds2, m = {}) {
-  const f = featuresFromMatch({ ...m, odds1, odds2 });
-  const raw = score(f);
-  return calibrateConfidence(raw);
-}
-
-export function generateLabel(ev, conf) {
-  return labelFrom(Number(ev) || 0, Number(conf) || 0);
-}
-
-export function generateNote(label, ev, conf) {
-  return noteFrom(label, Number(ev) || 0, Number(conf) || 0);
-}
-
-// ---------- utils ----------
-function clamp01(x) { return Math.max(0, Math.min(1, x)); }
-function norm(x, lo, hi) {
-  if (hi === lo) return 0;
-  const t = (x - lo) / (hi - lo);
-  return Math.max(0, Math.min(1, t));
+/** Βαθμολογητής -> επιστρέφει conf (0..1) */
+export function score(features) {
+  const { pOdds, momentum, driftSignal, live } = features;
+  // Βάρη σταθερά (θα γίνουν online-learned αργότερα)
+  const w = [1.6, 0.9, 1.1, 0.3];  // pOdds, momentum, driftSignal, live
+  const b0 = -1.0;
+  const x = [pOdds, momentum, driftSignal, live ? 1 : 0];
+  const z = w[0]*x[0] + w[1]*x[1] + w[2]*x[2] + w[3]*x[3] + b0;
+  return sigmoid(z);
 }
