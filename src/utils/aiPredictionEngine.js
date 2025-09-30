@@ -19,7 +19,6 @@ export default function classifyMatch(match = {}) {
     if (Number.isFinite(p1d) && Number.isFinite(p2d)) tip = p1d < p2d ? p1Name : p2Name;
   } catch {}
 
-  // record telemetry after decision
   try { recordDecision(ctx, labelInfo.label); } catch {}
 
   return {
@@ -30,9 +29,12 @@ export default function classifyMatch(match = {}) {
     features: {
       pOdds: f.pOdds,
       momentum: f.momentum,
+      micro: f.micro,
+      serve: f.serve,
       drift: f.drift - 0.5,
       setNum: Math.round(f.setNum * 5),
       live: f.live,
+      clutch: f.clutch,
       ctx,
       nudges,
     },

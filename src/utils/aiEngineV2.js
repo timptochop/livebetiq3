@@ -29,19 +29,13 @@ function extractDecimalOdds(match) {
 
 function impliedProb(decimal) { return decimal ? 1 / decimal : null; }
 
-function readSetScores(players = []) {
+function readSetArrays(players = []) {
   const a = players[0] || {}, b = players[1] || {};
   const grab = (p) => [toNum(p.s1), toNum(p.s2), toNum(p.s3), toNum(p.s4), toNum(p.s5)];
   const sA = grab(a), sB = grab(b);
-  let setNum = 0, gamesA = 0, gamesB = 0;
-  for (let i = 0; i < 5; i++) {
-    const has = sA[i] != null || sB[i] != null;
-    if (has) setNum = i + 1;
-    gamesA += sA[i] || 0; gamesB += sB[i] || 0;
-  }
-  const totalGames = gamesA + gamesB || 1;
-  const momentum = 0.5 + (gamesA - gamesB) / (2 * totalGames);
-  return { setNum, momentum };
+  let setIdx = -1;
+  for (let i = 0; i < 5; i++) if (sA[i] != null || sB[i] != null) setIdx = i;
+  return { sA, sB, setIdx };
 }
 
 function readDrift(match) {
@@ -54,6 +48,22 @@ function readDrift(match) {
   const pLast = impliedProb(dLast), pPrev = impliedProb(dPrev);
   const drift = pLast - pPrev;
   return Math.max(-0.2, Math.min(0.2, drift));
+}
+
+function readServer(match, players = [], pFav = 0.5) {
+  const srv = match?.server ?? match?.serve ?? match?.['@server'] ?? null;
+  const p1Name = players?.[0]?.name || players?.[0]?.['@name'] || "";
+  const p2Name = players?.[1]?.name || players?.[1]?.['@name'] || "";
+
+  let server = 0; // 0 unknown, 1 p1, 2 p2
+  if (srv === 1 || srv === "1" || srv === p1Name) server = 1;
+  else if (srv === 2 || srv === "2" || srv === p2Name) server = 2;
+
+  const favIsP1 = pFav >= 0.5;
+  if (server === 0) return 0.5;
+  const favServing = (server === 1 && favIsP1) || (server === 2 && !favIsP1);
+  // small bounded edge around 0.5
+  return favServing ? 0.53 : 0.47;
 }
 
 export function extractContext(match = {}) {
@@ -85,40 +95,77 @@ export function extractFeatures(match = {}) {
   const players = Array.isArray(match.players) ? match.players :
                   Array.isArray(match.player) ? match.player : [];
 
-  const { setNum, momentum } = readSetScores(players);
+  const { sA, sB, setIdx } = readSetArrays(players);
+  const setNumRaw = (setIdx >= 0 ? setIdx + 1 : 0);
+  const gamesA = sA.reduce((a, x) => a + (x || 0), 0);
+  const gamesB = sB.reduce((a, x) => a + (x || 0), 0);
+  const totalGames = gamesA + gamesB || 1;
+  const momentum = 0.5 + (gamesA - gamesB) / (2 * totalGames);
+
+  const curA = setIdx >= 0 ? (sA[setIdx] || 0) : 0;
+  const curB = setIdx >= 0 ? (sB[setIdx] || 0) : 0;
+  const curTotal = Math.max(1, curA + curB);
+  const microMomentum = 0.5 + (curA - curB) / (2 * curTotal);
+
   const { d1, d2 } = extractDecimalOdds(match);
   const p1 = impliedProb(d1), p2 = impliedProb(d2);
   const pFav = p1 && p2 ? Math.max(p1, p2) : 0.5;
+
   const drift = readDrift(match);
+  const serveAdv = readServer(match, players, pFav);
+
+  // clutch window (late set & close score)
+  const isLate = curTotal >= 8; // typically 5-3, 4-4, ...
+  const isTight = Math.abs(curA - curB) <= 1;
+  const clutch = live && setIdx >= 0 && isLate && isTight ? 1 : 0;
 
   return {
-    pOdds: pFav,
+    pOdds: pFav,              // 0..1
     momentum: Math.max(0, Math.min(1, momentum)),
-    drift: 0.5 + drift,
-    setNum: Math.max(0, Math.min(5, setNum)) / 5,
+    micro: Math.max(0, Math.min(1, microMomentum)),
+    serve: Math.max(0, Math.min(1, serveAdv)),
+    drift: 0.5 + drift,      // 0..1, centered later
+    setNum: Math.max(0, Math.min(5, setNumRaw)) / 5, // 0..1
     live,
+    clutch,                   // 0/1
   };
 }
 
-const BASE_W = { pOdds: 0.90, momentum: 0.55, drift: 0.35, setNum: 0.10, live: 0.15 };
+const BASE_W = {
+  pOdds: 0.88,
+  momentum: 0.46,
+  micro: 0.40,
+  drift: 0.32,
+  serve: 0.12,
+  setNum: 0.08,
+  live: 0.12,
+  clutch: 0.10,
+};
 const BIAS = -0.55;
 const sigmoid = (z) => 1 / (1 + Math.exp(-z));
 
 export function score(f, ctx) {
   let phaseBoost = 1.0;
-  if (f.setNum <= 0.2) phaseBoost = 0.7;
-  else if (f.setNum >= 0.6) phaseBoost = 1.2;
+  if (f.setNum <= 0.2) phaseBoost = 0.75;     // avoid early noise
+  else if (f.setNum >= 0.6) phaseBoost = 1.15; // late-set confidence
 
   let oddsWeight = BASE_W.pOdds;
   if (ctx?.level === 'WTA') oddsWeight += 0.03;
   if (ctx?.level === 'ITF') oddsWeight += 0.02;
 
+  // clutch boosts micro + drift modestly
+  const clutchMicro = f.clutch ? 1.12 : 1.0;
+  const clutchDrift = f.clutch ? 1.08 : 1.0;
+
   const z =
     oddsWeight * f.pOdds +
     (BASE_W.momentum * phaseBoost) * f.momentum +
-    BASE_W.drift * f.drift +
+    (BASE_W.micro * clutchMicro) * f.micro +
+    (BASE_W.drift * clutchDrift) * f.drift +
+    BASE_W.serve * f.serve +
     BASE_W.setNum * f.setNum +
     BASE_W.live * (f.live ? 1 : 0) +
+    BASE_W.clutch * (f.clutch ? 1 : 0) +
     BIAS;
 
   const driftCentered = f.drift - 0.5;
@@ -127,12 +174,12 @@ export function score(f, ctx) {
 }
 
 const CUTS = {
-  DEFAULT:   { safe: 0.86, risky: 0.73 },
-  ATP:       { safe: 0.87, risky: 0.74 },
-  WTA:       { safe: 0.89, risky: 0.76 },
-  CHALLENGER:{ safe: 0.86, risky: 0.73 },
-  ITF:       { safe: 0.88, risky: 0.75 },
-  SLAM:      { safe: 0.88, risky: 0.75 },
+  DEFAULT:   { safe: 0.865, risky: 0.735 },
+  ATP:       { safe: 0.875, risky: 0.745 },
+  WTA:       { safe: 0.895, risky: 0.765 },
+  CHALLENGER:{ safe: 0.865, risky: 0.735 },
+  ITF:       { safe: 0.885, risky: 0.755 },
+  SLAM:      { safe: 0.885, risky: 0.755 },
 };
 
 const SURF_ADJ = { grass: 0.010, clay: 0.005, carpet: 0.010, indoor: 0.000, hard: 0.000 };
@@ -146,7 +193,12 @@ export function toLabel(conf, f, ctx = { level: 'DEFAULT', surface: 'unknown' },
   let safeCut  = base.safe  + adj + (nudges.safeAdj || 0);
   let riskyCut = base.risky + Math.max(0, adj - 0.005) + (nudges.riskyAdj || 0);
 
-  // clamp reasonable bounds
+  // slight relaxation in clutch windows when micro-momentum is high
+  if (f.clutch && f.micro >= 0.60) {
+    safeCut  -= 0.006;
+    riskyCut -= 0.004;
+  }
+
   safeCut  = Math.max(0.60, Math.min(0.98, safeCut));
   riskyCut = Math.max(0.55, Math.min(safeCut - 0.02, riskyCut));
 
