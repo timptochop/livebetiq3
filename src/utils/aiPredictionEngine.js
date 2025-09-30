@@ -1,39 +1,27 @@
-// aiPredictionEngine.js v1.1.0
-// Περιλαμβάνει: EV, Confidence, Labeling, Reason, Kelly
+// utils/aiPredictionEngine.js
+import { getDrift } from "./oddsTracker";
 
-// 🧮 Υπολογισμός Expected Value (EV)
-export function calculateEV(prob, odds) {
-  return (odds * prob) - 1;
-}
+export function decideLabel(match, analysis) {
+  const { setNum = 1, live } = match || {};
+  const { score = 0.5, conf = 0.5 } = analysis || {};
 
-// 📈 Εκτίμηση Confidence (με βάση EV και odds ratio)
-export function estimateConfidence(ev, better, worse) {
-  const odds1 = parseFloat(better.odds) || 1;
-  const odds2 = parseFloat(worse.odds) || 1;
+  // optional odds drift (%): αρνητικό = προς το φαβορί που υποστηρίζουμε
+  const drift = getDrift(match.id) ?? 0; // π.χ. -0.06 = -6%
 
-  const oddsRatio = odds1 / odds2;
-  let confidence = 50 + (ev * 100) + (Math.log2(oddsRatio) * 5);
+  let label = "SOON";
+  if (live) {
+    // αυστηρό SAFE
+    if (conf >= 0.82 && drift <= -0.05) label = "SAFE";
+    else if (conf >= 0.68) label = "RISKY";
+    else label = `SET ${Math.max(1, setNum)}`;
+  } else {
+    label = "SOON";
+  }
 
-  return Math.max(40, Math.min(99, confidence));
-}
+  // Kelly επίπεδο από την εμπιστοσύνη
+  let kellyLevel = "LOW";
+  if (conf >= 0.85) kellyLevel = "HIGH";
+  else if (conf >= 0.72) kellyLevel = "MED";
 
-// 🧠 Δημιουργία Label
-export function generateLabel(ev, confidence) {
-  if (ev >= 0.025 && confidence >= 60) return 'SAFE';
-  if (ev >= 0.010 && confidence >= 52) return 'RISKY';
-  return 'AVOID';
-}
-
-// 💬 Δημιουργία αιτιολόγησης
-export function generateNote(label, ev, confidence, pick) {
-  if (label === 'SAFE') return `Strong edge on ${pick}`;
-  if (label === 'RISKY') return `Small edge on ${pick}`;
-  if (label === 'AVOID') return `No value found`;
-  return '';
-}
-
-// 💸 Υπολογισμός Kelly Criterion
-export function calculateKelly(ev, confidence) {
-  const c = confidence / 100;
-  return Math.max(0, (ev / (1 + ev)) * c);
+  return { label, kellyLevel, conf, drift, score };
 }
