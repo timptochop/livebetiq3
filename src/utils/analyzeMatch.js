@@ -1,34 +1,20 @@
 // src/utils/analyzeMatch.js
-import classifyMatch from "./aiPredictionEngine";
+// Thin wrapper to keep LiveTennis integration stable.
 
-/**
- * Unified facade for the AI engine (v2).
- * Always returns a well-formed object for the UI.
- */
-export default function analyzeMatch(m = {}) {
+import classify from "./aiPredictionEngine";
+
+export default function analyzeMatch(match) {
   try {
-    const res = classifyMatch(m);
-    // Defensive: guarantee shape for the UI
+    const out = classify(match || {});
     return {
-      label: res?.label ?? "PENDING",
-      conf: Number.isFinite(res?.conf) ? res.conf : 0.5,
-      kellyLevel: res?.kellyLevel ?? "LOW",
-      tip: res?.tip,
-      features: {
-        pOdds: res?.features?.pOdds ?? 0.5,
-        momentum: res?.features?.momentum ?? 0.5,
-        drift: res?.features?.drift ?? 0,
-        setNum: res?.features?.setNum ?? 0,
-        live: !!res?.features?.live,
-      },
+      label: out.label || 'SOON',
+      conf: typeof out.conf === 'number' ? out.conf : 0.5,
+      tip: out.tip,
+      kellyLevel: out.kellyLevel || 'LOW',
+      info: out.features || {},
     };
-  } catch {
-    // Fallback if anything blows up
-    return {
-      label: "PENDING",
-      conf: 0.5,
-      kellyLevel: "LOW",
-      features: { pOdds: 0.5, momentum: 0.5, drift: 0, setNum: 0, live: false },
-    };
+  } catch (e) {
+    console.warn('[analyzeMatch] fallback:', e?.message);
+    return { label: 'SOON', conf: 0.5, kellyLevel: 'LOW' };
   }
 }
