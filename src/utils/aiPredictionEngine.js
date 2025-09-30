@@ -1,11 +1,12 @@
 // src/utils/aiPredictionEngine.js
-// Single entrypoint for predictions.
+// Single entrypoint for predictions (v2.1 with context).
 
-import { extractFeatures, score, toLabel } from "./aiEngineV2";
+import { extractFeatures, extractContext, score, toLabel } from "./aiEngineV2";
 
 export default function classifyMatch(match = {}) {
   const f = extractFeatures(match);
-  const conf = score(f);
+  const ctx = extractContext(match);
+  const conf = score(f, ctx);
 
   const p1d = match?.odds?.p1 ?? match?.odds?.player1 ?? match?.odds?.home;
   const p2d = match?.odds?.p2 ?? match?.odds?.player2 ?? match?.odds?.away;
@@ -19,7 +20,7 @@ export default function classifyMatch(match = {}) {
     if (Number.isFinite(d1) && Number.isFinite(d2)) tip = d1 < d2 ? p1Name : p2Name;
   } catch { /* noop */ }
 
-  const labelInfo = toLabel(conf, f);
+  const labelInfo = toLabel(conf, f, ctx);
 
   return {
     label: labelInfo.label,
@@ -29,9 +30,10 @@ export default function classifyMatch(match = {}) {
     features: {
       pOdds: f.pOdds,
       momentum: f.momentum,
-      drift: f.drift - 0.5,   // back to ~[-0.2..0.2] for debug
+      drift: f.drift - 0.5,     // ~[-0.2..0.2]
       setNum: Math.round(f.setNum * 5),
       live: f.live,
+      ctx,
     },
   };
 }
