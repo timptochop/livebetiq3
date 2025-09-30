@@ -1,26 +1,26 @@
 // src/utils/aiPredictionEngine.js
-// Single entrypoint for predictions (v2.1 with context).
-
 import { extractFeatures, extractContext, score, toLabel } from "./aiEngineV2";
+import { getNudges, recordDecision } from "./telemetryTuner";
 
 export default function classifyMatch(match = {}) {
   const f = extractFeatures(match);
   const ctx = extractContext(match);
   const conf = score(f, ctx);
 
-  const p1d = match?.odds?.p1 ?? match?.odds?.player1 ?? match?.odds?.home;
-  const p2d = match?.odds?.p2 ?? match?.odds?.player2 ?? match?.odds?.away;
+  const nudges = getNudges(ctx);
+  const labelInfo = toLabel(conf, f, ctx, nudges);
 
   let tip;
   try {
-    const p1Name = match?.players?.[0]?.name || match?.player?.[0]?.['@name'];
-    const p2Name = match?.players?.[1]?.name || match?.player?.[1]?.['@name'];
-    const d1 = Number(p1d);
-    const d2 = Number(p2d);
-    if (Number.isFinite(d1) && Number.isFinite(d2)) tip = d1 < d2 ? p1Name : p2Name;
-  } catch { /* noop */ }
+    const p1Name = match?.players?.[0]?.name || match?.player?.[0]?.['@name'] || "";
+    const p2Name = match?.players?.[1]?.name || match?.player?.[1]?.['@name'] || "";
+    const p1d = Number(match?.odds?.p1 ?? match?.odds?.player1 ?? match?.odds?.home);
+    const p2d = Number(match?.odds?.p2 ?? match?.odds?.player2 ?? match?.odds?.away);
+    if (Number.isFinite(p1d) && Number.isFinite(p2d)) tip = p1d < p2d ? p1Name : p2Name;
+  } catch {}
 
-  const labelInfo = toLabel(conf, f, ctx);
+  // record telemetry after decision
+  try { recordDecision(ctx, labelInfo.label); } catch {}
 
   return {
     label: labelInfo.label,
@@ -30,10 +30,11 @@ export default function classifyMatch(match = {}) {
     features: {
       pOdds: f.pOdds,
       momentum: f.momentum,
-      drift: f.drift - 0.5,     // ~[-0.2..0.2]
+      drift: f.drift - 0.5,
       setNum: Math.round(f.setNum * 5),
       live: f.live,
       ctx,
+      nudges,
     },
   };
 }
