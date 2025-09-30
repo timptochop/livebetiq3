@@ -1,15 +1,29 @@
-/* Reset + dark theme */
-html, body, #root { height: 100%; background:#121212; color:#e8f1f5; margin:0; }
-* { box-sizing: border-box; }
+/* Global base */
+html, body, #root {
+  height: 100%;
+  background: #121212;
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
 
-/* Αποφυγή παράξενων stacking πάνω από το TopBar */
-html, body, #root, .container, [data-scroll-root]{
+/* TopBar dimensions & default offset */
+:root {
+  --tb-h: 52px;              /* ύψος μπάρας */
+  --tb-offset: var(--tb-h);  /* padding-top fallback */
+}
+
+/* Μην δημιουργείτε stacking/transform contexts πάνω από το TopBar */
+html, body, #root, .App, main, .container, [data-scroll-root] {
   transform: none !important;
   perspective: none !important;
-  contain: auto !important;
+  contain: none !important;
   will-change: auto !important;
 }
 
-a { color: inherit; text-decoration: none; }
-button { font: inherit; cursor: pointer; background: none; border: none; }
+/* Χρήσιμα helpers */
+.safe-top { height: env(safe-area-inset-top); }
+
 img { max-width: 100%; display: block; }
+button { font: inherit; }
+:focus:not(:focus-visible) { outline: none; }
+:focus-visible { outline: 2px solid #7c5cff; outline-offset: 2px; }

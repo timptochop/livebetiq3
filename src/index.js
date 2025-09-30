@@ -6,12 +6,12 @@ import App from "./App";
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(<App />);
 
-/* Keep --tb-offset in sync with real TopBar height */
-(function ensureTopBarOffset(){
+// Εγγύηση ότι το --tb-offset θα έχει πάντα σωστή τιμή
+(function ensureTopbarOffset() {
   const set = () => {
     const el = document.querySelector("header.topbar");
     if (!el) return;
-    const h = Math.ceil(el.getBoundingClientRect().height);
+    const h = Math.ceil(el.getBoundingClientRect().height || 0);
     document.documentElement.style.setProperty("--tb-offset", `${h}px`);
   };
   const mo = new MutationObserver(set);

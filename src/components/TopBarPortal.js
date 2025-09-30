@@ -1,28 +1,17 @@
-import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import React, { useEffect, useState } from "react";
 
 export default function TopBarPortal({ children }) {
-  const elRef = useRef(null);
-
-  if (!elRef.current && typeof document !== "undefined") {
-    const el = document.createElement("div");
-    el.className = "TopBarPortal";
-    el.style.position = "fixed";
-    el.style.top = "0";
-    el.style.left = "0";
-    el.style.right = "0";
-    el.style.zIndex = "9999";
-    elRef.current = el;
-  }
+  const [node, setNode] = useState(null);
 
   useEffect(() => {
-    const el = elRef.current;
-    if (!el) return;
-    document.body.appendChild(el);
-    return () => {
-      try { document.body.removeChild(el); } catch {}
-    };
+    const el = document.createElement("div");
+    el.id = "tb-root";
+    document.body.prepend(el);
+    setNode(el);
+    return () => el.remove();
   }, []);
 
-  return elRef.current ? createPortal(children, elRef.current) : null;
+  if (!node) return null;
+  return createPortal(children, node);
 }
