@@ -1,209 +1,163 @@
 // src/utils/aiEngineV2.js
-function toNum(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
+// Σταθερός, ντετερμινιστικός scorer που συνδυάζει odds (αν υπάρχουν),
+// προβάδισμα sets/games και live state. Δεν επιστρέφει "AVOID".
 
-function toDecimalOdds(v) {
-  if (v == null) return null;
-  const n = Number(v);
-  if (Number.isFinite(n)) {
-    if (n > 1.0) return n;
-    if (Math.abs(n) >= 100) return n > 0 ? 1 + n / 100 : 1 + 100 / Math.abs(n);
-  }
+const FIN = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
+
+const toNum = (v) => {
+  if (v === null || v === undefined) return null;
   const s = String(v).trim();
-  if (/^[+-]?\d+$/.test(s)) { const ml = parseInt(s, 10); return ml > 0 ? 1 + ml / 100 : 1 + 100 / Math.abs(ml); }
-  return null;
-}
+  if (!s) return null;
+  const x = parseInt(s.split(/[.:]/)[0], 10);
+  return Number.isFinite(x) ? x : null;
+};
 
-function extractDecimalOdds(match) {
-  const o = match?.odds ?? match?.liveOdds ?? match?.market ?? null;
-  const tryPairs = [
-    [o?.p1, o?.p2],[o?.player1, o?.player2],[o?.home, o?.away],[o?.a, o?.b],[o?.one, o?.two],
-    [o?.player1?.decimal, o?.player2?.decimal],[o?.player1?.dec, o?.player2?.dec],
-    [o?.player1?.ml, o?.player2?.ml],[o?.home?.decimal, o?.away?.decimal],[o?.home?.ml, o?.away?.ml],
-  ];
-  for (const [x, y] of tryPairs) {
-    const d1 = toDecimalOdds(x); const d2 = toDecimalOdds(y);
-    if (d1 && d2) return { d1, d2 };
+function setsWon(aScores, bScores) {
+  let a = 0, b = 0;
+  for (let i = 0; i < 5; i++) {
+    const A = toNum(aScores[i]), B = toNum(bScores[i]);
+    if (A === null || B === null) continue;
+    if (A > B) a += 1;
+    else if (B > A) b += 1;
   }
-  return { d1: null, d2: null };
+  return [a, b];
 }
 
-function impliedProb(decimal) { return decimal ? 1 / decimal : null; }
-
-function readSetArrays(players = []) {
-  const a = players[0] || {}, b = players[1] || {};
-  const grab = (p) => [toNum(p.s1), toNum(p.s2), toNum(p.s3), toNum(p.s4), toNum(p.s5)];
-  const sA = grab(a), sB = grab(b);
-  let setIdx = -1;
-  for (let i = 0; i < 5; i++) if (sA[i] != null || sB[i] != null) setIdx = i;
-  return { sA, sB, setIdx };
+function isFinishedLike(s) { return FIN.has(String(s || '').toLowerCase()); }
+function isUpcomingLike(s) {
+  const v = String(s || '').toLowerCase();
+  return v === 'not started' || v === 'upcoming' || v === 'scheduled';
+}
+function isLive(m) {
+  const s = String(m.status || m['@status'] || '').toLowerCase();
+  if (isUpcomingLike(s) || isFinishedLike(s)) return false;
+  if (/(live|in ?play|1st|2nd|3rd|set|tiebreak|tb|susp|delay)/.test(s)) return true;
+  return Number(m.setNum || 0) > 0;
 }
 
-function readDrift(match) {
-  const hist = match?.oddsHistory ?? match?.odds?.history ?? match?.liveOddsHistory ?? [];
-  if (!Array.isArray(hist) || hist.length < 2) return 0;
-  const last = hist[hist.length - 1], prev = hist[hist.length - 2];
-  const dLast = toDecimalOdds(last?.fav ?? last?.p1 ?? last);
-  const dPrev = toDecimalOdds(prev?.fav ?? prev?.p1 ?? prev);
-  if (!dLast || !dPrev) return 0;
-  const pLast = impliedProb(dLast), pPrev = impliedProb(dPrev);
-  const drift = pLast - pPrev;
-  return Math.max(-0.2, Math.min(0.2, drift));
+// προσπάθεια να διαβάσουμε odds από διάφορα πιθανά πεδία
+function parseOdds(m) {
+  // επιτρέπουμε αρκετά aliases
+  const o = m.odds || m.prematchOdds || m.pre || null;
+  let p1 = null, p2 = null;
+
+  const asNum = (x) => (x == null ? null : Number(x));
+  if (o) {
+    // κοινές μορφές: { p1: 1.80, p2: 2.00 } ή { player1:{decimal:...}, player2:{decimal:...} }
+    p1 = asNum(o.p1 ?? o.player1?.decimal ?? o.a ?? o.home ?? o[0]);
+    p2 = asNum(o.p2 ?? o.player2?.decimal ?? o.b ?? o.away ?? o[1]);
+  }
+  // εναλλακτικά σε ρίζα
+  if (p1 == null) p1 = asNum(m.p1Odds ?? m.o1 ?? m.homeOdds);
+  if (p2 == null) p2 = asNum(m.p2Odds ?? m.o2 ?? m.awayOdds);
+
+  if (!(p1 > 1.01) || !(p2 > 1.01)) return null;
+
+  // implied probabilities
+  const ip1 = 1 / p1, ip2 = 1 / p2;
+  const z = ip1 + ip2;
+  return { p1, p2, ip1: ip1 / z, ip2: ip2 / z };
 }
 
-function readServer(match, players = [], pFav = 0.5) {
-  const srv = match?.server ?? match?.serve ?? match?.['@server'] ?? null;
-  const p1Name = players?.[0]?.name || players?.[0]?.['@name'] || "";
-  const p2Name = players?.[1]?.name || players?.[1]?.['@name'] || "";
+function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
 
-  let server = 0; // 0 unknown, 1 p1, 2 p2
-  if (srv === 1 || srv === "1" || srv === p1Name) server = 1;
-  else if (srv === 2 || srv === "2" || srv === p2Name) server = 2;
+export default function aiEngineV2(m = {}) {
+  const players = Array.isArray(m.players) ? m.players
+                 : (Array.isArray(m.player) ? m.player : []);
+  const p1 = players[0] || {}, p2 = players[1] || {};
+  const name1 = p1.name || p1['@name'] || '';
+  const name2 = p2.name || p2['@name'] || '';
 
-  const favIsP1 = pFav >= 0.5;
-  if (server === 0) return 0.5;
-  const favServing = (server === 1 && favIsP1) || (server === 2 && !favIsP1);
-  // small bounded edge around 0.5
-  return favServing ? 0.53 : 0.47;
-}
+  const sA = [toNum(p1.s1), toNum(p1.s2), toNum(p1.s3), toNum(p1.s4), toNum(p1.s5)];
+  const sB = [toNum(p2.s1), toNum(p2.s2), toNum(p2.s3), toNum(p2.s4), toNum(p2.s5)];
+  const [wonA, wonB] = setsWon(sA, sB);
 
-export function extractContext(match = {}) {
-  const raw = (match.categoryName ?? match.category ?? match['@category'] ??
-               match.tournamentName ?? match.tournament ?? match.league ?? '') + '';
-  const s = raw.toLowerCase();
+  const setNum = Number(m.setNum || 0);
+  const live = isLive(m);
 
-  let level = 'DEFAULT';
-  if (/grand\s*sla?m|wimbledon|roland|us\s*open|australian/.test(s)) level = 'SLAM';
-  else if (/\bwta\b/.test(s)) level = 'WTA';
-  else if (/\batp\b/.test(s)) level = 'ATP';
-  else if (/challenger/.test(s)) level = 'CHALLENGER';
-  else if (/\bitf\b/.test(s)) level = 'ITF';
+  // current set games diff
+  let gDiff = 0;
+  if (setNum >= 1) {
+    const i = setNum - 1;
+    const ga = sA[i] ?? 0, gb = sB[i] ?? 0;
+    if (ga != null && gb != null) gDiff = (ga || 0) - (gb || 0);
+  }
 
-  let surface = 'unknown';
-  if (/hard/.test(s)) surface = 'hard';
-  else if (/clay|roland/.test(s)) surface = 'clay';
-  else if (/grass|wimbledon/.test(s)) surface = 'grass';
-  else if (/indoor/.test(s)) surface = 'indoor';
-  else if (/carpet/.test(s)) surface = 'carpet';
+  // odds edge
+  const odds = parseOdds(m);
+  let fav = null, favEdge = 0; // [0..1]
+  if (odds) {
+    if (odds.ip1 > odds.ip2) { fav = 1; favEdge = odds.ip1 - odds.ip2; }
+    else { fav = 2; favEdge = odds.ip2 - odds.ip1; }
+  } else {
+    // fallback “μαλακό” σήμα: μεγαλύτερο όνομα -> οριακό edge
+    fav = (name1.length >= name2.length) ? 1 : 2;
+    favEdge = 0.05;
+  }
 
-  return { level, surface };
-}
+  // tournament weight (ATP/WTA > Challenger > ITF)
+  const cat = String(m.categoryName || m['@category'] || m.category || '').toLowerCase();
+  let tier = 1.0;
+  if (/atp|wta/.test(cat)) tier = 1.15;
+  else if (/challenger/.test(cat)) tier = 1.05;
 
-export function extractFeatures(match = {}) {
-  const status = String(match.status || match['@status'] || '').toLowerCase();
-  const live = !!status && status !== 'not started';
+  // ---- scoring για κάθε παίκτη ----
+  // βάρη επιλεγμένα συντηρητικά ώστε να ΜΗ γεμίζει με SAFE
+  const W = {
+    odds: 1.8,
+    sets: 1.4,
+    games: 0.9,
+    live:  0.6,
+    tier,           // πολλαπλασιαστής
+  };
 
-  const players = Array.isArray(match.players) ? match.players :
-                  Array.isArray(match.player) ? match.player : [];
+  const side = (who /* 1 ή 2 */) => {
+    const setsLead = (who === 1 ? wonA - wonB : wonB - wonA);   // [-5..5]
+    const gamesLead = (who === 1 ? gDiff : -gDiff);             // [-7..7]
 
-  const { sA, sB, setIdx } = readSetArrays(players);
-  const setNumRaw = (setIdx >= 0 ? setIdx + 1 : 0);
-  const gamesA = sA.reduce((a, x) => a + (x || 0), 0);
-  const gamesB = sB.reduce((a, x) => a + (x || 0), 0);
-  const totalGames = gamesA + gamesB || 1;
-  const momentum = 0.5 + (gamesA - gamesB) / (2 * totalGames);
+    const oddsEdge = (odds ? (who === 1 ? (odds.ip1 - odds.ip2) : (odds.ip2 - odds.ip1)) : (who === fav ? favEdge : -favEdge));
 
-  const curA = setIdx >= 0 ? (sA[setIdx] || 0) : 0;
-  const curB = setIdx >= 0 ? (sB[setIdx] || 0) : 0;
-  const curTotal = Math.max(1, curA + curB);
-  const microMomentum = 0.5 + (curA - curB) / (2 * curTotal);
+    const rawScore =
+      (W.odds  * oddsEdge) +
+      (W.sets  * clamp(setsLead / 2, -1, 1)) +
+      (W.games * clamp(gamesLead / 3, -1, 1)) +
+      (W.live  * (live ? 1 : 0));
 
-  const { d1, d2 } = extractDecimalOdds(match);
-  const p1 = impliedProb(d1), p2 = impliedProb(d2);
-  const pFav = p1 && p2 ? Math.max(p1, p2) : 0.5;
+    const score = rawScore * W.tier;               // τελικό
+    const conf  = 1 / (1 + Math.exp(-2.2 * score)); // logistic -> [0..1]
 
-  const drift = readDrift(match);
-  const serveAdv = readServer(match, players, pFav);
+    return { score, conf, setsLead, gamesLead, oddsEdge };
+  };
 
-  // clutch window (late set & close score)
-  const isLate = curTotal >= 8; // typically 5-3, 4-4, ...
-  const isTight = Math.abs(curA - curB) <= 1;
-  const clutch = live && setIdx >= 0 && isLate && isTight ? 1 : 0;
+  const A = side(1), B = side(2);
+  const better = (A.score >= B.score) ? 1 : 2;
+  const best   = (better === 1 ? A : B);
+  const tip    = (better === 1 ? name1 : name2);
+
+  // thresholds: SAFE > RISKY > αλλιώς αφήνουμε UI (SET/SOON)
+  let label = null;
+  if (best.conf >= 0.86) label = 'SAFE';
+  else if (best.conf >= 0.74) label = 'RISKY';
+  // σε live χωρίς ισχυρό σήμα, ας επιστρέψουμε SET n για ορατότητα
+  if (!label && live) label = `SET ${setNum || 1}`;
+
+  let kellyLevel = null;
+  if (best.conf >= 0.90) kellyLevel = 'HIGH';
+  else if (best.conf >= 0.82) kellyLevel = 'MED';
+  else if (best.conf >= 0.74) kellyLevel = 'LOW';
 
   return {
-    pOdds: pFav,              // 0..1
-    momentum: Math.max(0, Math.min(1, momentum)),
-    micro: Math.max(0, Math.min(1, microMomentum)),
-    serve: Math.max(0, Math.min(1, serveAdv)),
-    drift: 0.5 + drift,      // 0..1, centered later
-    setNum: Math.max(0, Math.min(5, setNumRaw)) / 5, // 0..1
-    live,
-    clutch,                   // 0/1
+    label,                   // 'SAFE' | 'RISKY' | `SET n` | null
+    conf: best.conf,
+    kellyLevel,
+    tip: label ? tip : null,
+    reasons: [
+      odds ? `oddsEdge=${best.oddsEdge.toFixed(3)}` : 'oddsEdge=N/A',
+      `setsLead=${best.setsLead}`,
+      `gamesLead=${best.gamesLead}`,
+      `tier=${tier}`,
+      `live=${live}`,
+    ],
+    raw: { A, B, setNum, live, tier }
   };
-}
-
-const BASE_W = {
-  pOdds: 0.88,
-  momentum: 0.46,
-  micro: 0.40,
-  drift: 0.32,
-  serve: 0.12,
-  setNum: 0.08,
-  live: 0.12,
-  clutch: 0.10,
-};
-const BIAS = -0.55;
-const sigmoid = (z) => 1 / (1 + Math.exp(-z));
-
-export function score(f, ctx) {
-  let phaseBoost = 1.0;
-  if (f.setNum <= 0.2) phaseBoost = 0.75;     // avoid early noise
-  else if (f.setNum >= 0.6) phaseBoost = 1.15; // late-set confidence
-
-  let oddsWeight = BASE_W.pOdds;
-  if (ctx?.level === 'WTA') oddsWeight += 0.03;
-  if (ctx?.level === 'ITF') oddsWeight += 0.02;
-
-  // clutch boosts micro + drift modestly
-  const clutchMicro = f.clutch ? 1.12 : 1.0;
-  const clutchDrift = f.clutch ? 1.08 : 1.0;
-
-  const z =
-    oddsWeight * f.pOdds +
-    (BASE_W.momentum * phaseBoost) * f.momentum +
-    (BASE_W.micro * clutchMicro) * f.micro +
-    (BASE_W.drift * clutchDrift) * f.drift +
-    BASE_W.serve * f.serve +
-    BASE_W.setNum * f.setNum +
-    BASE_W.live * (f.live ? 1 : 0) +
-    BASE_W.clutch * (f.clutch ? 1 : 0) +
-    BIAS;
-
-  const driftCentered = f.drift - 0.5;
-  const adj = driftCentered > 0.05 ? 0.01 : driftCentered < -0.05 ? -0.01 : 0;
-  return Math.max(0, Math.min(1, sigmoid(z) + adj));
-}
-
-const CUTS = {
-  DEFAULT:   { safe: 0.865, risky: 0.735 },
-  ATP:       { safe: 0.875, risky: 0.745 },
-  WTA:       { safe: 0.895, risky: 0.765 },
-  CHALLENGER:{ safe: 0.865, risky: 0.735 },
-  ITF:       { safe: 0.885, risky: 0.755 },
-  SLAM:      { safe: 0.885, risky: 0.755 },
-};
-
-const SURF_ADJ = { grass: 0.010, clay: 0.005, carpet: 0.010, indoor: 0.000, hard: 0.000 };
-
-export function toLabel(conf, f, ctx = { level: 'DEFAULT', surface: 'unknown' }, nudges = { safeAdj: 0, riskyAdj: 0 }) {
-  if (!f.live) return { label: 'SOON', kellyLevel: 'LOW' };
-
-  const base = CUTS[ctx.level] || CUTS.DEFAULT;
-  const adj  = SURF_ADJ[ctx.surface] || 0;
-
-  let safeCut  = base.safe  + adj + (nudges.safeAdj || 0);
-  let riskyCut = base.risky + Math.max(0, adj - 0.005) + (nudges.riskyAdj || 0);
-
-  // slight relaxation in clutch windows when micro-momentum is high
-  if (f.clutch && f.micro >= 0.60) {
-    safeCut  -= 0.006;
-    riskyCut -= 0.004;
-  }
-
-  safeCut  = Math.max(0.60, Math.min(0.98, safeCut));
-  riskyCut = Math.max(0.55, Math.min(safeCut - 0.02, riskyCut));
-
-  if (conf >= safeCut)  return { label: 'SAFE',  kellyLevel: 'HIGH' };
-  if (conf >= riskyCut) return { label: 'RISKY', kellyLevel: 'MED' };
-  if (f.setNum <= 0.2)  return { label: 'SET 1', kellyLevel: 'LOW' };
-  return { label: 'AVOID', kellyLevel: 'LOW' };
 }
