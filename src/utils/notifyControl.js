@@ -1,41 +1,50 @@
 // src/utils/notifyControl.js
-const KEY_REPEAT = 'lbq-repeat-enabled';
-const KEY_SEEN = 'lbq-notified-ids';
+const VAPID = (process.env.REACT_APP_VAPID_PUBLIC_KEY || '').trim();
 
-const mem = {
-  repeat: null,
-  seen: new Set(JSON.parse(localStorage.getItem(KEY_SEEN) || '[]')),
-};
-
-export function isRepeatEnabled() {
-  if (mem.repeat === null) mem.repeat = localStorage.getItem(KEY_REPEAT) === '1';
-  return mem.repeat;
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
 }
 
-export function setRepeatEnabled(v) {
-  mem.repeat = !!v;
-  localStorage.setItem(KEY_REPEAT, v ? '1' : '0');
+async function getRegistration() {
+  if (!('serviceWorker' in navigator)) throw new Error('No service worker support');
+  // Αν το SW σου έχει άλλο όνομα/μονοπάτι, άλλαξέ το εδώ:
+  const reg = await navigator.serviceWorker.register('/sw.js');
+  await navigator.serviceWorker.ready;
+  return reg;
 }
 
-export function toggleRepeatEnabled() {
-  const v = !isRepeatEnabled();
-  setRepeatEnabled(v);
-  return v;
+export async function enableNotifications() {
+  if (!VAPID) throw new Error('Missing REACT_APP_VAPID_PUBLIC_KEY');
+  const reg = await getRegistration();
+  const sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(VAPID),
+  });
+
+  // Στείλε τη συνδρομή στον server (πρέπει να υπάρχει το API route)
+  await fetch('/api/subscribe', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(sub),
+  });
+
+  return sub;
 }
 
-export function shouldNotify(id) {
-  if (!id) return true;
-  if (isRepeatEnabled()) return true;
-  return !mem.seen.has(id);
+export async function disableNotifications() {
+  const reg = await getRegistration();
+  const sub = await reg.pushManager.getSubscription();
+  if (sub) await sub.unsubscribe();
+  await fetch('/api/unsubscribe', { method: 'POST' }).catch(() => {});
 }
 
-export function markNotified(id) {
-  if (!id) return;
-  mem.seen.add(id);
-  localStorage.setItem(KEY_SEEN, JSON.stringify([...mem.seen]));
-}
-
-export function resetNotified() {
-  mem.seen.clear();
-  localStorage.removeItem(KEY_SEEN);
+export async function isSubscribed() {
+  const reg = await getRegistration();
+  const sub = await reg.pushManager.getSubscription();
+  return !!sub;
 }
