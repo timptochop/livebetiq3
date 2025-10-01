@@ -1,12 +1,19 @@
 // src/utils/analyzeMatch.js
-// Thin wrapper: ενώνει το UI με τον predictor και εγγυάται σταθερό shape αποτελέσματος.
-import predictor from './predictor';
+import predict from './predictor';
 
 export default function analyzeMatch(m = {}) {
-  try {
-    return predictor(m);
-  } catch (e) {
-    // Fail-safe ώστε να μην “σπάει” ποτέ το UI
-    return { label: 'AVOID', conf: 0.5, kellyLevel: 'LOW', tip: '' };
-  }
+  const out = predict(m) || {};
+
+  // Προστασία από “μαζικό AVOID”
+  let label = out.label ?? 'PENDING';
+  if (label === 'AVOID') label = 'PENDING';
+
+  return {
+    label,                                  // 'SAFE' | 'RISKY' | 'PENDING' | 'SET n'
+    conf: Number.isFinite(out.conf) ? out.conf : 0,
+    kellyLevel: out.kellyLevel || null,     // 'HIGH' | 'MED' | 'LOW' | null
+    tip: out.tip || null,
+    reasons: out.reasons || [],
+    raw: out.raw || null,
+  };
 }
