@@ -6,12 +6,8 @@ import { showToast } from '../utils/toast';
 
 const FINISHED = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
-const isUpcoming = (s) => {
-  const v = String(s || '').toLowerCase();
-  return v === 'not started' || v === 'upcoming' || v === 'scheduled';
-};
+const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
 
-// safer number parser
 const num = (v) => {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
@@ -20,7 +16,6 @@ const num = (v) => {
   return Number.isFinite(x) ? x : null;
 };
 
-// detect current set from per-player set scores
 function currentSetFromScores(players) {
   const p = Array.isArray(players) ? players : [];
   const a = p[0] || {}, b = p[1] || {};
@@ -31,52 +26,38 @@ function currentSetFromScores(players) {
   return k || 0;
 }
 
-// --- robust "live" detection used ΠΑΝΤΟΥ (dots + counter) ---
-function isLiveMatch(m) {
-  const s = String(m.status || m['@status'] || '').toLowerCase();
-  if (!s && m.setNum > 0) return true;
-  if (isUpcoming(s) || isFinishedLike(s)) return false;
-
-  // strings που συναντήσαμε συχνά στα feeds
-  if (/(live|in ?play|1st|2nd|3rd|set|tiebreak|tb|susp|delay)/.test(s)) return true;
-
-  // αν υπάρχει έστω και ένα set με σκορ -> θεωρούμε live
-  if ((m.setNum || 0) > 0) return true;
-
-  return false;
-}
-
-// lightweight global LIVE counter για το TopBar
+// lightweight global live-count bus (κρατάει το TopBar σε sync)
 const EVT_LIVE_COUNT = 'live-count';
 function emitLiveCount(n) {
+  const count = Number.isFinite(n) ? n : 0;
   if (typeof window !== 'undefined') {
-    window.__LIVE_COUNT__ = n;
-    window.dispatchEvent(new CustomEvent(EVT_LIVE_COUNT, { detail: n }));
+    window.__LIVE_COUNT__ = count;
+    window.dispatchEvent(new CustomEvent(EVT_LIVE_COUNT, { detail: count }));
   }
 }
 
 export default function LiveTennis({
   onLiveCount = () => {},
-  notifyMode = 'ONCE',         // 'ONCE' | 'ON_CHANGE'
-  notificationsOn = true,      // toast on SAFE
-  audioOn = true,              // sound on SAFE
+  notifyMode = 'ONCE',          // 'ONCE' | 'ON_CHANGE'
+  notificationsOn = true,       // toast on SAFE
+  audioOn = true,               // sound on SAFE
 }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const notifiedRef   = useRef(new Set()); // ONCE lock
-  const lastLabelRef  = useRef(new Map()); // ON_CHANGE detection
+  const notifiedRef = useRef(new Set());      // ONCE lock
+  const lastLabelRef = useRef(new Map());     // ON_CHANGE detection
 
   async function load() {
     setLoading(true);
     try {
-      const base = await fetchTennisLive();
+      const base = await fetchTennisLive(); // expect array
       const keep = (Array.isArray(base) ? base : [])
         .filter(m => !isFinishedLike(m.status || m['@status']));
 
       const enriched = keep.map((m, idx) => {
         const players = Array.isArray(m.players) ? m.players
-                      : Array.isArray(m.player)  ? m.player : [];
+                    : Array.isArray(m.player)  ? m.player : [];
         const p1 = players[0] || {}, p2 = players[1] || {};
         const name1 = p1.name || p1['@name'] || '';
         const name2 = p2.name || p2['@name'] || '';
@@ -84,7 +65,7 @@ export default function LiveTennis({
         const time = m.time || m['@time'] || '';
         const status = m.status || m['@status'] || '';
         const setNum = currentSetFromScores(players);
-        const ai = analyzeMatch({ ...m, players, setNum }) || {};
+        const ai = analyzeMatch(m) || {};
 
         return {
           id: m.id || m['@id'] || `${date}-${time}-${name1}-${name2}-${idx}`,
@@ -93,7 +74,6 @@ export default function LiveTennis({
           ai, players,
         };
       });
-
       setRows(enriched);
     } catch (e) {
       console.warn('[LiveTennis] load error:', e?.message);
@@ -109,37 +89,41 @@ export default function LiveTennis({
     return () => clearInterval(t);
   }, []);
 
-  // LIVE counter for TopBar (prop + global bus) — ίδια λογική με τα dots
+  // live counter για TopBar (prop + global bus)
   useEffect(() => {
-    const n = rows.reduce((acc, m) => acc + (isLiveMatch(m) ? 1 : 0), 0);
+    const n = rows.reduce((acc, m) => {
+      const s = m.status || '';
+      const live = !!s && !isUpcoming(s) && !isFinishedLike(s);
+      return acc + (live ? 1 : 0);
+    }, 0);
     onLiveCount(n);
     emitLiveCount(n);
   }, [rows, onLiveCount]);
 
   const labelPriority = {
-    SAFE: 1, RISKY: 2, AVOID: 3,
-    'SET 3': 4, 'SET 2': 5, 'SET 1': 6,
+    SAFE: 1,
+    RISKY: 2,
+    AVOID: 3,
+    'SET 3': 4,
+    'SET 2': 5,
+    'SET 1': 6,
     SOON: 7,
   };
 
   const list = useMemo(() => {
     const items = rows.map((m) => {
-      const live = isLiveMatch(m);
-
-      // Αν το μοντέλο επιστρέψει "PENDING"/null, δείχνουμε SET/ SOON (όχι μαζικό AVOID)
       let label = m.ai?.label || null;
+      const s = m.status || '';
+      const live = !!s && !isUpcoming(s) && !isFinishedLike(s);
+
       if (!label || label === 'PENDING') {
         label = live ? `SET ${m.setNum || 1}` : 'SOON';
       }
-      // Προστασία: αν το μοντέλο γυρίζει AVOID χωρίς ισχυρό λόγο, υποβιβάζουμε σε SET
-      if (label === 'AVOID' && live) label = `SET ${m.setNum || 1}`;
-
-      // normalize SET n
       if (label.startsWith('SET')) {
-        const n = Number((label.split(/\s+/)[1] || '').trim()) || m.setNum || 1;
+        const parts = label.split(/\s+/);
+        const n = Number(parts[1]) || m.setNum || 1;
         label = `SET ${n}`;
       }
-
       return {
         ...m,
         live,
@@ -155,15 +139,15 @@ export default function LiveTennis({
     });
   }, [rows]);
 
-  // SAFE notifications (sound + toast)
+  // SAFE notifications
   useEffect(() => {
     list.forEach((m) => {
-      const cur  = m.ai?.label || null;
+      const cur = m.ai?.label || null;
       const prev = lastLabelRef.current.get(m.id) || null;
 
-      const becameSafe   = cur === 'SAFE' && prev !== 'SAFE';
-      const onceCondition= cur === 'SAFE' && !notifiedRef.current.has(m.id);
-      const shouldTrigger= notifyMode === 'ON_CHANGE' ? becameSafe : onceCondition;
+      const becameSafe = cur === 'SAFE' && prev !== 'SAFE';
+      const onceCondition = cur === 'SAFE' && !notifiedRef.current.has(m.id);
+      const shouldTrigger = notifyMode === 'ON_CHANGE' ? becameSafe : onceCondition;
 
       if (!shouldTrigger) {
         lastLabelRef.current.set(m.id, cur);
@@ -171,40 +155,44 @@ export default function LiveTennis({
       }
 
       if (audioOn) {
-        try { new Audio('/notify.mp3').play().catch(() => {}); } catch {}
+        try {
+          const a = new Audio('/notify.mp3');
+          a.play().catch(() => {});
+        } catch {}
       }
 
       if (notificationsOn) {
-        const t = `SAFE: ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ''}`;
+        const t = `SAFE: ${m.name1} vs ${m.name2}${m.categoryName ? ` \u00B7 ${m.categoryName}` : ''}`;
         showToast(t, 3500);
       }
 
-      if (notifyMode === 'ONCE') notifiedRef.current.add(m.id);
+      if (notifyMode === 'ONCE') {
+        notifiedRef.current.add(m.id);
+      }
       lastLabelRef.current.set(m.id, cur);
     });
   }, [list, notifyMode, notificationsOn, audioOn]);
 
-  // ---------- UI ----------
-  const Pill = ({ label, kellyLevel }) => {
-    let bg = '#5a5f68', fg = '#fff', text = label;
+  // ---------- UI helpers ----------
+  const Pill = ({ label /*, kellyLevel*/ }) => {
+    let bg = '#5a5f68', fg = '#fff';
+    let text = label;
     if (label === 'SAFE') { bg = '#1fdd73'; text = 'SAFE'; }
     else if (label === 'RISKY') { bg = '#ffbf0a'; fg = '#151515'; }
     else if (label === 'AVOID') { bg = '#e53935'; }
     else if (label.startsWith('SET')) { bg = '#6e42c1'; }
     else if (label === 'SOON') { bg = '#5a5f68'; }
 
-    let dots = '';
-    if (kellyLevel === 'HIGH') dots = ' \u25CF\u25CF\u25CF';
-    else if (kellyLevel === 'MED') dots = ' \u25CF\u25CF';
-    else if (kellyLevel === 'LOW') dots = ' \u25CF';
-
+    // ΧΩΡΙΣ τελείες/dots
     return (
       <span style={{
-        padding: '10px 14px', borderRadius: 14, fontWeight: 800,
+        padding: '10px 14px',
+        borderRadius: 14,
+        fontWeight: 800,
         background: bg, color: fg, letterSpacing: .5,
         boxShadow: '0 6px 18px rgba(0,0,0,0.25)',
         display: 'inline-block', minWidth: 96, textAlign: 'center'
-      }}>{text}{['SAFE','RISKY'].includes(label) ? dots : ''}</span>
+      }}>{text}</span>
     );
   };
 
@@ -225,19 +213,22 @@ export default function LiveTennis({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {list.map((m) => (
           <div key={m.id} style={{
-            borderRadius: 18, background: '#1b1e22', border: '1px solid #22272c',
-            boxShadow: '0 10px 30px rgba(0,0,0,0.35)', padding: '14px 16px',
+            borderRadius: 18,
+            background: '#1b1e22',
+            border: '1px solid #22272c',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+            padding: '14px 16px',
             display: 'flex', alignItems: 'center', gap: 12,
           }}>
             <Dot on={m.live} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.25 }}>
+              <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.25, color: '#fff' }}>
                 <span>{m.name1}</span>
                 <span style={{ color: '#98a0a6', fontWeight: 600 }}> &nbsp;vs&nbsp; </span>
                 <span>{m.name2}</span>
               </div>
               <div style={{ marginTop: 6, color: '#c2c7cc', fontSize: 14 }}>
-                {m.date} {m.time} · {m.categoryName}
+                {m.date} {m.time} \u00B7 {m.categoryName}
               </div>
 
               {['SAFE','RISKY'].includes(m.ai?.label) && m.ai?.tip && (
@@ -247,15 +238,19 @@ export default function LiveTennis({
               )}
             </div>
 
-            <Pill label={m.uiLabel} kellyLevel={m.ai?.kellyLevel} />
+            <Pill label={m.uiLabel} /*kellyLevel={m.ai?.kellyLevel}*/ />
           </div>
         ))}
 
         {list.length === 0 && !loading && (
           <div style={{
-            marginTop: 12, padding: '14px 16px', borderRadius: 12,
-            background: '#121416', border: '1px solid #22272c',
-            color: '#c7d1dc', fontSize: 13,
+            marginTop: 12,
+            padding: '14px 16px',
+            borderRadius: 12,
+            background: '#121416',
+            border: '1px solid #22272c',
+            color: '#c7d1dc',
+            fontSize: 13,
           }}>
             No live/upcoming matches found.
           </div>

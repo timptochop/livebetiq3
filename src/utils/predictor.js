@@ -1,116 +1,131 @@
-// Lightweight, robust predictor with safe fallbacks
-// Returns: { label: "SAFE"|"RISKY"|"AVOID"|"PENDING", conf, kellyLevel, tip }
-function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
-const toNum = (v) => (v === null || v === undefined ? null : Number(v));
+// src/utils/predictor.js
+//
+// Stable predictor v2.1 — χωρίς side effects, με σωστό live detection.
+//
+// Exports:
+//  - predictFromFeatures(f)
+//  - default export predict(input)  // δέχεται features ή raw match
 
-function readDecimalOdds(p = {}) {
-  // Try common fields
-  const candidates = [
-    p.oddsDecimal, p.decimal, p.odds, p.price, p.o, p["@odds"], p["@price"]
-  ].map(toNum).filter(x => Number.isFinite(x));
+const VER = 'v2.1-stable';
 
-  let x = candidates.find(v => v > 1.01 && v < 100);
-  if (x) return x;
-
-  // Try American odds
-  const am = [p.american, p["@american"]].map(toNum).find(Number.isFinite);
-  if (Number.isFinite(am)) {
-    if (am > 0) return 1 + (am / 100);
-    if (am < 0) return 1 + (100 / Math.abs(am));
-  }
-  return null;
+function num(x, d = 0) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : d;
+}
+function clamp01(x) {
+  return Math.max(0, Math.min(1, x));
+}
+function nabs(x, max) {
+  if (x == null) return 0;
+  return clamp01(Math.abs(Number(x)) / max);
 }
 
-function impliedProb(decOdds) {
-  if (!Number.isFinite(decOdds) || decOdds <= 1) return null;
-  return 1 / decOdds;
-}
-
-function setNumberFromPlayers(players = []) {
-  const g = n => (n === null || n === undefined ? null : parseInt(String(n).split(/[.:]/)[0], 10));
-  const a = players[0] || {}, b = players[1] || {};
-  const sA = [g(a.s1), g(a.s2), g(a.s3), g(a.s4), g(a.s5)];
-  const sB = [g(b.s1), g(b.s2), g(b.s3), g(b.s4), g(b.s5)];
+function detectSetNumFromPlayers(players) {
+  const p = Array.isArray(players) ? players : [];
+  const a = p[0] || {};
+  const b = p[1] || {};
+  const pick = (o, k) => (o && o[k] != null ? o[k] : null);
+  const sA = [pick(a, 's1'), pick(a, 's2'), pick(a, 's3'), pick(a, 's4'), pick(a, 's5')].map((v) =>
+    v == null ? null : parseInt(String(v).split(/[.:]/)[0], 10)
+  );
+  const sB = [pick(b, 's1'), pick(b, 's2'), pick(b, 's3'), pick(b, 's4'), pick(b, 's5')].map((v) =>
+    v == null ? null : parseInt(String(v).split(/[.:]/)[0], 10)
+  );
   let k = 0;
-  for (let i = 0; i < 5; i++) if (sA[i] !== null || sB[i] !== null) k = i + 1;
+  for (let i = 0; i < 5; i++) if (sA[i] != null || sB[i] != null) k = i + 1;
   return k || 0;
 }
 
-export default function predictMatch(m = {}) {
-  const players = Array.isArray(m.players) ? m.players
-                 : Array.isArray(m.player)  ? m.player  : [];
-  const p1 = players[0] || {};
-  const p2 = players[1] || {};
-  const name1 = p1.name || p1["@name"] || "";
-  const name2 = p2.name || p2["@name"] || "";
+function isUpcomingStatus(s) {
+  return String(s || '').toLowerCase() === 'not started';
+}
+function isFinishedLike(s) {
+  const FIN = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
+  return FIN.has(String(s || '').toLowerCase());
+}
 
-  const d1 = readDecimalOdds(p1);
-  const d2 = readDecimalOdds(p2);
-  const q1 = impliedProb(d1);
-  const q2 = impliedProb(d2);
+function scoreFeatures(f) {
+  const lead     = num(f.lead, 0);
+  const lastDiff = num(f.lastDiff, 0);
+  const momentum = num(f.momentum, 0);
+  const drift    = num(f.drift, 0);
+  const pOdds    = num(f.pOdds, null);
+  const setNum   = num(f.setNum, 0);
 
-  // live / upcoming
-  const status = m.status || m["@status"] || "";
-  const live = !!status && status.toLowerCase() !== "not started" &&
-               !["finished","cancelled","retired","abandoned","postponed","walk over"]
-                 .includes(status.toLowerCase());
+  const nLead  = nabs(lead, 5);
+  const nLast  = nabs(lastDiff, 3);
+  const nMom   = nabs(momentum, 6);
+  const nDrift = nabs(drift, 8);
+  const nFav   = pOdds == null ? 0 : clamp01(pOdds - 0.5) * 2;
 
-  // If we don't have odds, return PENDING -> UI θα δείξει SET n / SOON
-  if (!Number.isFinite(q1) || !Number.isFinite(q2)) {
-    const setNum = setNumberFromPlayers(players);
+  let score = 10 * (0.35*nLead + 0.25*nLast + 0.20*nMom + 0.15*nDrift + 0.05*nFav);
+  if (setNum >= 3) score += 1.2;
+
+  return clamp01(score / 10) * 10;
+}
+
+export function predictFromFeatures(f = {}) {
+  // ΣΗΜΑΝΤΙΚΟ FIX: αν μας δώσεις ρητό f.live, το εμπιστευόμαστε.
+  // Αν δεν υπάρχει, το συμπεραίνουμε από status.
+  const live =
+    typeof f.live === 'boolean'
+      ? f.live
+      : (!isUpcomingStatus(f.status) && !isFinishedLike(f.status));
+
+  const setNum = num(f.setNum, 0);
+
+  if (!live) {
+    return { label: 'SOON', conf: 0.5, kellyLevel: 'LOW', tip: '', version: VER };
+  }
+
+  const score = scoreFeatures(f);
+
+  if (setNum >= 2 && score >= 6.0) {
+    const conf = 0.88;
     return {
-      label: "PENDING",
-      conf: 0.6,
-      kellyLevel: "LOW",
-      tip: null,
-      features: { setNum, live, haveOdds: false }
+      label: 'SAFE',
+      conf,
+      kellyLevel: conf >= 0.85 ? 'HIGH' : conf >= 0.72 ? 'MED' : 'LOW',
+      tip: f.leaderName || f.leader || f.name1 || '',
+      version: VER,
     };
   }
 
-  // Favorite from implied probs
-  const favIdx = q1 >= q2 ? 0 : 1;
-  const favName = favIdx === 0 ? name1 : name2;
-  const probDiff = Math.abs(q1 - q2);       // 0 .. ~0.5
-  const setNum = setNumberFromPlayers(players);
-
-  // Confidence: base on probDiff + small bonus for deeper sets when live
-  let conf = 0.55 + probDiff * 0.9;
-  if (live && setNum >= 2) conf += 0.05 * (setNum - 1); // +0.05, +0.10 ...
-  if (!live) conf -= 0.05;                               // pre-match λίγο πιο κάτω
-  conf = clamp(conf, 0.55, 0.96);
-
-  // Label rules (σταθερά, χωρίς να γεμίζει AVOID)
-  // - SAFE: live, set>=2, probDiff>=0.20
-  // - RISKY: (live && probDiff>=0.10) ή (pre && probDiff>=0.14)
-  // - AVOID: live με πολύ χαμηλό edge
-  // - αλλιώς PENDING (UI -> SET n / SOON)
-  let label = "PENDING";
-  if (live) {
-    if (setNum >= 2 && probDiff >= 0.20) label = "SAFE";
-    else if (probDiff >= 0.10)           label = "RISKY";
-    else if (probDiff < 0.06)            label = "AVOID";
-  } else {
-    if (probDiff >= 0.14) label = "RISKY";
+  if (score >= 3.0) {
+    const conf = 0.74;
+    return {
+      label: 'RISKY',
+      conf,
+      kellyLevel: conf >= 0.85 ? 'HIGH' : conf >= 0.72 ? 'MED' : 'LOW',
+      tip: f.leaderName || f.leader || f.name1 || '',
+      version: VER,
+    };
   }
 
-  // Kelly bucket από conf
-  const kellyLevel = conf >= 0.85 ? "HIGH" : conf >= 0.72 ? "MED" : "LOW";
+  const conf = 0.62;
+  return { label: 'AVOID', conf, kellyLevel: 'LOW', tip: '', version: VER };
+}
 
-  // TIP μόνο όταν το σήμα δεν είναι PENDING/AVOID
-  const tip = (label === "SAFE" || label === "RISKY") ? favName : null;
+export default function predict(input = {}) {
+  if (input && (input.setNum != null || input.momentum != null || input.lead != null || input.pOdds != null)) {
+    return predictFromFeatures(input);
+  }
 
-  return {
-    label,
-    conf,
-    kellyLevel,
-    tip,
-    features: {
-      fav: favName,
-      probDiff: Number(probDiff.toFixed(3)),
-      q1: Number(q1.toFixed(3)),
-      q2: Number(q2.toFixed(3)),
-      setNum,
-      live
-    }
+  const players = input.players || input.player || [];
+  const setNum = detectSetNumFromPlayers(players);
+  const status = input.status || input['@status'] || '';
+  const live = !!status && !isUpcomingStatus(status) && !isFinishedLike(status);
+
+  const features = {
+    setNum, live, status,
+    name1: players && players[0] ? players[0].name || players[0]['@name'] : '',
+    leaderName: input.leader || '',
+    momentum: input.momentum,
+    drift: input.drift,
+    lead: input.lead,
+    lastDiff: input.lastDiff,
+    pOdds: input.pOdds,
   };
+
+  return predictFromFeatures(features);
 }
