@@ -1,131 +1,147 @@
 // src/utils/predictor.js
-//
-// Stable predictor v2.1 — χωρίς side effects, με σωστό live detection.
-//
-// Exports:
-//  - predictFromFeatures(f)
-//  - default export predict(input)  // δέχεται features ή raw match
+// Στόχος: σταθερή, ντετερμινιστική πρόβλεψη με βασικά heuristics ανά σετ.
+// Δεν αγγίζουμε odds. Χρησιμοποιούμε μόνο το feed (status + s1..s5).
 
-const VER = 'v2.1-stable';
+const FINISHED = new Set([
+  'finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over'
+]);
 
-function num(x, d = 0) {
-  const n = Number(x);
-  return Number.isFinite(n) ? n : d;
-}
-function clamp01(x) {
-  return Math.max(0, Math.min(1, x));
-}
-function nabs(x, max) {
-  if (x == null) return 0;
-  return clamp01(Math.abs(Number(x)) / max);
+export function isFinishedLike(status) {
+  const s = String(status || '').toLowerCase();
+  return FINISHED.has(s);
 }
 
-function detectSetNumFromPlayers(players) {
+export function isUpcoming(status) {
+  return String(status || '').toLowerCase() === 'not started';
+}
+
+function toInt(v) {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  // goalserve μπορεί να στείλει "6:3" ή "6.3" ή "6"
+  const x = parseInt(s.split(/[.:]/)[0], 10);
+  return Number.isFinite(x) ? x : null;
+}
+
+export function currentSetFromScores(players) {
   const p = Array.isArray(players) ? players : [];
-  const a = p[0] || {};
-  const b = p[1] || {};
-  const pick = (o, k) => (o && o[k] != null ? o[k] : null);
-  const sA = [pick(a, 's1'), pick(a, 's2'), pick(a, 's3'), pick(a, 's4'), pick(a, 's5')].map((v) =>
-    v == null ? null : parseInt(String(v).split(/[.:]/)[0], 10)
-  );
-  const sB = [pick(b, 's1'), pick(b, 's2'), pick(b, 's3'), pick(b, 's4'), pick(b, 's5')].map((v) =>
-    v == null ? null : parseInt(String(v).split(/[.:]/)[0], 10)
-  );
+  const a = p[0] || {}, b = p[1] || {};
+  const sA = [toInt(a.s1), toInt(a.s2), toInt(a.s3), toInt(a.s4), toInt(a.s5)];
+  const sB = [toInt(b.s1), toInt(b.s2), toInt(b.s3), toInt(b.s4), toInt(b.s5)];
   let k = 0;
-  for (let i = 0; i < 5; i++) if (sA[i] != null || sB[i] != null) k = i + 1;
+  for (let i = 0; i < 5; i++) if (sA[i] !== null || sB[i] !== null) k = i + 1;
   return k || 0;
 }
 
-function isUpcomingStatus(s) {
-  return String(s || '').toLowerCase() === 'not started';
-}
-function isFinishedLike(s) {
-  const FIN = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
-  return FIN.has(String(s || '').toLowerCase());
-}
-
-function scoreFeatures(f) {
-  const lead     = num(f.lead, 0);
-  const lastDiff = num(f.lastDiff, 0);
-  const momentum = num(f.momentum, 0);
-  const drift    = num(f.drift, 0);
-  const pOdds    = num(f.pOdds, null);
-  const setNum   = num(f.setNum, 0);
-
-  const nLead  = nabs(lead, 5);
-  const nLast  = nabs(lastDiff, 3);
-  const nMom   = nabs(momentum, 6);
-  const nDrift = nabs(drift, 8);
-  const nFav   = pOdds == null ? 0 : clamp01(pOdds - 0.5) * 2;
-
-  let score = 10 * (0.35*nLead + 0.25*nLast + 0.20*nMom + 0.15*nDrift + 0.05*nFav);
-  if (setNum >= 3) score += 1.2;
-
-  return clamp01(score / 10) * 10;
+function setsArray(players) {
+  const p = Array.isArray(players) ? players : [];
+  const a = p[0] || {}, b = p[1] || {};
+  const Pa = [toInt(a.s1), toInt(a.s2), toInt(a.s3), toInt(a.s4), toInt(a.s5)];
+  const Pb = [toInt(b.s1), toInt(b.s2), toInt(b.s3), toInt(b.s4), toInt(b.s5)];
+  const out = [];
+  for (let i = 0; i < 5; i++) {
+    if (Pa[i] === null && Pb[i] === null) continue;
+    out.push({ a: Pa[i], b: Pb[i] });
+  }
+  return out;
 }
 
-export function predictFromFeatures(f = {}) {
-  // ΣΗΜΑΝΤΙΚΟ FIX: αν μας δώσεις ρητό f.live, το εμπιστευόμαστε.
-  // Αν δεν υπάρχει, το συμπεραίνουμε από status.
-  const live =
-    typeof f.live === 'boolean'
-      ? f.live
-      : (!isUpcomingStatus(f.status) && !isFinishedLike(f.status));
-
-  const setNum = num(f.setNum, 0);
-
-  if (!live) {
-    return { label: 'SOON', conf: 0.5, kellyLevel: 'LOW', tip: '', version: VER };
+function setsWon(players) {
+  let w1 = 0, w2 = 0;
+  for (const s of setsArray(players)) {
+    if (s.a == null || s.b == null) continue;
+    if (s.a > s.b) w1++;
+    else if (s.b > s.a) w2++;
   }
-
-  const score = scoreFeatures(f);
-
-  if (setNum >= 2 && score >= 6.0) {
-    const conf = 0.88;
-    return {
-      label: 'SAFE',
-      conf,
-      kellyLevel: conf >= 0.85 ? 'HIGH' : conf >= 0.72 ? 'MED' : 'LOW',
-      tip: f.leaderName || f.leader || f.name1 || '',
-      version: VER,
-    };
-  }
-
-  if (score >= 3.0) {
-    const conf = 0.74;
-    return {
-      label: 'RISKY',
-      conf,
-      kellyLevel: conf >= 0.85 ? 'HIGH' : conf >= 0.72 ? 'MED' : 'LOW',
-      tip: f.leaderName || f.leader || f.name1 || '',
-      version: VER,
-    };
-  }
-
-  const conf = 0.62;
-  return { label: 'AVOID', conf, kellyLevel: 'LOW', tip: '', version: VER };
+  return [w1, w2];
 }
 
-export default function predict(input = {}) {
-  if (input && (input.setNum != null || input.momentum != null || input.lead != null || input.pOdds != null)) {
-    return predictFromFeatures(input);
+function hasBlowoutForLeader(players) {
+  // Έστω set όπου ο νικητής κέρδισε με διαφορά >=3 games (π.χ. 6-3, 6-2, 6-0)
+  for (const s of setsArray(players)) {
+    if (s.a == null || s.b == null) continue;
+    const diff = Math.abs(s.a - s.b);
+    if (diff >= 3) return true;
+  }
+  return false;
+}
+
+function namesFrom(m) {
+  const players = Array.isArray(m.players) ? m.players
+                : Array.isArray(m.player)  ? m.player : [];
+  const p1 = players[0] || {}, p2 = players[1] || {};
+  return [
+    p1.name || p1['@name'] || '',
+    p2.name || p2['@name'] || ''
+  ];
+}
+
+// ----- public: κύρια πρόβλεψη -----
+export function predictMatch(m = {}) {
+  const status = m.status || m['@status'] || '';
+  const players = Array.isArray(m.players) ? m.players
+                : Array.isArray(m.player)  ? m.player : [];
+  const setNum = currentSetFromScores(players);
+  const [w1, w2] = setsWon(players);
+  const [name1, name2] = namesFrom(m);
+
+  // 0) terminal states
+  if (isFinishedLike(status)) {
+    return { label: 'AVOID', conf: 0.99, tip: null, features: { setNum, w1, w2, status } };
+  }
+  if (isUpcoming(status)) {
+    return { label: 'SOON', conf: 0.50, tip: null, features: { setNum, w1, w2, status } };
   }
 
-  const players = input.players || input.player || [];
-  const setNum = detectSetNumFromPlayers(players);
-  const status = input.status || input['@status'] || '';
-  const live = !!status && !isUpcomingStatus(status) && !isFinishedLike(status);
+  // 1) live
+  const setDiff = w1 - w2;
+  const absSetDiff = Math.abs(setDiff);
+  const leader = setDiff > 0 ? 1 : (setDiff < 0 ? 2 : 0);
 
-  const features = {
-    setNum, live, status,
-    name1: players && players[0] ? players[0].name || players[0]['@name'] : '',
-    leaderName: input.leader || '',
-    momentum: input.momentum,
-    drift: input.drift,
-    lead: input.lead,
-    lastDiff: input.lastDiff,
-    pOdds: input.pOdds,
+  // βασικοί κανόνες ανά set:
+  // set 1: μικρή πληροφορία -> RISKY
+  // set 2: αν υπάρχει leader στα sets & έχει υπάρξει blowout, SAFE στον leader, αλλιώς RISKY
+  // set >=3: leader στα sets -> SAFE; ισοπαλία -> RISKY
+  let label = 'RISKY';
+  let conf = 0.70;
+  let tip = null;
+
+  if (setNum <= 1) {
+    label = 'RISKY';
+    conf = 0.66;
+  } else if (setNum === 2) {
+    if (absSetDiff >= 1) {
+      if (hasBlowoutForLeader(players)) {
+        label = 'SAFE';
+        conf = 0.86;
+      } else {
+        label = 'RISKY';
+        conf = 0.74;
+      }
+      tip = `${leader === 1 ? name1 : name2} to win match`;
+    } else {
+      label = 'RISKY';
+      conf = 0.72;
+    }
+  } else {
+    // set 3+
+    if (absSetDiff >= 1) {
+      label = 'SAFE';
+      conf = 0.88;
+      tip = `${leader === 1 ? name1 : name2} to win match`;
+    } else {
+      label = 'RISKY';
+      conf = 0.76;
+    }
+  }
+
+  return {
+    label,
+    conf,
+    tip,
+    features: {
+      setNum, w1, w2, status
+    }
   };
-
-  return predictFromFeatures(features);
 }
