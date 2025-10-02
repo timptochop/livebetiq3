@@ -26,7 +26,7 @@ function currentSetFromScores(players) {
   return k || 0;
 }
 
-// lightweight global live-count bus (κρατάει το TopBar σε sync)
+// lightweight global live-count bus
 const EVT_LIVE_COUNT = 'live-count';
 function emitLiveCount(n) {
   const count = Number.isFinite(n) ? n : 0;
@@ -38,9 +38,9 @@ function emitLiveCount(n) {
 
 export default function LiveTennis({
   onLiveCount = () => {},
-  notifyMode = 'ONCE',          // 'ONCE' | 'ON_CHANGE'
-  notificationsOn = true,       // toast on SAFE
-  audioOn = true,               // sound on SAFE
+  notifyMode = 'ONCE',           // 'ONCE' | 'ON_CHANGE'
+  notificationsOn = true,
+  audioOn = true,
 }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -57,7 +57,7 @@ export default function LiveTennis({
 
       const enriched = keep.map((m, idx) => {
         const players = Array.isArray(m.players) ? m.players
-                    : Array.isArray(m.player)  ? m.player : [];
+                      : Array.isArray(m.player)  ? m.player : [];
         const p1 = players[0] || {}, p2 = players[1] || {};
         const name1 = p1.name || p1['@name'] || '';
         const name2 = p2.name || p2['@name'] || '';
@@ -89,7 +89,7 @@ export default function LiveTennis({
     return () => clearInterval(t);
   }, []);
 
-  // live counter για TopBar (prop + global bus)
+  // live counter for TopBar (prop + global bus)
   useEffect(() => {
     const n = rows.reduce((acc, m) => {
       const s = m.status || '';
@@ -162,7 +162,7 @@ export default function LiveTennis({
       }
 
       if (notificationsOn) {
-        const t = `SAFE: ${m.name1} vs ${m.name2}${m.categoryName ? ` \u00B7 ${m.categoryName}` : ''}`;
+        const t = `SAFE: ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ''}`;
         showToast(t, 3500);
       }
 
@@ -174,16 +174,13 @@ export default function LiveTennis({
   }, [list, notifyMode, notificationsOn, audioOn]);
 
   // ---------- UI helpers ----------
-  const Pill = ({ label /*, kellyLevel*/ }) => {
-    let bg = '#5a5f68', fg = '#fff';
-    let text = label;
+  const Pill = ({ label }) => {
+    let bg = '#5a5f68', fg = '#fff', text = label;
     if (label === 'SAFE') { bg = '#1fdd73'; text = 'SAFE'; }
     else if (label === 'RISKY') { bg = '#ffbf0a'; fg = '#151515'; }
     else if (label === 'AVOID') { bg = '#e53935'; }
     else if (label.startsWith('SET')) { bg = '#6e42c1'; }
     else if (label === 'SOON') { bg = '#5a5f68'; }
-
-    // ΧΩΡΙΣ τελείες/dots
     return (
       <span style={{
         padding: '10px 14px',
@@ -196,13 +193,20 @@ export default function LiveTennis({
     );
   };
 
-  const Dot = ({ on }) => (
-    <span style={{
-      width: 10, height: 10, borderRadius: 999, display: 'inline-block',
-      background: on ? '#1fdd73' : '#e53935',
-      boxShadow: on ? '0 0 0 2px rgba(31,221,115,0.25)' : 'none',
-    }} />
-  );
+  const Dot = ({ status }) => {
+    const s = String(status || '').toLowerCase();
+    const ended = isFinishedLike(s);
+    const live = (!!s && !isUpcoming(s) && !ended) &&
+                 (s.includes('set') || s.includes('live') || s.includes('in play') || s.includes('tiebreak'));
+    const bg = live ? '#1fdd73' : (ended ? '#e53935' : '#98a0a6');
+    const shadow = live ? '0 0 0 2px rgba(31,221,115,0.25)' : 'none';
+    return (
+      <span style={{
+        width: 10, height: 10, borderRadius: 999, display: 'inline-block',
+        background: bg, boxShadow: shadow,
+      }} />
+    );
+  };
 
   return (
     <div style={{ color: '#fff' }}>
@@ -210,7 +214,7 @@ export default function LiveTennis({
         <div style={{ color: '#cfd3d7', padding: '8px 2px' }}>Loading...</div>
       ) : null}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 'var(--tb-offset, 56px)' }}>
         {list.map((m) => (
           <div key={m.id} style={{
             borderRadius: 18,
@@ -220,7 +224,7 @@ export default function LiveTennis({
             padding: '14px 16px',
             display: 'flex', alignItems: 'center', gap: 12,
           }}>
-            <Dot on={m.live} />
+            <Dot status={m.status} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.25, color: '#fff' }}>
                 <span>{m.name1}</span>
@@ -228,7 +232,7 @@ export default function LiveTennis({
                 <span>{m.name2}</span>
               </div>
               <div style={{ marginTop: 6, color: '#c2c7cc', fontSize: 14 }}>
-                {m.date} {m.time} \u00B7 {m.categoryName}
+                {m.date} {m.time} · {m.categoryName}
               </div>
 
               {['SAFE','RISKY'].includes(m.ai?.label) && m.ai?.tip && (
@@ -238,7 +242,7 @@ export default function LiveTennis({
               )}
             </div>
 
-            <Pill label={m.uiLabel} /*kellyLevel={m.ai?.kellyLevel}*/ />
+            <Pill label={m.uiLabel} />
           </div>
         ))}
 

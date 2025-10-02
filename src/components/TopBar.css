@@ -1,66 +1,73 @@
+/* src/components/TopBar.css */
 :root {
-  --tb-bg: #0b0b0c;
-  --tb-border: #1a1a1e;
-  --tb-z: 9999;
+  --tb-offset: 56px; /* fallback */
 }
 
-/* Μπάρα */
 header.topbar {
-  position: fixed;
-  inset: 0 0 auto 0;          /* top:0, left/right:0 */
-  height: var(--tb-h);
-  background: var(--tb-bg);
-  color: #fff;
-  border-bottom: 1px solid var(--tb-border);
-  z-index: var(--tb-z);
-}
-
-/* Περιεχόμενο */
-.topbar__inner {
-  height: 100%;
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 0 12px;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  height: 56px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  background: #0f1215;
+  border-bottom: 1px solid #1f252b;
+  padding: 0 12px;
 }
 
-/* Brand */
-.topbar__brand {
+.topbar .brand {
+  color: #aee8c0;
   font-weight: 900;
-  letter-spacing: .5px;
-  white-space: nowrap;
+  letter-spacing: 0.5px;
 }
-.topbar__brand .g { color: #1fdd73; }
+.topbar .brand-em { color: #49e38b; }
 
-/* LIVE pill */
-.topbar__pill {
-  margin: 0 auto;
-  height: 28px;
-  display: flex; align-items: center; gap: 8px;
-  padding: 0 10px;
+.tb-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
   border-radius: 999px;
-  background: #101215;
-  border: 1px solid #22272c;
-  font-weight: 700;
+  background: #12181d;
+  border: 1px solid #24303a;
+  color: #cdd5db;
+  font-weight: 800;
 }
-.topbar__pill-dot {
-  width: 8px; height: 8px; border-radius: 999px;
+.live-pill .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
   background: #1fdd73;
-  box-shadow: 0 0 0 3px rgba(31,221,115,.15);
+  box-shadow: 0 0 0 2px rgba(31,221,115,0.25);
+}
+.live-pill .txt { opacity: 0.9; }
+.live-pill .cnt {
+  margin-left: 2px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: #0d151a;
+  border: 1px solid #26333d;
 }
 
-/* Actions (μόνο καμπανάκι) */
-.topbar__actions {
-  display: flex; align-items: center; gap: 8px;
-}
-.topbar__btn {
-  width: 36px; height: 36px;
+.tb-right .bell {
+  height: 36px;
+  width: 36px;
   border-radius: 10px;
-  background: #121416;
-  border: 1px solid #22272c;
-  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid #24303a;
+  background: #141a1f;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
 }
-.topbar__btn--bell::before { content: "🔔"; }   /* απλό unicode εικονίδιο */
+.tb-right .bell.on  { box-shadow: 0 0 0 2px rgba(31,221,115,0.22) inset; }
+.tb-right .bell.off { opacity: 0.9; }
