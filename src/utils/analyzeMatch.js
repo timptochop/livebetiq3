@@ -181,6 +181,40 @@ function driftGuardAdj(m, status, favIsA, favProb) {
   return adj;
 }
 
+function currentSetPair(m, status) {
+  if (!status.live || !Array.isArray(m.players) || m.players.length < 2) return { ga: null, gb: null };
+  const A = m.players[0] || {}, B = m.players[1] || {};
+  const idx = status.setNum > 0 ? status.setNum : 1;
+  const ga = readSetGames(A, idx);
+  const gb = readSetGames(B, idx);
+  return { ga, gb };
+}
+
+function setPointPressureAdj(m, status, favIsA) {
+  if (!status.live) return 0;
+  const { ga, gb } = currentSetPair(m, status);
+  if (ga === null || gb === null) return 0;
+  const bothHigh = ga >= 5 && gb >= 5;
+  const diff = Math.abs(ga - gb);
+  const tiebreak = ga === 6 && gb === 6;
+  if (!bothHigh) return 0;
+  let adj = 0;
+  const favLeading = favIsA ? ga > gb : gb > ga;
+  const favTrailing = favIsA ? ga < gb : gb < ga;
+
+  if (tiebreak) {
+    if (favLeading) adj += 0.012;
+    if (favTrailing) adj -= 0.025;
+  } else if (diff <= 1) {
+    if (favLeading) adj += 0.010;
+    if (favTrailing) adj -= 0.018;
+  }
+  if (status.setNum >= 3) adj *= 1.2;
+  if (adj > 0.02) adj = 0.02;
+  if (adj < -0.03) adj = -0.03;
+  return adj;
+}
+
 export default function analyzeMatch(m = {}) {
   const [pA, pB] = parsePlayers(m);
   const status = parseStatus(m);
@@ -190,7 +224,6 @@ export default function analyzeMatch(m = {}) {
   const favIsA = pa >= pb;
   const favName = favIsA ? pA : pB;
   const favProb = favIsA ? pa : pb;
-  const margin = Math.abs(favProb - 0.5);
   const catBonus = categoryWeight(m);
   const liveBonus = status.live ? 0.03 : 0.0;
 
@@ -209,6 +242,8 @@ export default function analyzeMatch(m = {}) {
   conf += timeToStartAdj(m, status);
 
   conf += driftGuardAdj(m, status, favIsA, favProb);
+
+  conf += setPointPressureAdj(m, status, favIsA);
 
   if (status.setNum >= 3) conf -= 0.03;
   if (status.finished || status.cancelled) conf = 0.52;
@@ -240,7 +275,6 @@ export default function analyzeMatch(m = {}) {
       pOdds: { a: oA, b: oB },
       favName,
       favProb,
-      margin,
       setNum: status.setNum,
       live: status.live ? 1 : 0,
       catBonus,
