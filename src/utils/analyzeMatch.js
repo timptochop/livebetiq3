@@ -90,6 +90,49 @@ function computeMomentum(m, favIsA) {
   return score;
 }
 
+function detectSurface(m = {}) {
+  const fields = [
+    m.surface, m.court, m.courtType, m.categoryName, m.league, m.tournament, m.info, m.meta
+  ].filter(Boolean).map(x => String(x).toLowerCase()).join(" ");
+  if (fields.includes("clay")) return "clay";
+  if (fields.includes("grass")) return "grass";
+  if (fields.includes("indoor")) return "indoor";
+  if (fields.includes("hard")) return "hard";
+  return "";
+}
+
+function surfaceAdj(surf) {
+  if (surf === "grass") return 0.02;
+  if (surf === "hard") return 0.01;
+  if (surf === "indoor") return 0.01;
+  if (surf === "clay") return -0.015;
+  return 0.0;
+}
+
+function parseStartTs(m = {}) {
+  const d = String(m.date || "").trim();
+  const t = String(m.time || "").trim();
+  const md = d.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  const mt = t.match(/^(\d{2}):(\d{2})$/);
+  if (!md || !mt) return null;
+  const dd = Number(md[1]), mm = Number(md[2]) - 1, yyyy = Number(md[3]);
+  const hh = Number(mt[1]), min = Number(mt[2]);
+  const ts = new Date(yyyy, mm, dd, hh, min).getTime();
+  return Number.isFinite(ts) ? ts : null;
+}
+
+function timeToStartAdj(m, status) {
+  if (status.live) return 0;
+  const ts = parseStartTs(m);
+  if (!ts) return 0;
+  const diffMin = Math.round((ts - Date.now()) / 60000);
+  if (diffMin <= 0) return 0.005;
+  if (diffMin <= 120) return 0.01;
+  if (diffMin <= 720) return 0.0;
+  if (diffMin <= 1440) return -0.01;
+  return -0.02;
+}
+
 export default function analyzeMatch(m = {}) {
   const [pA, pB] = parsePlayers(m);
   const status = parseStatus(m);
@@ -111,6 +154,12 @@ export default function analyzeMatch(m = {}) {
   }
 
   if (status.live) conf += computeMomentum(m, favIsA);
+
+  const surf = detectSurface(m);
+  conf += surfaceAdj(surf);
+
+  conf += timeToStartAdj(m, status);
+
   if (status.setNum >= 3) conf -= 0.03;
   if (status.finished || status.cancelled) conf = 0.52;
 
@@ -145,6 +194,7 @@ export default function analyzeMatch(m = {}) {
       setNum: status.setNum,
       live: status.live ? 1 : 0,
       catBonus,
+      surface: surf
     },
   };
 }
