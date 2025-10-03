@@ -1,101 +1,96 @@
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 1000;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 8px;
-  height: 56px;
-  padding: calc(env(safe-area-inset-top, 0) + 6px) 12px 6px 12px;
-  background: rgba(12, 14, 17, 0.88);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-  border-bottom: 1px solid #1e242a;
-}
+/* TopBar.css — Lockdown+ stable */
 
-.tb-left,
-.tb-center,
-.tb-right {
+/* Σταθερό ύψος topbar για layout & spacer */
+:root { --topbar-h: 56px; }
+
+/* Βασικό container του topbar */
+.topbar {
+  position: sticky;           /* κολλάει στην κορυφή όταν γίνεται scroll */
+  top: 0;
+  inset-inline: 0;
+  z-index: 1000;
+
+  height: calc(var(--topbar-h) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+
   display: flex;
   align-items: center;
+  gap: 12px;
+
+  background: #0f1419;
+  -webkit-backdrop-filter: saturate(120%) blur(0);
+  backdrop-filter: saturate(120%) blur(0);
+
+  /* αποφυγή micro-jank σε iOS scroll */
+  will-change: transform;
 }
 
-.tb-left { justify-content: flex-start; }
-.tb-center { justify-content: center; }
-.tb-right { justify-content: flex-end; gap: 8px; }
+/* Περιθώρια δεξιά/αριστερά με ασφάλεια για gestures */
+.topbar .safe-gap { padding-right: env(safe-area-inset-right); }
+.topbar .safe-gap-left { padding-left: env(safe-area-inset-left); }
 
+/* Λογότυπο / κείμενο αριστερά */
 .brand {
-  font-weight: 900;
-  letter-spacing: .5px;
-  font-size: 18px;
-  color: #27e36a;
-  user-select: none;
-  white-space: nowrap;
+  font-weight: 800;
+  letter-spacing: .3px;
+  color: #8ff56d;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
-.live-badge {
+/* Κεντρικό chip για LIVE */
+.live-chip {
+  margin-left: auto;
+  margin-right: auto;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: #131a17;
-  border: 1px solid #1f2b22;
+  font-weight: 700;
+  font-size: 13px;
+  color: #bfe6cb;
+  background: #0d2016;
+  border: 1px solid #173d2a;
+  border-radius: 22px;
+  height: 28px;
+  padding: 0 10px;
 }
 
-.live-badge .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #22dd77;
-  box-shadow: 0 0 0 2px rgba(34, 221, 119, 0.18);
-}
-
-.live-badge .txt {
-  font-weight: 800;
-  color: #b9c2c9;
-  font-size: 12px;
-  letter-spacing: .6px;
-}
-
-.live-badge .count {
-  min-width: 24px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 900;
-  font-size: 12px;
-  color: #0e1114;
-  background: #22dd77;
-}
-
+/* Εικονίδια δεξιά (καμπανάκι κ.λπ.) */
 .icon {
-  appearance: none;
-  border: 0;
-  outline: 0;
-  background: #151a1f;
-  border: 1px solid #1f262d;
-  color: #d6dde3;
-  border-radius: 12px;
   width: 40px;
   height: 40px;
-  font-size: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  font-size: 18px;
+  color: #baf5d1;
+  background: #17211a;
+  border: 1px solid #203328;
+  border-radius: 12px;
 }
-
-.icon.on { background: #17211a; border-color: #203328; color: #baf5d1; }
 .icon.off { opacity: .7; }
 
-.safe-gap { padding-right: env(safe-area-inset-right, 0); }
-
-/* iOS fallback */
+/* ---- iOS safe-area fallback (παλαιότερα WebKit) ---- */
 @supports (top: constant(safe-area-inset-top)) {
-  .topbar { padding-top: calc(constant(safe-area-inset-top) + 6px); }
+  .topbar {
+    padding-top: calc(constant(safe-area-inset-top) + 0px);
+    height: calc(var(--topbar-h) + constant(safe-area-inset-top));
+  }
   .safe-gap { padding-right: constant(safe-area-inset-right); }
+  .safe-gap-left { padding-left: constant(safe-area-inset-left); }
+}
+
+/* Προαιρετικό οπτικό διαχωριστικό κάτω από το bar */
+.topbar-divider {
+  position: sticky;
+  top: calc(var(--topbar-h) + env(safe-area-inset-top));
+  height: 1px;
+  background: rgba(255,255,255,.04);
+}
+
+/* Μικρές οθόνες */
+@media (max-width: 390px) {
+  :root { --topbar-h: 52px; }
+  .live-chip { font-size: 12px; }
 }
