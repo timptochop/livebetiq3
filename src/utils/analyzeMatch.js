@@ -133,6 +133,54 @@ function timeToStartAdj(m, status) {
   return -0.02;
 }
 
+function leadSignal(m) {
+  if (!Array.isArray(m.players) || m.players.length < 2) return { leadA: 0, setsCounted: 0, currentGames: 0 };
+  const A = m.players[0] || {}, B = m.players[1] || {};
+  let setsCounted = 0, setsLeadA = 0, curGames = 0;
+  for (let i = 1; i <= 5; i++) {
+    const ga = readSetGames(A, i);
+    const gb = readSetGames(B, i);
+    if (ga === null || gb === null) break;
+    if (ga === 0 && gb === 0) break;
+    setsCounted++;
+    if (ga > gb) setsLeadA++;
+    if (i === setsCounted) curGames = (ga || 0) + (gb || 0);
+  }
+  const leadA = setsLeadA > (setsCounted - setsLeadA) ? 1 : (setsLeadA < (setsCounted - setsLeadA) ? -1 : 0);
+  return { leadA, setsCounted, currentGames: curGames };
+}
+
+function driftGuardAdj(m, status, favIsA, favProb) {
+  if (!status.live) return 0;
+  const sig = leadSignal(m);
+  if (sig.setsCounted === 0) return 0;
+  const strongFav = Math.abs(favProb - 0.5) >= 0.25;
+  let adj = 0;
+  if (favIsA) {
+    if (sig.leadA === 1) {
+      adj += status.setNum >= 2 ? 0.015 : 0.01;
+    } else if (sig.leadA === -1) {
+      let drop = status.setNum >= 3 ? 0.03 : status.setNum === 2 ? 0.02 : 0.015;
+      if (strongFav) drop *= 0.6;
+      adj -= drop;
+    }
+  } else {
+    if (sig.leadA === 1) {
+      let drop = status.setNum >= 3 ? 0.03 : status.setNum === 2 ? 0.02 : 0.015;
+      if (strongFav) drop *= 0.6;
+      adj -= drop;
+    } else if (sig.leadA === -1) {
+      adj += status.setNum >= 2 ? 0.015 : 0.01;
+    }
+  }
+  if (status.setNum === 1 && sig.currentGames > 0 && sig.currentGames <= 4) {
+    adj *= 0.7;
+  }
+  if (adj > 0.03) adj = 0.03;
+  if (adj < -0.04) adj = -0.04;
+  return adj;
+}
+
 export default function analyzeMatch(m = {}) {
   const [pA, pB] = parsePlayers(m);
   const status = parseStatus(m);
@@ -159,6 +207,8 @@ export default function analyzeMatch(m = {}) {
   conf += surfaceAdj(surf);
 
   conf += timeToStartAdj(m, status);
+
+  conf += driftGuardAdj(m, status, favIsA, favProb);
 
   if (status.setNum >= 3) conf -= 0.03;
   if (status.finished || status.cancelled) conf = 0.52;
