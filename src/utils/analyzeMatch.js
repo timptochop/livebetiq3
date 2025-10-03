@@ -1,4 +1,3 @@
-// src/utils/analyzeMatch.js
 function toNum(x) {
   const n = Number(x);
   return Number.isFinite(n) ? n : 0;
@@ -45,9 +44,7 @@ function parsePlayers(m = {}) {
 
 function parseStatus(m = {}) {
   const s = String(m.status || "").toLowerCase();
-  const live =
-    s.includes("set") || s.includes("live") || s.includes("in play") ||
-    s.includes("1st") || s.includes("2nd");
+  const live = s.includes("set") || s.includes("live") || s.includes("in play") || s.includes("1st") || s.includes("2nd");
   let setNum = 0;
   const mt = /set\s*(\d+)/i.exec(String(m.status || ""));
   if (mt && mt[1]) setNum = Number(mt[1]) || 0;
@@ -64,17 +61,45 @@ function categoryWeight(m = {}) {
   return 0.0;
 }
 
+function readSetGames(p, idx) {
+  const key = "s" + idx;
+  if (!p) return null;
+  if (p[key] !== undefined && p[key] !== null && p[key] !== "") return toNum(p[key]);
+  return null;
+}
+
+function computeMomentum(m, favIsA) {
+  if (!Array.isArray(m.players) || m.players.length < 2) return 0;
+  const A = m.players[0] || {}, B = m.players[1] || {};
+  let setsCounted = 0, setsLeadA = 0, lastDiff = 0;
+  for (let i = 1; i <= 5; i++) {
+    const ga = readSetGames(A, i);
+    const gb = readSetGames(B, i);
+    if (ga === null || gb === null) break;
+    if (ga === 0 && gb === 0) break;
+    setsCounted++;
+    if (ga > gb) setsLeadA++;
+    if (ga !== gb) lastDiff = ga - gb;
+  }
+  if (setsCounted === 0) return 0;
+  const setsLead = setsLeadA - (setsCounted - setsLeadA);
+  let score = 0.02 * setsLead + 0.01 * lastDiff;
+  if (!favIsA) score = -score;
+  if (score > 0.06) score = 0.06;
+  if (score < -0.04) score = -0.04;
+  return score;
+}
+
 export default function analyzeMatch(m = {}) {
   const [pA, pB] = parsePlayers(m);
   const status = parseStatus(m);
   const oddsObj = m.odds || m.market || m.oddsFT || {};
   const { oA, oB } = pickTwoOdds(oddsObj, pA, pB);
   const { pa, pb } = implied(oA, oB);
-
-  const favName = pa >= pb ? pA : pB;
-  const favProb = pa >= pb ? pa : pb;
+  const favIsA = pa >= pb;
+  const favName = favIsA ? pA : pB;
+  const favProb = favIsA ? pa : pb;
   const margin = Math.abs(favProb - 0.5);
-
   const catBonus = categoryWeight(m);
   const liveBonus = status.live ? 0.03 : 0.0;
 
@@ -82,9 +107,10 @@ export default function analyzeMatch(m = {}) {
   if (oA > 1 && oB > 1) {
     conf = 0.50 + (favProb - 0.5) * 1.20 + catBonus + liveBonus;
   } else {
-    conf = 0.58 + catBonus; // χωρίς αποδόσεις, συντηρητικό baseline
+    conf = 0.58 + catBonus;
   }
 
+  if (status.live) conf += computeMomentum(m, favIsA);
   if (status.setNum >= 3) conf -= 0.03;
   if (status.finished || status.cancelled) conf = 0.52;
 
