@@ -1,3 +1,5 @@
+// src/utils/analyzeMatch.js
+
 function toNum(x) {
   const n = Number(x);
   return Number.isFinite(n) ? n : 0;
@@ -31,8 +33,8 @@ function implied(oA, oB) {
 function parsePlayers(m = {}) {
   if (Array.isArray(m.players) && m.players.length >= 2) {
     return [
-      (m.players[0]?.name || "").trim() || "Player A",
-      (m.players[1]?.name || "").trim() || "Player B",
+      (m.players[0]?.name || m.players[0]?.["@name"] || "").trim() || "Player A",
+      (m.players[1]?.name || m.players[1]?.["@name"] || "").trim() || "Player B",
     ];
   }
   if (typeof m.name === "string" && m.name.includes(" vs ")) {
@@ -43,10 +45,10 @@ function parsePlayers(m = {}) {
 }
 
 function parseStatus(m = {}) {
-  const s = String(m.status || "").toLowerCase();
+  const s = String(m.status || m["@status"] || "").toLowerCase();
   const live = s.includes("set") || s.includes("live") || s.includes("in play") || s.includes("1st") || s.includes("2nd");
   let setNum = 0;
-  const mt = /set\s*(\d+)/i.exec(String(m.status || ""));
+  const mt = /set\s*(\d+)/i.exec(String(m.status || m["@status"] || ""));
   if (mt && mt[1]) setNum = Number(mt[1]) || 0;
   const finished = s.includes("finished") || s.includes("retired") || s.includes("walkover");
   const cancelled = s.includes("cancel") || s.includes("postpon");
@@ -54,7 +56,7 @@ function parseStatus(m = {}) {
 }
 
 function categoryWeight(m = {}) {
-  const cat = (m.categoryName || m.category || "").toString().toLowerCase();
+  const cat = (m.categoryName || m.category || m["@category"] || "").toString().toLowerCase();
   if (cat.includes("atp") || cat.includes("wta")) return 0.07;
   if (cat.includes("challenger")) return 0.03;
   if (cat.includes("itf")) return -0.05;
@@ -110,8 +112,8 @@ function surfaceAdj(surf) {
 }
 
 function parseStartTs(m = {}) {
-  const d = String(m.date || "").trim();
-  const t = String(m.time || "").trim();
+  const d = String(m.date || m["@date"] || "").trim();
+  const t = String(m.time || m["@time"] || "").trim();
   const md = d.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
   const mt = t.match(/^(\d{2}):(\d{2})$/);
   if (!md || !mt) return null;
@@ -150,6 +152,15 @@ function leadSignal(m) {
   return { leadA, setsCounted, currentGames: curGames };
 }
 
+function currentSetPair(m, status) {
+  if (!status.live || !Array.isArray(m.players) || m.players.length < 2) return { ga: null, gb: null };
+  const A = m.players[0] || {}, B = m.players[1] || {};
+  const idx = status.setNum > 0 ? status.setNum : 1;
+  const ga = readSetGames(A, idx);
+  const gb = readSetGames(B, idx);
+  return { ga, gb };
+}
+
 function driftGuardAdj(m, status, favIsA, favProb) {
   if (!status.live) return 0;
   const sig = leadSignal(m);
@@ -181,15 +192,6 @@ function driftGuardAdj(m, status, favIsA, favProb) {
   return adj;
 }
 
-function currentSetPair(m, status) {
-  if (!status.live || !Array.isArray(m.players) || m.players.length < 2) return { ga: null, gb: null };
-  const A = m.players[0] || {}, B = m.players[1] || {};
-  const idx = status.setNum > 0 ? status.setNum : 1;
-  const ga = readSetGames(A, idx);
-  const gb = readSetGames(B, idx);
-  return { ga, gb };
-}
-
 function setPointPressureAdj(m, status, favIsA) {
   if (!status.live) return 0;
   const { ga, gb } = currentSetPair(m, status);
@@ -201,7 +203,6 @@ function setPointPressureAdj(m, status, favIsA) {
   let adj = 0;
   const favLeading = favIsA ? ga > gb : gb > ga;
   const favTrailing = favIsA ? ga < gb : gb < ga;
-
   if (tiebreak) {
     if (favLeading) adj += 0.012;
     if (favTrailing) adj -= 0.025;
@@ -215,6 +216,37 @@ function setPointPressureAdj(m, status, favIsA) {
   return adj;
 }
 
+function isTenseSet(m, status) {
+  const { ga, gb } = currentSetPair(m, status);
+  if (ga === null || gb === null) return false;
+  return (ga >= 5 && gb >= 5) || (ga === 6 && gb === 6);
+}
+
+function applyVolatilityClamp(confBase, confNow, m, status, favIsA, favProb) {
+  if (!status.live) return confNow;
+  if (!isTenseSet(m, status)) return confNow;
+
+  // Default clamp in very tight late games / tie-breaks
+  const maxUp = 0.04;
+  const maxDown = -0.05;
+
+  let delta = confNow - confBase;
+
+  // Late-set underdog stabilizer: keep heavy pre-fav from crashing too hard
+  const heavyFav = favProb >= 0.66;
+  const { ga, gb } = currentSetPair(m, status);
+  const favTrailing = favIsA ? ga < gb : gb < ga;
+  if (heavyFav && favTrailing) {
+    // Cap downside tighter for heavy favs
+    if (delta < -0.035) delta = -0.035;
+  }
+
+  if (delta > maxUp) delta = maxUp;
+  if (delta < maxDown) delta = maxDown;
+
+  return confBase + delta;
+}
+
 export default function analyzeMatch(m = {}) {
   const [pA, pB] = parsePlayers(m);
   const status = parseStatus(m);
@@ -224,32 +256,38 @@ export default function analyzeMatch(m = {}) {
   const favIsA = pa >= pb;
   const favName = favIsA ? pA : pB;
   const favProb = favIsA ? pa : pb;
+
   const catBonus = categoryWeight(m);
   const liveBonus = status.live ? 0.03 : 0.0;
 
-  let conf;
-  if (oA > 1 && oB > 1) {
-    conf = 0.50 + (favProb - 0.5) * 1.20 + catBonus + liveBonus;
-  } else {
-    conf = 0.58 + catBonus;
-  }
+  // Base confidence from odds + category + live state
+  const confBase = (oA > 1 && oB > 1)
+    ? 0.50 + (favProb - 0.5) * 1.20 + catBonus + liveBonus
+    : 0.58 + catBonus;
 
+  let conf = confBase;
+
+  // Live dynamics
   if (status.live) conf += computeMomentum(m, favIsA);
 
+  // Contextual adjustments
   const surf = detectSurface(m);
   conf += surfaceAdj(surf);
-
   conf += timeToStartAdj(m, status);
-
   conf += driftGuardAdj(m, status, favIsA, favProb);
-
   conf += setPointPressureAdj(m, status, favIsA);
 
+  // Volatility clamp for tight late sets / tiebreaks
+  conf = applyVolatilityClamp(confBase, conf, m, status, favIsA, favProb);
+
+  // End-game dampener and finished/cancelled guard
   if (status.setNum >= 3) conf -= 0.03;
   if (status.finished || status.cancelled) conf = 0.52;
 
+  // Clamp overall bounds
   conf = Math.max(0.51, Math.min(0.95, conf));
 
+  // Labels
   let label;
   if (status.finished || status.cancelled) {
     label = "AVOID";
