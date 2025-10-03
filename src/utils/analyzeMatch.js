@@ -1,134 +1,107 @@
 // src/utils/analyzeMatch.js
-const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, Number.isFinite(x) ? x : 0));
-const nz = (v, d = 0) => (v == null || Number.isNaN(v) ? d : v);
-const sigmoid = (z) => 1 / (1 + Math.exp(-z));
-
-function parseSetNum(status) {
-  if (!status || typeof status !== 'string') return 0;
-  const m = status.match(/Set\s*(\d+)/i);
-  return m ? parseInt(m[1], 10) || 0 : 0;
+function toNum(x) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : 0;
 }
 
-function isLive(status) {
-  if (!status || typeof status !== 'string') return false;
-  const s = status.toLowerCase();
-  if (s.includes('finished')) return false;
-  if (s.includes('not started')) return false;
-  if (s.includes('cancelled') || s.includes('postponed')) return false;
-  return s.includes('set') || s.includes('in play') || s.includes('live') || s.includes('1st') || s.includes('2nd');
-}
+function pickTwoOdds(oddsObj = {}, nameA = "", nameB = "") {
+  let oA = 0, oB = 0;
 
-function getOddsPair(m) {
-  const o = m?.odds || {};
-  const a = nz(o.home ?? o.p1 ?? o.player1 ?? m?.p1Odds ?? m?.player1Odds, NaN);
-  const b = nz(o.away ?? o.p2 ?? o.player2 ?? m?.p2Odds ?? m?.player2Odds, NaN);
-  if (Number.isFinite(a) && Number.isFinite(b)) return { p1: a, p2: b };
-  if (Array.isArray(o?.decimal) && o.decimal.length >= 2) return { p1: nz(o.decimal[0], NaN), p2: nz(o.decimal[1], NaN) };
-  return { p1: NaN, p2: NaN };
-}
-
-function impliedFromOdds(odds) {
-  return Number.isFinite(odds) && odds > 1 ? 1 / odds : NaN;
-}
-
-function favoriteIndex(oddsPair) {
-  const { p1, p2 } = oddsPair;
-  if (!Number.isFinite(p1) || !Number.isFinite(p2)) return 0;
-  if (p1 === p2) return 0;
-  return p1 < p2 ? 0 : 1;
-}
-
-function playersFromMatch(m) {
-  if (Array.isArray(m?.players) && m.players.length >= 2) {
-    return [m.players[0]?.name || '', m.players[1]?.name || ''];
+  if (oddsObj && typeof oddsObj === "object") {
+    if (toNum(oddsObj.p1) > 1 && toNum(oddsObj.p2) > 1) {
+      oA = toNum(oddsObj.p1);
+      oB = toNum(oddsObj.p2);
+    } else if (nameA && nameB && toNum(oddsObj[nameA]) > 1 && toNum(oddsObj[nameB]) > 1) {
+      oA = toNum(oddsObj[nameA]);
+      oB = toNum(oddsObj[nameB]);
+    } else {
+      const vals = Object.values(oddsObj)
+        .map(toNum)
+        .filter((v) => v > 1);
+      if (vals.length >= 2) {
+        oA = vals[0];
+        oB = vals[1];
+      }
+    }
   }
-  if (typeof m?.name === 'string' && m.name.includes(' vs ')) {
-    const [a, b] = m.name.split(' vs ');
-    return [a?.trim() || '', b?.trim() || ''];
-  }
-  const a = m?.player1 || m?.p1 || '';
-  const b = m?.player2 || m?.p2 || '';
-  return [String(a), String(b)];
+  return { oA, oB };
 }
 
-function numberFeature(x, lo, hi) {
-  if (!Number.isFinite(x)) return 0;
-  if (hi === lo) return 0;
-  const t = (x - lo) / (hi - lo);
-  return clamp(t, 0, 1);
+function implied(oA, oB) {
+  if (oA > 1 && oB > 1) {
+    const pa = 1 / oA;
+    const pb = 1 / oB;
+    const s = pa + pb;
+    return { pa: pa / s, pb: pb / s };
+  }
+  return { pa: 0.5, pb: 0.5 };
+}
+
+function parsePlayers(m = {}) {
+  if (Array.isArray(m.players) && m.players.length >= 2) {
+    return [
+      (m.players[0]?.name || "").trim() || "Player A",
+      (m.players[1]?.name || "").trim() || "Player B",
+    ];
+  }
+  if (typeof m.name === "string" && m.name.includes(" vs ")) {
+    const [a, b] = m.name.split(" vs ");
+    return [(a || "").trim() || "Player A", (b || "").trim() || "Player B"];
+  }
+  return ["Player A", "Player B"];
+}
+
+function parseStatus(m = {}) {
+  const s = String(m.status || "").toLowerCase();
+  const live =
+    s.includes("set") ||
+    s.includes("live") ||
+    s.includes("in play") ||
+    s.includes("1st") ||
+    s.includes("2nd");
+  let setNum = 0;
+  const mt = /set\s*(\d+)/i.exec(String(m.status || ""));
+  if (mt && mt[1]) setNum = Number(mt[1]) || 0;
+  const finished = s.includes("finished") || s.includes("retired") || s.includes("walkover");
+  const cancelled = s.includes("cancel") || s.includes("postpon");
+  return { live, setNum, finished, cancelled };
 }
 
 export default function analyzeMatch(m = {}) {
-  const status = m?.status || '';
-  const live = isLive(status);
-  const setNum = parseSetNum(status);
+  const [pA, pB] = parsePlayers(m);
+  const status = parseStatus(m);
+  const oddsObj = m.odds || m.market || m.oddsFT || {};
+  const { oA, oB } = pickTwoOdds(oddsObj, pA, pB);
+  const { pa, pb } = implied(oA, oB);
 
-  const oddsPair = getOddsPair(m);
-  const favIdx = favoriteIndex(oddsPair);
-  const [p1Name, p2Name] = playersFromMatch(m);
+  const favName = pa >= pb ? pA : pB;
+  const favProb = pa >= pb ? pa : pb;
+  const margin = Math.abs(favProb - 0.5);
 
-  const p1Imp = impliedFromOdds(oddsPair.p1);
-  const p2Imp = impliedFromOdds(oddsPair.p2);
-  const favImp = favIdx === 0 ? p1Imp : p2Imp;
-  const dogImp = favIdx === 0 ? p2Imp : p1Imp;
+  let base = 0.55 + margin * 0.7 + (status.live ? 0.05 : 0);
+  if (status.setNum >= 3) base -= 0.05;
+  if (status.finished || status.cancelled) base = 0.52;
 
-  const baseProb = Number.isFinite(favImp) ? favImp : NaN;
-  const oddsEdge = Number.isFinite(favImp) && Number.isFinite(dogImp) ? favImp - dogImp : NaN;
-  const x_odds = numberFeature(nz(baseProb, 0.5), 0.48, 0.75);
-  const x_edge = numberFeature(nz(oddsEdge, 0), 0.00, 0.30);
+  let conf = Math.max(0.51, Math.min(0.99, base));
 
-  const drift = nz(m?.drift ?? m?.oddsDrift ?? m?.marketDrift, 0); // + = προς τα πάνω (χειροτερεύει), - = πέφτει (βελτιώνεται)
-  const x_drift = numberFeature(-drift, -0.10, 0.10);
-
-  const momentum = nz(m?.momentum ?? m?.formMomentum ?? m?.last5Momentum, 0); // -1..+1
-  const x_momentum = clamp((momentum + 1) / 2);
-
-  const x_set = numberFeature(setNum, 0, 3);
-  const x_live = live ? 1 : 0;
-
-  const w = { odds: 1.35, edge: 0.70, drift: 0.45, momentum: 0.40, set: 0.25, live: 0.10 };
-  const z =
-    w.odds * x_odds +
-    w.edge * x_edge +
-    w.drift * x_drift +
-    w.momentum * x_momentum +
-    w.set * x_set +
-    w.live * x_live - 1.20;
-
-  const conf = clamp(sigmoid(z), 0, 1);
-
-  let label = 'AVOID';
-  if (conf >= 0.86) label = 'SAFE';
-  else if (conf >= 0.68) label = 'RISKY';
-
-  const favName = favIdx === 0 ? p1Name : p2Name;
-  const tip =
-    label !== 'AVOID' && favName
-      ? `${favName} to win match`
-      : '';
-
-  const kellyLevel = conf >= 0.86 ? 'HIGH' : conf >= 0.72 ? 'MED' : 'LOW';
-
-  if (String(process?.env?.REACT_APP_LOG_PREDICTIONS || '') === '1') {
-    try {
-      // eslint-disable-next-line no-console
-      console.debug('[ai:analyze]', {
-        name: m?.name || `${p1Name} vs ${p2Name}`,
-        status,
-        label,
-        conf: Number(conf.toFixed(3)),
-        fav: favName,
-        feats: {
-          x_odds: Number(x_odds.toFixed(3)),
-          x_edge: Number(x_edge.toFixed(3)),
-          x_drift: Number(x_drift.toFixed(3)),
-          x_momentum: Number(x_momentum.toFixed(3)),
-          x_set,
-          x_live,
-        },
-      });
-    } catch {}
+  let label = "RISKY";
+  if (!(oA > 1 && oB > 1)) {
+    label = "RISKY";
+    conf = Math.max(conf, 0.6);
+  } else if (status.finished || status.cancelled) {
+    label = "AVOID";
+    conf = 0.52;
+  } else if (margin >= 0.20) {
+    label = "SAFE";
+  } else if (margin <= 0.06) {
+    label = "AVOID";
+    conf = Math.max(0.55, conf);
+  } else {
+    label = "RISKY";
   }
+
+  const kellyLevel = conf >= 0.85 ? "HIGH" : conf >= 0.72 ? "MED" : "LOW";
+  const tip = label !== "AVOID" ? `TIP: ${favName} to win match` : "";
 
   return {
     label,
@@ -136,11 +109,12 @@ export default function analyzeMatch(m = {}) {
     kellyLevel,
     tip,
     features: {
-      pOdds: nz(baseProb, 0),
-      momentum: nz(momentum, 0),
-      drift: nz(drift, 0),
-      setNum,
-      live: live ? 1 : 0,
+      pOdds: { a: oA, b: oB },
+      favName,
+      favProb,
+      margin,
+      setNum: status.setNum,
+      live: status.live ? 1 : 0,
     },
   };
 }
