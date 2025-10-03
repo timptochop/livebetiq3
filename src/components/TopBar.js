@@ -1,84 +1,59 @@
-// src/components/TopBar.js
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import './TopBar.css';
-import { enableNotifications, disableNotifications, isSubscribed } from '../utils/notifyControl';
+import React, { useEffect, useState } from 'react';
 
 const EVT_LIVE_COUNT = 'live-count';
 
-export default function TopBar() {
-  const [count, setCount] = useState(() => (typeof window !== 'undefined' && window.__LIVE_COUNT__) || 0);
-  const [bellOn, setBellOn] = useState(false);
-  const hdrRef = useRef(null);
-
-  // keep --tb-offset synced (fallback to 56px)
-  const syncOffset = useCallback(() => {
-    const h = Math.ceil(hdrRef.current?.getBoundingClientRect?.().height || 56);
-    document.documentElement.style.setProperty('--tb-offset', `${h}px`);
-  }, []);
+export default function TopBar({
+  initialLive = 0,
+  notificationsOn = true,
+  audioOn = true,
+  onBellClick = () => {},
+  onAudioToggle = () => {},
+}) {
+  const [live, setLive] = useState(initialLive);
 
   useEffect(() => {
-    let mounted = true;
-    isSubscribed().then(v => mounted && setBellOn(!!v)).catch(() => {});
-    syncOffset();
-    const ro = new ResizeObserver(syncOffset);
-    if (hdrRef.current) ro.observe(hdrRef.current);
-    const onLoad = () => syncOffset();
-    window.addEventListener('load', onLoad);
-    window.addEventListener('resize', syncOffset);
-    window.addEventListener('orientationchange', syncOffset);
-    return () => {
-      mounted = false;
-      window.removeEventListener('load', onLoad);
-      window.removeEventListener('resize', syncOffset);
-      window.removeEventListener('orientationchange', syncOffset);
-      ro.disconnect();
+    const h = (e) => {
+      const n = typeof e?.detail === 'number' ? e.detail : (window.__LIVE_COUNT__ || 0);
+      setLive(Number.isFinite(n) ? n : 0);
     };
-  }, [syncOffset]);
-
-  // listen global live-count bus
-  useEffect(() => {
-    const on = (e) => setCount(Number(e?.detail ?? 0));
-    window.addEventListener(EVT_LIVE_COUNT, on);
-    return () => window.removeEventListener(EVT_LIVE_COUNT, on);
-  }, []);
-
-  const onBellClick = async () => {
-    try {
-      const on = await isSubscribed();
-      if (on) {
-        await disableNotifications();
-        setBellOn(false);
-      } else {
-        await enableNotifications();
-        setBellOn(true);
-      }
-    } catch (_) {}
-  };
+    if (typeof window !== 'undefined') {
+      setLive(Number.isFinite(window.__LIVE_COUNT__) ? window.__LIVE_COUNT__ : initialLive);
+      window.addEventListener(EVT_LIVE_COUNT, h);
+    }
+    return () => {
+      if (typeof window !== 'undefined') window.removeEventListener(EVT_LIVE_COUNT, h);
+    };
+  }, [initialLive]);
 
   return (
-    <header ref={hdrRef} className="topbar">
+    <div className="topbar">
       <div className="tb-left">
-        <span className="brand">LIVEBET <span className="brand-em">IQ</span></span>
+        <span className="brand">LIVEBET IQ</span>
       </div>
 
       <div className="tb-center">
-        <span className="live-pill">
+        <div className="live-badge">
           <span className="dot" />
           <span className="txt">LIVE</span>
-          <span className="cnt">{count}</span>
-        </span>
+          <span className="count">{live}</span>
+        </div>
       </div>
 
       <div className="tb-right">
         <button
-          type="button"
-          className={`bell ${bellOn ? 'on' : 'off'}`}
-          aria-label="Notifications"
+          className={`icon bell ${notificationsOn ? 'on' : 'off'}`}
           onClick={onBellClick}
-        >
-          🔔
-        </button>
+          aria-label="Notifications"
+          type="button"
+        >🔔</button>
+        <button
+          className={`icon audio ${audioOn ? 'on' : 'off'}`}
+          onClick={onAudioToggle}
+          aria-label="Audio"
+          type="button"
+        >{audioOn ? '🔊' : '🔇'}</button>
+        <div className="safe-gap" />
       </div>
-    </header>
+    </div>
   );
 }
