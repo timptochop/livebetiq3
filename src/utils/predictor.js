@@ -1,5 +1,5 @@
 // src/utils/predictor.js
-// v2.4-balance — Set2 games 3–6, balanced thresholds SAFE/RISKY/AVOID
+// v2.5-momentum — Set2 3–6 games + confidence boost από προηγούμενο set
 
 export function currentSetFromScores(m = {}) {
   const s = (m.status || m.set || "").toString().toLowerCase();
@@ -16,6 +16,15 @@ function currentGameFromScores(players = []) {
   const gA = parseInt(a.games ?? a.g ?? a.currentGame ?? 0, 10) || 0;
   const gB = parseInt(b.games ?? b.g ?? b.currentGame ?? 0, 10) || 0;
   return { gA, gB, total: gA + gB };
+}
+
+function previousSetWinner(players = []) {
+  const a = players?.[0] || {};
+  const b = players?.[1] || {};
+  const s1 = parseInt(a.s1 ?? 0, 10) || 0;
+  const s2 = parseInt(b.s1 ?? 0, 10) || 0;
+  if (s1 === s2) return 0; // undecided / tie
+  return s1 > s2 ? 1 : 2;
 }
 
 function sigmoid(z) {
@@ -44,7 +53,6 @@ export function predictMatch(m = {}, featuresIn = {}) {
     return decorate({ label: "SET 3", conf: 0.0, tip: "", kellyLevel: "LOW" }, f, m);
   }
 
-  // --- SET 2 window check ---
   const { gA, gB, total } = currentGameFromScores(m.players || []);
   if (total < 3) {
     return decorate({ label: "SET 2", conf: 0.0, tip: "", kellyLevel: "LOW" }, f, m);
@@ -53,14 +61,19 @@ export function predictMatch(m = {}, featuresIn = {}) {
     return decorate({ label: "AVOID", conf: 0.0, tip: "", kellyLevel: "LOW" }, f, m);
   }
 
-  // --- SET 2: prediction allowed ---
   const w = [1.6, 0.9, 1.1, 0.3];
   const b = -1.0;
   const x0 = clampOdds(f.pOdds);
   const x1 = Number.isFinite(f.momentum) ? f.momentum : 0;
   const x2 = Number.isFinite(f.drift) ? f.drift : 0;
   const z  = w[0]*x0 + w[1]*x1 + w[2]*x2 + w[3] + b;
-  const conf = round2(sigmoid(z));
+  let conf = sigmoid(z);
+
+  // --- MOMENTUM BOOST από προηγούμενο set ---
+  const winner = previousSetWinner(m.players || []);
+  if (winner === 1) conf += 0.05;
+  else if (winner === 2) conf -= 0.05;
+  conf = round2(Math.min(1, Math.max(0, conf)));
 
   let label = "RISKY";
   if (conf >= 0.80) label = "SAFE";
