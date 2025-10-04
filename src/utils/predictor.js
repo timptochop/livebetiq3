@@ -1,5 +1,5 @@
 // src/utils/predictor.js
-// v2.7-line-movement — drift awareness on top of normalized confidence
+// v2.8-surface-aware — final module (surface + drift + momentum + normalize)
 
 export function currentSetFromScores(m = {}) {
   const s = (m.status || m.set || "").toString().toLowerCase();
@@ -38,6 +38,16 @@ function normalizeConf(c) {
   return (c - min) / (max - min);
 }
 
+function surfaceAdjust(surface = "", indoor = false) {
+  const s = surface.toLowerCase();
+  let adj = 0;
+  if (s.includes("clay")) adj -= 0.05;
+  if (s.includes("grass")) adj += 0.05;
+  if (s.includes("hard")) adj += 0; // neutral
+  if (indoor) adj += 0.03;
+  return adj;
+}
+
 export function predictMatch(m = {}, featuresIn = {}) {
   const f = {
     pOdds: featuresIn.pOdds ?? m.pOdds ?? null,
@@ -45,6 +55,8 @@ export function predictMatch(m = {}, featuresIn = {}) {
     drift: featuresIn.drift ?? m.drift ?? 0,
     live: featuresIn.live ?? m.live ?? false,
     setNum: featuresIn.setNum ?? currentSetFromScores(m),
+    surface: m.categoryName || m.surface || "",
+    indoor: /indoor/i.test(m.categoryName || m.surface || ""),
     ...featuresIn
   };
 
@@ -85,7 +97,10 @@ export function predictMatch(m = {}, featuresIn = {}) {
   if (f.drift > 0.10) conf -= 0.05;
   if (f.drift < -0.10) conf += 0.05;
 
-  // Normalize confidence
+  // Surface adjustment
+  conf += surfaceAdjust(f.surface, f.indoor);
+
+  // Normalize
   conf = normalizeConf(conf);
   conf = round2(Math.min(1, Math.max(0, conf)));
 
