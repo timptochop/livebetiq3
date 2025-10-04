@@ -1,5 +1,5 @@
 // src/utils/predictor.js
-// v3.0-ppMomentum — adds point-by-point momentum feature
+// v3.1-dynKelly — adds dynamic Kelly Criterion stake sizing
 
 export function currentSetFromScores(m = {}) {
   const s = (m.status || m.set || "").toString().toLowerCase();
@@ -57,6 +57,16 @@ function surfaceAdjust(surface = "", indoor = false) {
   return adj;
 }
 
+// Kelly Criterion
+function kellyFraction(conf, odds) {
+  if (!Number.isFinite(odds) || odds <= 1) return 0;
+  const b = odds - 1;
+  const p = conf;
+  const q = 1 - p;
+  const fStar = (b * p - q) / b;
+  return fStar > 0 ? round2(Math.min(fStar, 1)) : 0;
+}
+
 export function predictMatch(m = {}, featuresIn = {}) {
   const f = {
     pOdds: featuresIn.pOdds ?? m.pOdds ?? null,
@@ -72,22 +82,22 @@ export function predictMatch(m = {}, featuresIn = {}) {
 
   if (!f.live) {
     const badge = f.setNum === 1 ? "SET 1" : f.setNum === 2 ? "SET 2" : f.setNum >= 3 ? "SET 3" : "START SOON";
-    return decorate({ label: badge, conf: 0.0, tip: "", kellyLevel: "LOW" }, f, m);
+    return decorate({ label: badge, conf: 0.0, tip: "", kellyFraction: 0 }, f, m);
   }
 
   if (f.setNum === 1) {
-    return decorate({ label: "SET 1", conf: 0.0, tip: "", kellyLevel: "LOW" }, f, m);
+    return decorate({ label: "SET 1", conf: 0.0, tip: "", kellyFraction: 0 }, f, m);
   }
   if (f.setNum >= 3) {
-    return decorate({ label: "SET 3", conf: 0.0, tip: "", kellyLevel: "LOW" }, f, m);
+    return decorate({ label: "SET 3", conf: 0.0, tip: "", kellyFraction: 0 }, f, m);
   }
 
   const { gA, gB, total } = currentGameFromScores(m.players || []);
   if (total < 3) {
-    return decorate({ label: "SET 2", conf: 0.0, tip: "", kellyLevel: "LOW" }, f, m);
+    return decorate({ label: "SET 2", conf: 0.0, tip: "", kellyFraction: 0 }, f, m);
   }
   if (total > 6 || (gA >= 6 && gB >= 6)) {
-    return decorate({ label: "AVOID", conf: 0.0, tip: "", kellyLevel: "LOW" }, f, m);
+    return decorate({ label: "AVOID", conf: 0.0, tip: "", kellyFraction: 0 }, f, m);
   }
 
   const w = [1.6, 0.9, 1.1, 0.3];
@@ -107,7 +117,6 @@ export function predictMatch(m = {}, featuresIn = {}) {
 
   conf += surfaceAdjust(f.surface, f.indoor);
 
-  // Point-by-point momentum
   const [pA, pB] = parsePointScore(f.pointScore);
   if (pA - pB >= 2) conf += 0.05;
   if (pB - pA >= 2) conf -= 0.05;
@@ -120,11 +129,11 @@ export function predictMatch(m = {}, featuresIn = {}) {
   else if (conf < 0.65) label = "AVOID";
 
   const tip = makeTip(m, f);
-  const kellyLevel = conf >= 0.80 ? "HIGH" : conf >= 0.65 ? "MED" : "LOW";
+  const kFraction = kellyFraction(conf, f.pOdds);
 
-  const out = decorate({ label, conf, tip, kellyLevel }, f, m);
+  const out = decorate({ label, conf, tip, kellyFraction: kFraction }, f, m);
 
-  // Debug logs
+  // Debug log
   try {
     console.table([{
       matchId: m.id || "-",
@@ -137,7 +146,8 @@ export function predictMatch(m = {}, featuresIn = {}) {
       surface: f.surface,
       conf,
       label,
-      tip
+      tip,
+      kellyFraction: kFraction
     }]);
   } catch(e) {}
 
