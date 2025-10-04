@@ -1,5 +1,5 @@
 // src/utils/predictor.js
-// v2.8-surface-aware — final module (surface + drift + momentum + normalize)
+// v2.9-debug-log — adds console.table logging for full AI transparency
 
 export function currentSetFromScores(m = {}) {
   const s = (m.status || m.set || "").toString().toLowerCase();
@@ -43,7 +43,7 @@ function surfaceAdjust(surface = "", indoor = false) {
   let adj = 0;
   if (s.includes("clay")) adj -= 0.05;
   if (s.includes("grass")) adj += 0.05;
-  if (s.includes("hard")) adj += 0; // neutral
+  if (s.includes("hard")) adj += 0;
   if (indoor) adj += 0.03;
   return adj;
 }
@@ -88,19 +88,15 @@ export function predictMatch(m = {}, featuresIn = {}) {
   const z  = w[0]*x0 + w[1]*x1 + w[2]*x2 + w[3] + b;
   let conf = sigmoid(z);
 
-  // Momentum boost
   const winner = previousSetWinner(m.players || []);
   if (winner === 1) conf += 0.05;
   else if (winner === 2) conf -= 0.05;
 
-  // Drift awareness
   if (f.drift > 0.10) conf -= 0.05;
   if (f.drift < -0.10) conf += 0.05;
 
-  // Surface adjustment
   conf += surfaceAdjust(f.surface, f.indoor);
 
-  // Normalize
   conf = normalizeConf(conf);
   conf = round2(Math.min(1, Math.max(0, conf)));
 
@@ -111,7 +107,26 @@ export function predictMatch(m = {}, featuresIn = {}) {
   const tip = makeTip(m, f);
   const kellyLevel = conf >= 0.80 ? "HIGH" : conf >= 0.65 ? "MED" : "LOW";
 
-  return decorate({ label, conf, tip, kellyLevel }, f, m);
+  const out = decorate({ label, conf, tip, kellyLevel }, f, m);
+
+  // === Debug log (console.table) ===
+  try {
+    console.table([{
+      matchId: m.id || m['@id'] || "-",
+      players: `${m?.players?.[0]?.name || "?"} vs ${m?.players?.[1]?.name || "?"}`,
+      setNum: f.setNum,
+      odds: f.pOdds,
+      momentum: f.momentum,
+      drift: f.drift,
+      surface: f.surface,
+      indoor: f.indoor,
+      conf,
+      label,
+      tip
+    }]);
+  } catch(e) {}
+
+  return out;
 }
 
 function decorate(out, features, m) {
