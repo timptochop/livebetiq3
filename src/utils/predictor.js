@@ -1,5 +1,5 @@
 // src/utils/predictor.js
-// v2.9-debug-log — adds console.table logging for full AI transparency
+// v3.0-ppMomentum — adds point-by-point momentum feature
 
 export function currentSetFromScores(m = {}) {
   const s = (m.status || m.set || "").toString().toLowerCase();
@@ -16,6 +16,15 @@ function currentGameFromScores(players = []) {
   const gA = parseInt(a.games ?? a.g ?? a.currentGame ?? 0, 10) || 0;
   const gB = parseInt(b.games ?? b.g ?? b.currentGame ?? 0, 10) || 0;
   return { gA, gB, total: gA + gB };
+}
+
+function parsePointScore(raw = "") {
+  const mapping = { "0": 0, "15": 1, "30": 2, "40": 3, "Ad": 4 };
+  const parts = raw.split("-");
+  if (parts.length !== 2) return [0, 0];
+  const pA = mapping[parts[0]] ?? 0;
+  const pB = mapping[parts[1]] ?? 0;
+  return [pA, pB];
 }
 
 function previousSetWinner(players = []) {
@@ -57,6 +66,7 @@ export function predictMatch(m = {}, featuresIn = {}) {
     setNum: featuresIn.setNum ?? currentSetFromScores(m),
     surface: m.categoryName || m.surface || "",
     indoor: /indoor/i.test(m.categoryName || m.surface || ""),
+    pointScore: m.pointScore || "",
     ...featuresIn
   };
 
@@ -97,6 +107,11 @@ export function predictMatch(m = {}, featuresIn = {}) {
 
   conf += surfaceAdjust(f.surface, f.indoor);
 
+  // Point-by-point momentum
+  const [pA, pB] = parsePointScore(f.pointScore);
+  if (pA - pB >= 2) conf += 0.05;
+  if (pB - pA >= 2) conf -= 0.05;
+
   conf = normalizeConf(conf);
   conf = round2(Math.min(1, Math.max(0, conf)));
 
@@ -109,17 +124,17 @@ export function predictMatch(m = {}, featuresIn = {}) {
 
   const out = decorate({ label, conf, tip, kellyLevel }, f, m);
 
-  // === Debug log (console.table) ===
+  // Debug logs
   try {
     console.table([{
-      matchId: m.id || m['@id'] || "-",
+      matchId: m.id || "-",
       players: `${m?.players?.[0]?.name || "?"} vs ${m?.players?.[1]?.name || "?"}`,
       setNum: f.setNum,
+      pointScore: f.pointScore,
       odds: f.pOdds,
       momentum: f.momentum,
       drift: f.drift,
       surface: f.surface,
-      indoor: f.indoor,
       conf,
       label,
       tip
