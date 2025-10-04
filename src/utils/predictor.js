@@ -1,5 +1,5 @@
 // src/utils/predictor.js
-// v2.3-thresholds — Set2 games 3–6, tuned SAFE/RISKY/AVOID thresholds
+// v2.4-balance — Set2 games 3–6, balanced thresholds SAFE/RISKY/AVOID
 
 export function currentSetFromScores(m = {}) {
   const s = (m.status || m.set || "").toString().toLowerCase();
@@ -63,11 +63,11 @@ export function predictMatch(m = {}, featuresIn = {}) {
   const conf = round2(sigmoid(z));
 
   let label = "RISKY";
-  if (conf >= 0.82) label = "SAFE";
-  else if (conf < 0.68) label = "AVOID";
+  if (conf >= 0.80) label = "SAFE";
+  else if (conf < 0.65) label = "AVOID";
 
   const tip = makeTip(m, f);
-  const kellyLevel = conf >= 0.82 ? "HIGH" : conf >= 0.68 ? "MED" : "LOW";
+  const kellyLevel = conf >= 0.80 ? "HIGH" : conf >= 0.65 ? "MED" : "LOW";
 
   return decorate({ label, conf, tip, kellyLevel }, f, m);
 }
