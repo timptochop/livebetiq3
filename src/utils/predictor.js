@@ -1,5 +1,5 @@
 // src/utils/predictor.js
-// v2.6-normalize — expanded confidence scaling (0.4–0.9 -> 0–1)
+// v2.7-line-movement — drift awareness on top of normalized confidence
 
 export function currentSetFromScores(m = {}) {
   const s = (m.status || m.set || "").toString().toLowerCase();
@@ -31,7 +31,6 @@ function sigmoid(z) {
   return 1 / (1 + Math.exp(-z));
 }
 
-// Normalize confidence into 0–1 range with stretch
 function normalizeConf(c) {
   const min = 0.4, max = 0.9;
   if (c <= min) return 0;
@@ -81,6 +80,10 @@ export function predictMatch(m = {}, featuresIn = {}) {
   const winner = previousSetWinner(m.players || []);
   if (winner === 1) conf += 0.05;
   else if (winner === 2) conf -= 0.05;
+
+  // Drift awareness
+  if (f.drift > 0.10) conf -= 0.05;
+  if (f.drift < -0.10) conf += 0.05;
 
   // Normalize confidence
   conf = normalizeConf(conf);
