@@ -1,5 +1,5 @@
 // src/utils/predictor.js
-// v2.5-momentum — Set2 3–6 games + confidence boost από προηγούμενο set
+// v2.6-normalize — expanded confidence scaling (0.4–0.9 -> 0–1)
 
 export function currentSetFromScores(m = {}) {
   const s = (m.status || m.set || "").toString().toLowerCase();
@@ -23,12 +23,20 @@ function previousSetWinner(players = []) {
   const b = players?.[1] || {};
   const s1 = parseInt(a.s1 ?? 0, 10) || 0;
   const s2 = parseInt(b.s1 ?? 0, 10) || 0;
-  if (s1 === s2) return 0; // undecided / tie
+  if (s1 === s2) return 0;
   return s1 > s2 ? 1 : 2;
 }
 
 function sigmoid(z) {
   return 1 / (1 + Math.exp(-z));
+}
+
+// Normalize confidence into 0–1 range with stretch
+function normalizeConf(c) {
+  const min = 0.4, max = 0.9;
+  if (c <= min) return 0;
+  if (c >= max) return 1;
+  return (c - min) / (max - min);
 }
 
 export function predictMatch(m = {}, featuresIn = {}) {
@@ -69,10 +77,13 @@ export function predictMatch(m = {}, featuresIn = {}) {
   const z  = w[0]*x0 + w[1]*x1 + w[2]*x2 + w[3] + b;
   let conf = sigmoid(z);
 
-  // --- MOMENTUM BOOST από προηγούμενο set ---
+  // Momentum boost
   const winner = previousSetWinner(m.players || []);
   if (winner === 1) conf += 0.05;
   else if (winner === 2) conf -= 0.05;
+
+  // Normalize confidence
+  conf = normalizeConf(conf);
   conf = round2(Math.min(1, Math.max(0, conf)));
 
   let label = "RISKY";
