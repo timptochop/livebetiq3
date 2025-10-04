@@ -1,5 +1,5 @@
 // src/utils/predictor.js
-// v2.2-window — Set2 games 3–6 active window
+// v2.3-thresholds — Set2 games 3–6, tuned SAFE/RISKY/AVOID thresholds
 
 export function currentSetFromScores(m = {}) {
   const s = (m.status || m.set || "").toString().toLowerCase();
@@ -63,11 +63,11 @@ export function predictMatch(m = {}, featuresIn = {}) {
   const conf = round2(sigmoid(z));
 
   let label = "RISKY";
-  if (conf >= 0.85) label = "SAFE";
-  else if (conf < 0.72) label = "AVOID";
+  if (conf >= 0.82) label = "SAFE";
+  else if (conf < 0.68) label = "AVOID";
 
   const tip = makeTip(m, f);
-  const kellyLevel = conf >= 0.85 ? "HIGH" : conf >= 0.72 ? "MED" : "LOW";
+  const kellyLevel = conf >= 0.82 ? "HIGH" : conf >= 0.68 ? "MED" : "LOW";
 
   return decorate({ label, conf, tip, kellyLevel }, f, m);
 }
