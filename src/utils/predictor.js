@@ -1,6 +1,6 @@
 // src/utils/predictor.js
-// v3.4-pointContext — Set2 window (games 3–6), points-aware, volatility-scaled confidence,
-// dynamic Kelly (internal), TIP without prefix, pointContext wiring, console.table on exit.
+// v3.5-calibrated — Set2 window (games 3–6), pointContext nudges, volatility-scaled confidence (softer),
+// dynamic Kelly with volatility buckets, TIP without prefix, console.table on exit.
 
 import pointContext from './aiPredictionEngineModules/pointContext';
 
@@ -139,15 +139,15 @@ export function predictMatch(m = {}, featuresIn = {}) {
   conf = normalizeConf(conf);
   conf = Math.min(1, Math.max(0, conf));
 
-  // Volatility proxy (internal)
+  // Volatility proxy (internal) — SOFTER penalty
   const vol = volatilityScoreLocal(m);           // ~0.3..0.8 typical
   const volOver = Math.max(0, vol - 0.5);       // penalize only high volatility
-  const confScale = 1 - volOver * 0.40;         // up to -40% scaling on conf
+  const confScale = 1 - volOver * 0.30;         // up to -30% scaling on conf (softer vs v3.4)
   conf = round2(Math.min(1, Math.max(0, conf * confScale)));
 
-  // Calibrated thresholds
-  const SAFE_TH = 0.82;
-  const AVOID_TH = 0.64;
+  // Calibrated thresholds (tighter)
+  const SAFE_TH  = 0.83;
+  const AVOID_TH = 0.63;
 
   let label = 'RISKY';
   if (conf >= SAFE_TH) label = 'SAFE';
@@ -156,14 +156,23 @@ export function predictMatch(m = {}, featuresIn = {}) {
   // Tip WITHOUT "TIP: " (UI προθέτει "TIP: ")
   const tipText = makeTip(m, f);
 
-  // Dynamic Kelly with volatility + pressure dampening + bankroll cap
+  // Dynamic Kelly:
+  //   - volatility dampening (softer)
+  //   - pressure dampening (unchanged)
+  //   - bucketed bankroll caps per volatility
   const baseK = kellyFraction(conf, f.pOdds);
-  const kVolScale = 1 - volOver * 0.80;                 // up to -80% stake on high vol
-  const pressureOver = Math.max(0, (ctx.pressure ?? 0) - 0.6); // only when pressure high
-  const kPressureScale = 1 - pressureOver * 0.40;       // up to -40% extra damp
+  const kVolScale = 1 - volOver * 0.60;                 // was 0.80 → ηπιότερο
+  const pressureOver = Math.max(0, (ctx.pressure ?? 0) - 0.6);
+  const kPressureScale = 1 - pressureOver * 0.40;
   const kScaled = Math.max(0, baseK * kVolScale * kPressureScale);
-  const BANKROLL_CAP = 0.02;                            // 2% max per signal
-  const stakePct = round2(Math.min(kScaled, BANKROLL_CAP));
+
+  // bucket caps (volatility-aware)
+  const cap =
+    vol >= 0.75 ? 0.010 :   // 1.0% σε πολύ υψηλή ένταση
+    vol >= 0.60 ? 0.015 :   // 1.5% σε μεσαία-υψηλή
+    vol >= 0.50 ? 0.020 :   // 2.0% σε ουδέτερη
+                           0.025;    // 2.5% σε χαμηλή ένταση
+  const stakePct = round2(Math.min(kScaled, cap));
 
   return withDebug(
     m, f,
@@ -195,7 +204,7 @@ function withDebug(m, f, out, extras = {}) {
   try {
     const { gA, gB, vol, ctx } = extras;
     console.table([{
-      aiVersion: 'v3.4-pointContext',
+      aiVersion: 'v3.5-calibrated',
       matchId: m.id || '-',
       players: playersLabel(m),
       setNum: f.setNum ?? currentSetFromScores(m),
