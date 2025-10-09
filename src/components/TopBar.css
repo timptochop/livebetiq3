@@ -1,96 +1,39 @@
-/* TopBar.css — Lockdown+ stable */
-
-/* Σταθερό ύψος topbar για layout & spacer */
-:root { --topbar-h: 56px; }
-
-/* Βασικό container του topbar */
+:root {
+  --tb-bg:#0e2624;
+  --tb-chip:#0f3732;
+  --tb-text:#e7f5ef;
+  --tb-accent:#16d37a;
+}
 .topbar {
-  position: sticky;           /* κολλάει στην κορυφή όταν γίνεται scroll */
-  top: 0;
-  inset-inline: 0;
-  z-index: 1000;
-
-  height: calc(var(--topbar-h) + env(safe-area-inset-top));
-  padding-top: env(safe-area-inset-top);
-
-  display: flex;
-  align-items: center;
-  gap: 12px;
-
-  background: #0f1419;
-  -webkit-backdrop-filter: saturate(120%) blur(0);
-  backdrop-filter: saturate(120%) blur(0);
-
-  /* αποφυγή micro-jank σε iOS scroll */
-  will-change: transform;
+  position: sticky; top: 0; z-index: 1000;
+  padding: max(8px, env(safe-area-inset-top)) 12px 10px 12px;
+  background: linear-gradient(180deg, rgba(0,0,0,.28), rgba(0,0,0,0)), var(--tb-bg);
+  backdrop-filter: saturate(120%) blur(6px);
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid rgba(255,255,255,.06);
 }
-
-/* Περιθώρια δεξιά/αριστερά με ασφάλεια για gestures */
-.topbar .safe-gap { padding-right: env(safe-area-inset-right); }
-.topbar .safe-gap-left { padding-left: env(safe-area-inset-left); }
-
-/* Λογότυπο / κείμενο αριστερά */
-.brand {
-  font-weight: 800;
-  letter-spacing: .3px;
-  color: #8ff56d;
-  display: inline-flex;
-  align-items: center;
-  line-height: 1;
-}
-
-/* Κεντρικό chip για LIVE */
+.topbar-left { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.brand-mark { width: 24px; height: 24px; object-fit: contain; filter: drop-shadow(0 1px 1px rgba(0,0,0,.35)); }
 .live-chip {
-  margin-left: auto;
-  margin-right: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 700;
-  font-size: 13px;
-  color: #bfe6cb;
-  background: #0d2016;
-  border: 1px solid #173d2a;
-  border-radius: 22px;
-  height: 28px;
-  padding: 0 10px;
+  display: flex; align-items: center; gap: 8px;
+  background: var(--tb-chip); color: var(--tb-text);
+  padding: 6px 12px; border-radius: 999px; font-weight: 800; letter-spacing: .3px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
 }
+.live-chip .dot {
+  width: 8px; height: 8px; border-radius: 999px;
+  background: var(--tb-accent); box-shadow: 0 0 10px var(--tb-accent), 0 0 2px var(--tb-accent);
+}
+.live-chip .label { opacity: .9; }
+.live-chip .count { margin-left: 2px; font-variant-numeric: tabular-nums; }
 
-/* Εικονίδια δεξιά (καμπανάκι κ.λπ.) */
-.icon {
-  width: 40px;
-  height: 40px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  color: #baf5d1;
-  background: #17211a;
-  border: 1px solid #203328;
-  border-radius: 12px;
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
+.icon-btn {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border-radius: 10px; border: none; cursor: pointer;
+  background: rgba(255,255,255,.06); color: #dfe; transition: .15s ease;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
 }
-.icon.off { opacity: .7; }
-
-/* ---- iOS safe-area fallback (παλαιότερα WebKit) ---- */
-@supports (top: constant(safe-area-inset-top)) {
-  .topbar {
-    padding-top: calc(constant(safe-area-inset-top) + 0px);
-    height: calc(var(--topbar-h) + constant(safe-area-inset-top));
-  }
-  .safe-gap { padding-right: constant(safe-area-inset-right); }
-  .safe-gap-left { padding-left: constant(safe-area-inset-left); }
-}
-
-/* Προαιρετικό οπτικό διαχωριστικό κάτω από το bar */
-.topbar-divider {
-  position: sticky;
-  top: calc(var(--topbar-h) + env(safe-area-inset-top));
-  height: 1px;
-  background: rgba(255,255,255,.04);
-}
-
-/* Μικρές οθόνες */
-@media (max-width: 390px) {
-  :root { --topbar-h: 52px; }
-  .live-chip { font-size: 12px; }
-}
+.icon-btn:hover { transform: translateY(-1px); background: rgba(255,255,255,.10); }
+.icon-btn svg { fill: #dfe; opacity: .9; }
+.icon-btn.off svg { opacity: .5; }

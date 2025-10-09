@@ -1,29 +1,15 @@
 /* Global base */
-html, body, #root {
-  height: 100%;
-  background: #121212;
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+
+/* Κρατά σταθερό πλάτος όταν εμφανίζεται το κάθετο scrollbar
+   ώστε να μη «πηδάει» το sticky TopBar */
+html { scrollbar-gutter: stable both-edges; }
+
+body {
   margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  background: #0a0f10;
+  color: #dfe;
+  /* Αποφυγή οριζόντιου scroll χωρίς να αλλάζει η εμφάνιση */
+  overflow-x: clip;
 }
-
-/* TopBar dimensions & default offset */
-:root {
-  --tb-h: 52px;              /* ύψος μπάρας */
-  --tb-offset: var(--tb-h);  /* padding-top fallback */
-}
-
-/* Μην δημιουργείτε stacking/transform contexts πάνω από το TopBar */
-html, body, #root, .App, main, .container, [data-scroll-root] {
-  transform: none !important;
-  perspective: none !important;
-  contain: none !important;
-  will-change: auto !important;
-}
-
-/* Χρήσιμα helpers */
-.safe-top { height: env(safe-area-inset-top); }
-
-img { max-width: 100%; display: block; }
-button { font: inherit; }
-:focus:not(:focus-visible) { outline: none; }
-:focus-visible { outline: 2px solid #7c5cff; outline-offset: 2px; }
