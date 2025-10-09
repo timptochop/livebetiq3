@@ -40,9 +40,9 @@ function parseStatus(m={}){
 
 function categoryWeight(m={}){
   const cat=(m.categoryName||m.category||m["@category"]||"").toString().toLowerCase();
-  if(cat.includes("atp")||cat.includes("wta"))return 0.07;
-  if(cat.includes("challenger"))return 0.03;
-  if(cat.includes("itf"))return -0.05;
+  if(cat.includes("atp")||cat.includes("wta"))return 0.09;
+  if(cat.includes("challenger"))return 0.04;
+  if(cat.includes("itf"))return -0.03;
   return 0.0;
 }
 
@@ -57,8 +57,8 @@ function computeMomentum(m,favIsA){
   const setsLead=setsLeadA-(setsCounted-setsLeadA);
   let score=0.02*setsLead+0.01*lastDiff;
   if(!favIsA)score=-score;
-  if(score>0.06)score=0.06;
-  if(score<-0.04)score=-0.04;
+  if(score>0.07)score=0.07;
+  if(score<-0.03)score=-0.03;
   return score;
 }
 
@@ -85,10 +85,15 @@ function driftGuardAdj(m,status,favIsA,favProb){
   if(!status.live)return 0;
   const sig=leadSignal(m);if(sig.setsCounted===0)return 0;
   const strongFav=Math.abs(favProb-0.5)>=0.25;let adj=0;
-  if(favIsA){if(sig.leadA===1){adj+=status.setNum>=2?0.015:0.01;}else if(sig.leadA===-1){let drop=status.setNum>=3?0.03:status.setNum===2?0.02:0.015;if(strongFav)drop*=0.6;adj-=drop;}}
-  else{if(sig.leadA===1){let drop=status.setNum>=3?0.03:status.setNum===2?0.02:0.015;if(strongFav)drop*=0.6;adj-=drop;}else if(sig.leadA===-1){adj+=status.setNum>=2?0.015:0.01;}}
+  if(favIsA){
+    if(sig.leadA===1){adj+=status.setNum>=2?0.012:0.009;}
+    else if(sig.leadA===-1){let drop=status.setNum>=3?0.024:status.setNum===2?0.017:0.012;if(strongFav)drop*=0.7;adj-=drop;}
+  }else{
+    if(sig.leadA===1){let drop=status.setNum>=3?0.024:status.setNum===2?0.017:0.012;if(strongFav)drop*=0.7;adj-=drop;}
+    else if(sig.leadA===-1){adj+=status.setNum>=2?0.012:0.009;}
+  }
   if(status.setNum===1&&sig.currentGames>0&&sig.currentGames<=4){adj*=0.7;}
-  if(adj>0.03)adj=0.03;if(adj<-0.04)adj=-0.04;return adj;
+  if(adj>0.028)adj=0.028;if(adj<-0.035)adj=-0.035;return adj;
 }
 
 function setPointPressureAdj(m,status,favIsA){
@@ -96,20 +101,20 @@ function setPointPressureAdj(m,status,favIsA){
   const{ga,gb}=currentSetPair(m,status);if(ga===null||gb===null)return 0;
   const bothHigh=ga>=5&&gb>=5;const diff=Math.abs(ga-gb);const tiebreak=ga===6&&gb===6;if(!bothHigh)return 0;
   let adj=0;const favLeading=favIsA?ga>gb:gb>ga;const favTrailing=favIsA?ga<gb:gb<ga;
-  if(tiebreak){if(favLeading)adj+=0.012;if(favTrailing)adj-=0.025;}
-  else if(diff<=1){if(favLeading)adj+=0.010;if(favTrailing)adj-=0.018;}
-  if(status.setNum>=3)adj*=1.2;
-  if(adj>0.02)adj=0.02;if(adj<-0.03)adj=-0.03;return adj;
+  if(tiebreak){if(favLeading)adj+=0.012;if(favTrailing)adj-=0.022;}
+  else if(diff<=1){if(favLeading)adj+=0.010;if(favTrailing)adj-=0.016;}
+  if(status.setNum>=3)adj*=1.15;
+  if(adj>0.02)adj=0.02;if(adj<-0.028)adj=-0.028;return adj;
 }
 
 function isTenseSet(m,status){const{ga,gb}=currentSetPair(m,status);if(ga===null||gb===null)return false;return(ga>=5&&gb>=5)||(ga===6&&gb===6);}
 
 function applyVolatilityClamp(confBase,confNow,m,status,favIsA,favProb){
-  if(!status.live)return confNow; if(!isTenseSet(m,status))return confNow;
-  const maxUp=0.04,maxDown=-0.05;let delta=confNow-confBase;
+  if(!status.live)return confNow;if(!isTenseSet(m,status))return confNow;
+  const maxUp=0.05,maxDown=-0.045;let delta=confNow-confBase;
   const heavyFav=favProb>=0.66;const{ga,gb}=currentSetPair(m,status);const favTrailing=favIsA?ga<gb:gb<ga;
-  if(heavyFav&&favTrailing){if(delta<-0.035)delta=-0.035;}
-  if(delta>maxUp)delta=maxUp; if(delta<maxDown)delta=maxDown;
+  if(heavyFav&&favTrailing){if(delta<-0.04)delta=-0.04;}
+  if(delta>maxUp)delta=maxUp;if(delta<maxDown)delta=maxDown;
   return confBase+delta;
 }
 
@@ -135,9 +140,9 @@ export default function analyzeMatch(m={}){
   }
 
   const catBonus=categoryWeight(m);
-  const liveBonus=0.03;
+  const liveBonus=0.035;
 
-  const confBase=(oA>1&&oB>1)?(0.50+( (favProb-0.5)*1.20 )+catBonus+liveBonus):(0.58+catBonus);
+  const confBase=(oA>1&&oB>1)?(0.50+((favProb-0.5)*1.20)+catBonus+liveBonus):(0.58+catBonus);
   let conf=confBase;
 
   conf+=computeMomentum(m,favIsA);
@@ -147,16 +152,16 @@ export default function analyzeMatch(m={}){
   conf+=setPointPressureAdj(m,status,favIsA);
 
   conf=applyVolatilityClamp(confBase,conf,m,status,favIsA,favProb);
-  if(status.setNum>=3)conf-=0.03;
+  if(status.setNum>=3)conf-=0.02;
   if(status.finished||status.cancelled)conf=0.52;
 
   conf=Math.max(0.51,Math.min(0.95,conf));
 
   let label;
   if(status.finished||status.cancelled){label="AVOID";}
-  else if(!(oA>1&&oB>1)){label=conf>=0.70?"RISKY":"AVOID";}
-  else if(conf>=0.78){label="SAFE";}
-  else if(conf>=0.62){label="RISKY";}
+  else if(!(oA>1&&oB>1)){label=conf>=0.68?"RISKY":"AVOID";}
+  else if(conf>=0.76){label="SAFE";}
+  else if(conf>=0.60){label="RISKY";}
   else{label="AVOID";}
 
   const kellyLevel=conf>=0.85?"HIGH":conf>=0.72?"MED":"LOW";
