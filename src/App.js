@@ -1,4 +1,5 @@
-import React, { useCallback, useState, useEffect } from "react";
+// src/App.js
+import React, { useCallback, useEffect, useState } from "react";
 import TopBar from "./components/TopBar";
 import TopSpacer from "./components/TopSpacer";
 import LiveTennis from "./components/LiveTennis";
@@ -6,7 +7,6 @@ import LiveTennis from "./components/LiveTennis";
 export default function App() {
   const [liveCount, setLiveCount] = useState(window.__LIVE_COUNT__ || 0);
 
-  // Συγχρονισμός και από global bus (ασφάλεια)
   useEffect(() => {
     const handler = (e) => setLiveCount(Number(e.detail || 0));
     window.addEventListener("live-count", handler);
@@ -14,8 +14,7 @@ export default function App() {
   }, []);
 
   const handleBell = useCallback(() => {
-    // εδώ ανοίγεις modal ρυθμίσεων ειδοποιήσεων, αν χρειάζεται
-    // ή απλά κάνεις toggle/μήνυμα
+    // μελλοντικά ρυθμίσεις notifications
   }, []);
 
   return (

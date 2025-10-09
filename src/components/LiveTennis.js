@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
 import { showToast } from '../utils/toast';
+import useLiveCount from '../hooks/useLiveCount'; // <<< ΝΕΟ
 
 const FINISHED = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
@@ -48,16 +49,6 @@ function formatDiff(ms) {
   const d = Math.floor(h / 24);
   const rh = h % 24;
   return `${d}d ${rh}h`;
-}
-
-// simple global bus for live count
-const EVT_LIVE_COUNT = 'live-count';
-function emitLiveCount(n) {
-  const count = Number.isFinite(n) ? n : 0;
-  if (typeof window !== 'undefined') {
-    window.__LIVE_COUNT__ = count;
-    window.dispatchEvent(new CustomEvent(EVT_LIVE_COUNT, { detail: count }));
-  }
 }
 
 export default function LiveTennis({
@@ -123,16 +114,7 @@ export default function LiveTennis({
     return () => clearInterval(t);
   }, []);
 
-  useEffect(() => {
-    const n = rows.reduce((acc, m) => {
-      const s = m.status || '';
-      const live = !!s && !isUpcoming(s) && !isFinishedLike(s);
-      return acc + (live ? 1 : 0);
-    }, 0);
-    onLiveCount(n);
-    emitLiveCount(n);
-  }, [rows, onLiveCount]);
-
+  // --- Κατασκευή της λίστας για το UI (όπως πριν)
   const labelPriority = {
     SAFE: 1,
     RISKY: 2,
@@ -181,6 +163,17 @@ export default function LiveTennis({
       return 0;
     });
   }, [rows]);
+
+  // --- Ζωντανά entries για counter
+  const liveList = useMemo(() => list.filter(m => m.live), [list]);
+
+  // 1) Ενημέρωση TopBar (μέσω global event) χωρίς να πειράζουμε UI
+  useLiveCount(liveList);
+
+  // 2) Διατηρούμε και την παλιά ειδοποίηση προς γονέα αν τη χρειάζεσαι
+  useEffect(() => {
+    onLiveCount(liveList.length);
+  }, [liveList, onLiveCount]);
 
   useEffect(() => {
     list.forEach((m) => {

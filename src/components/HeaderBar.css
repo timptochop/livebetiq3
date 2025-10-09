@@ -1,0 +1,62 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@600;800&display=swap');
+
+:root{
+  --hb-h: 56px;
+  --hb-bg: #0b0b0c; /* καθαρό μαύρο */
+  --hb-grad: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,0));
+  --hb-sep: 1px solid rgba(255,255,255,.08);
+  --pill-bg: #0f3130;
+  --pill-text: #e8f3ef;
+  --pill-accent: #16d37a;
+}
+
+.hb{
+  position: sticky; top: 0; z-index: 1000;
+  height: var(--hb-h);
+  width: 100%;
+  background: var(--hb-grad), var(--hb-bg); /* μαύρο που ξεχωρίζει */
+  border-bottom: var(--hb-sep);
+  box-shadow: 0 1px 0 rgba(0,0,0,.35);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: max(10px, env(safe-area-inset-top)) 16px 10px 16px;
+}
+
+.hb-left{ display:flex; align-items:center; gap:12px; min-height: var(--hb-h); flex: 1 1 auto; }
+
+/* Brand */
+.brand{ display:flex; align-items:center; gap:4px; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-weight:800; letter-spacing:.3px; }
+.brand-live{ color:#fff; }
+.brand-bet{ color:#24c779; }
+.brand-iq{  color:#dfe; opacity:.9; }
+
+/* ΜΙΚΡΟ live-pill (πιο μικρό από το brand) */
+.live-pill{
+  display:inline-flex; align-items:center; gap:6px;
+  height: 22px; padding: 0 8px; border-radius:999px;
+  background: var(--pill-bg); color: var(--pill-text);
+  font-weight:800; font-size:12px; line-height:22px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+}
+.live-pill .dot{
+  width:7px; height:7px; border-radius:999px; background:var(--pill-accent);
+  box-shadow:0 0 8px var(--pill-accent),0 0 2px var(--pill-accent);
+}
+.live-pill .label, .live-pill .count{ opacity:.95; }
+
+.hb-right{ display:flex; align-items:center; gap:8px; flex:0 0 auto; margin-left:auto; }
+
+.icon-btn{
+  width:34px; height:34px; display:grid; place-items:center;
+  border:none; border-radius:10px; cursor:pointer;
+  background: rgba(255,255,255,.06); color:#dfe;
+  transition:.15s ease; box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+}
+.icon-btn:hover{ transform: translateY(-1px); background: rgba(255,255,255,.10); }
+.icon-btn svg{ fill: currentColor; opacity:.9; }
+.icon-btn.off svg{ opacity:.5; }
+
+/* Mobile: δείχνουμε ΜΟΝΟ pill + καμπανάκι ώστε να μη χαθεί ποτέ το bell */
+@media (max-width: 560px){
+  .brand{ display:none; }
+  .live-pill{ height:20px; font-size:11.5px; padding:0 7px; }
+}

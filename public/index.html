@@ -1,37 +1,30 @@
-﻿<!DOCTYPE html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" href="/logo192.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-
-    <!-- PWA manifest (absolute path + cache-bust) -->
-    <link rel="manifest" href="/manifest.json?v=3" crossorigin="use-credentials" />
-
-    <!-- iOS / PWA -->
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <meta name="theme-color" content="#111111" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="LiveBet IQ" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
 
     <title>LiveBet IQ</title>
-  <style id="brand-style">
-  #brand-mark{
-    position:fixed; top:14px; left:14px;
-    width:28px; height:28px;
-    background:url("/brand/mark.png") no-repeat center/contain;
-    z-index:2000; pointer-events:none;
-    filter: drop-shadow(0 1px 1px rgba(0,0,0,.35));
-  }
-  /* δίνω λίγο χώρο στο LIVE pill να μην ακουμπά το logo */
-  .live, .topbar, .header, .page-header { margin-left: 46px !important; }
-</style>
-</head>
-  <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
+
+    <!-- PWA / Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#111111" />
+
+    <!-- Icons (προαιρετικά αλλά καλά να υπάρχουν) -->
+    <link rel="icon" href="/logo192.png" sizes="192x192" />
+    <link rel="icon" href="/logo512.png" sizes="512x512" />
+    <link rel="apple-touch-icon" href="/logo192.png" />
+
+    <!-- iOS full-screen bar (δεν αλλάζει το UI σου) -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  </head>
+
+  <body style="margin:0;background:#0b0f10;color:#e8f2ee;">
     <div id="root"></div>
+    <!-- Σημείωση: σε CRA/Vite το build θα εισάγει μόνο του τα JS bundles. Δεν βάζουμε χειροκίνητα <script>. -->
   </body>
 </html>
-
