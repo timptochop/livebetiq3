@@ -1,42 +1,38 @@
-/* ---- GLOBAL RESET ---- */
+/* src/index.css — TopBar fixed (να μην κουνιέται) + σωστό spacer για iPhone safe-area */
+
+:root{
+  /* ύψος μπάρας + safe area σε iPhone */
+  --topbar-h: calc(60px + env(safe-area-inset-top, 0px));
+}
+
 * { box-sizing: border-box; }
-
 html, body, #root { height: 100%; }
+body { margin: 0; overflow-x: hidden; background: #0b0f10; color: #e8f2ee; }
 
-/* Σταθερό gutter για τα Windows scrollbars -> δεν «κουνάει» το header */
-html {
-  /* Chrome/Edge/Firefox */
-  scrollbar-gutter: stable both-edges;
+/* Κρατάμε το TopBar ακίνητο χωρίς να πειράζουμε χρώματα/στυλ του */
+.topbar{
+  position: fixed !important;
+  top: 0; left: 0; right: 0;
+  width: 100%;                 /* ποτέ 100vw για να μην ανοίγει οριζόντιο scroll */
+  z-index: 2000;
+  transform: none !important;
 }
 
-/* Βασικά: ίδιο look, αλλά προβλέψιμο layout */
-body {
-  margin: 0;
-  /* Κρατάμε πάντα κάθετο scrollbar ώστε να μη μετακινείται τίποτα όταν αλλάζει το ύψος */
-  overflow-y: scroll;
-  overflow-x: hidden;
-  background: #0a0f10;
-  color: #dfe;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  /* iOS momentum scrolling (δεν αλλάζει το UI) */
-  -webkit-overflow-scrolling: touch;
+/* Spacer κάτω από τη μπάρα ώστε το πρώτο prediction να μη «κόβεται» */
+.top-spacer{
+  height: var(--topbar-h);
 }
 
-/* Αν υπάρχει element με id="topbar" (ή κλάση .topbar), γίνε sticky με σωστό stacking */
-#topbar,
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 1000;
-  /* βοηθά να μην τρέμει σε μερικά drivers */
-  will-change: transform;
+/* Ακυρώνουμε wrappers που μπορεί να μπλοκάρουν το fixed */
+#root, .App, .page, .content, .list-wrap {
+  overflow: visible !important;
+  transform: none !important;
 }
 
-/* Φίλτρα ασφαλείας: μην επιτρέπεις σε κοντέινερ πάνω από το sticky να «σπάει» το sticky */
-.app-shell,
-.app-container {
-  /* Μην βάζεις εδώ transform/filters στη δική σου εφαρμογή.
-     Αυτό απλά αποτρέπει side-effects αν υπάρχουν κοινά classnames. */
-  contain: layout paint style;
+/* Αφαιρούμε παλιά topbar rules αν υπήρχαν */
+#topbar-root, .header, .app-topbar {
+  position: static !important;
+  top: auto !important;
+  inset-block-start: auto !important;
+  z-index: auto !important;
 }
