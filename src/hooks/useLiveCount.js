@@ -1,13 +1,17 @@
 // src/hooks/useLiveCount.js
-// Ενημερώνει το LIVE chip με βάση το πλήθος στοιχείων της λίστας.
-// Δεν αλλάζει τίποτα στο UI, απλώς πυροδοτεί το event.
-
 import { useEffect } from 'react';
-import { setLiveCount } from '../utils/liveCounter';
 
-export default function useLiveCount(items) {
+const EVT_LIVE_COUNT = 'live-count';
+
+export default function useLiveCount(list) {
+  const count = Array.isArray(list) ? list.length : 0;
+
   useEffect(() => {
-    const n = Array.isArray(items) ? items.length : 0;
-    setLiveCount(n);
-  }, [items]);
+    try {
+      if (typeof window !== 'undefined') {
+        window.__LIVE_COUNT__ = count;
+        window.dispatchEvent(new CustomEvent(EVT_LIVE_COUNT, { detail: count }));
+      }
+    } catch {}
+  }, [count]);
 }
