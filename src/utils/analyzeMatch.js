@@ -1,34 +1,17 @@
 // src/utils/analyzeMatch.js
-// v4.0 precision-first — Set2 window (games 3–6), odds floor >= 1.50,
-// per-category thresholds (SAFE/RISKY), μικρά σήματα + clamps.
+// v3.7-relaxed — περισσότερα RISKY & λίγα παραπάνω SAFE, κρατάμε το Set2 window (games 3–6) και min odds 1.50
 
-// ---------- Config ----------
-const CFG = {
-  floors: {
-    minOdds: 1.50,
-    favProb: 0.54,
-    maxSet2Diff_SAFE: 1,
-    maxSet2Diff_RISKY: 1
-  },
-  // Κατηγοριοποιημένα thresholds
-  category: {
-    atp: { SAFE: 0.83, RISKY: 0.72 },
-    wta: { SAFE: 0.83, RISKY: 0.72 },
-    ch:  { SAFE: 0.84, RISKY: 0.74 },
-    itf: { SAFE: 0.86, RISKY: null }, // null = off
-    other: { SAFE: 0.85, RISKY: 0.74 }
-  },
-  // Βάρη/προσαυξήσεις
-  weights: {
-    cat:   { atp:+0.07, wta:+0.07, ch:+0.03, itf:-0.05, other:0.00 },
-    surf:  { grass:+0.02, hard:+0.01, indoor:+0.01, clay:-0.015, '':0 },
-    liveBonus: +0.03,
-    clampUp: +0.05,
-    clampDown: -0.05
-  }
+const T = {
+  SAFE_CONF: 0.80,     // πριν 0.83
+  RISKY_CONF: 0.70,    // νέο κατώφλι για RISKY
+  MIN_ODDS: 1.50,      // όπως ζητήθηκε
+  MIN_PROB: 0.53,      // πριν 0.54
+  MAX_SET2_DIFF: 4,    // πριν 3
+  ALLOW_TRAIL_BY: 1,   // το φαβορί επιτρέπεται να χάνει έως 1 game για SAFE
+  CLAMP_UP: 0.055,     // λίγο πιο γενναιόδωρο clamp up
+  CLAMP_DOWN: -0.05
 };
 
-// ---------- Helpers ----------
 function toNum(x){ const n = Number(x); return Number.isFinite(n) ? n : 0; }
 
 function pickTwoOdds(oddsObj={}, nameA="", nameB=""){
@@ -42,10 +25,7 @@ function pickTwoOdds(oddsObj={}, nameA="", nameB=""){
 }
 
 function implied(oA,oB){
-  if (oA>1 && oB>1){
-    const pa=1/oA, pb=1/oB, s=pa+pb;
-    return { pa:pa/s, pb:pb/s };
-  }
+  if (oA>1 && oB>1){ const pa=1/oA, pb=1/oB, s=pa+pb; return { pa:pa/s, pb:pb/s }; }
   return { pa:0.5, pb:0.5 };
 }
 
@@ -70,16 +50,15 @@ function parseStatus(m={}){
   let setNum = 0; const mt = /set\s*(\d+)/i.exec(raw); if (mt && mt[1]) setNum = Number(mt[1])||0;
   const finished = s.includes("finished") || s.includes("retired") || s.includes("walkover") || s.includes("walk over") || s.includes("abandoned");
   const cancelled = s.includes("cancel") || s.includes("postpon");
-  return { live, setNum, finished, cancelled, raw };
+  return { live, setNum, finished, cancelled };
 }
 
-function detectCategory(m={}){
+function categoryWeight(m={}){
   const cat = (m.categoryName || m.category || m["@category"] || "").toString().toLowerCase();
-  if (cat.includes("atp")) return "atp";
-  if (cat.includes("wta")) return "wta";
-  if (cat.includes("challenger")) return "ch";
-  if (cat.includes("itf")) return "itf";
-  return "other";
+  if (cat.includes("atp") || cat.includes("wta")) return 0.07;
+  if (cat.includes("challenger")) return 0.03;
+  if (cat.includes("itf")) return -0.05;
+  return 0.0;
 }
 
 function readSetGames(p, idx){
@@ -126,9 +105,12 @@ function detectSurface(m={}){
   if (fields.includes("hard")) return "hard";
   return "";
 }
-
 function surfaceAdj(surf){
-  return CFG.weights.surf[surf] ?? 0;
+  if (surf==="grass") return 0.02;
+  if (surf==="hard") return 0.01;
+  if (surf==="indoor") return 0.01;
+  if (surf==="clay") return -0.015;
+  return 0.0;
 }
 
 function parseStartTs(m={}){
@@ -153,6 +135,22 @@ function timeToStartAdj(m, status){
   return -0.02;
 }
 
+function leadSignal(m){
+  if (!Array.isArray(m.players) || m.players.length<2) return { leadA:0, setsCounted:0, currentGames:0 };
+  const A=m.players[0]||{}, B=m.players[1]||{};
+  let setsCounted=0, setsLeadA=0, curGames=0;
+  for (let i=1;i<=5;i++){
+    const ga=readSetGames(A,i), gb=readSetGames(B,i);
+    if (ga===null || gb===null) break;
+    if (ga===0 && gb===0) break;
+    setsCounted++;
+    if (ga>gb) setsLeadA++;
+    if (i===setsCounted) curGames=(ga||0)+(gb||0);
+  }
+  const leadA = setsLeadA>(setsCounted-setsLeadA) ? 1 : (setsLeadA<(setsCounted-setsLeadA) ? -1 : 0);
+  return { leadA, setsCounted, currentGames: curGames };
+}
+
 function set2WindowGuard(status, ga, gb){
   if (status.setNum!==2) return { pass:false, badge:`SET ${status.setNum||1}` };
   if (ga===null || gb===null) return { pass:false, badge:`SET 2` };
@@ -166,12 +164,11 @@ function set2WindowGuard(status, ga, gb){
 
 function volatilityClamp(confBase, confNow){
   let d = confNow - confBase;
-  if (d > CFG.weights.clampUp) d = CFG.weights.clampUp;
-  if (d < CFG.weights.clampDown) d = CFG.weights.clampDown;
+  if (d > T.CLAMP_UP) d = T.CLAMP_UP;
+  if (d < T.CLAMP_DOWN) d = T.CLAMP_DOWN;
   return confBase + d;
 }
 
-// ---------- Main ----------
 export default function analyzeMatch(m = {}){
   const [pA,pB] = parsePlayers(m);
   const status = parseStatus(m);
@@ -183,58 +180,50 @@ export default function analyzeMatch(m = {}){
   const favProb = favIsA ? pa : pb;
   const favOdds = favIsA ? oA : oB;
 
-  // Early gates
+  // Early guards
   if (!status.live) return { label:"UPCOMING", conf:0, kellyLevel:"LOW", tip:"", features:{ setNum:status.setNum||0, live:0 } };
   if (status.setNum===1) return { label:"SET 1", conf:0, kellyLevel:"LOW", tip:"", features:{ setNum:1, live:1 } };
   if (status.setNum>=3) return { label:"SET 3", conf:0, kellyLevel:"LOW", tip:"", features:{ setNum:status.setNum, live:1 } };
 
-  // Set2 window (games 3–6, no TB)
+  // Set 2 constraints (games 3–6, no tiebreak)
   const { ga, gb } = currentSetPair(m, status);
   const win = set2WindowGuard(status, ga, gb);
   if (!win.pass) return { label: win.badge, conf:0, kellyLevel:"LOW", tip:"", features:{ setNum:status.setNum, live:1 } };
 
-  // Category & weights
-  const catKey = detectCategory(m);
-  const catBonus = CFG.weights.cat[catKey] ?? 0;
-  const liveBonus = CFG.weights.liveBonus;
-
-  // Base confidence από implied + category + live
-  const confBase = (oA>1 && oB>1)
-    ? (0.50 + ((favProb-0.5)*1.20) + catBonus + liveBonus)
-    : (0.58 + catBonus);
-
-  // Contextual nudges
+  // Base confidence
+  const catBonus = categoryWeight(m);
+  const liveBonus = 0.035; // λίγο μεγαλύτερο από 0.03
+  const confBase = (oA>1 && oB>1) ? (0.50 + ((favProb-0.5)*1.20) + catBonus + liveBonus) : (0.58 + catBonus);
   let conf = confBase;
+
+  // Momentum & context
   conf += computeMomentum(m, favIsA);
   const surf = detectSurface(m); conf += surfaceAdj(surf);
   conf += timeToStartAdj(m, status);
 
   // Clamp → confFinal
-  let confFinal = Math.max(0.51, Math.min(0.95, volatilityClamp(confBase, conf)));
+  const confFinal = Math.max(0.51, Math.min(0.95, volatilityClamp(confBase, conf)));
 
-  // Precision filters
-  const favLeading = favIsA ? ((ga||0) >= (gb||0)) : ((gb||0) >= (ga||0));
-  const oddsOk = Number.isFinite(favOdds) && favOdds >= CFG.floors.minOdds;
-  const probOk = favProb >= CFG.floors.favProb;
+  // Precision filters (relaxed)
+  const favGames = favIsA ? (ga || 0) : (gb || 0);
+  const dogGames = favIsA ? (gb || 0) : (ga || 0);
+  const leadNow  = favGames - dogGames;
+  const trailingBy = Math.max(0, -leadNow);
 
-  // Thresholds ανά category
-  const thr = CFG.category[catKey] || CFG.category.other;
+  const oddsOk = Number.isFinite(favOdds) && favOdds >= T.MIN_ODDS;
+  const probOk = favProb >= T.MIN_PROB;
+  const diffOk = win.diff <= T.MAX_SET2_DIFF;
 
-  // Απόφαση
   let label = 'AVOID';
   let tip = '';
 
-  // SAFE: αυστηρό diff ≤ 1 + cat-threshold
-  if (oddsOk && probOk && favLeading && win.diff <= CFG.floors.maxSet2Diff_SAFE && confFinal >= (thr.SAFE ?? 1)){
+  if (oddsOk && probOk && diffOk && trailingBy <= T.ALLOW_TRAIL_BY && confFinal >= T.SAFE_CONF) {
     label = 'SAFE';
     tip = `${favName} to win match`;
   }
-  // RISKY: ίδιο diff ≤ 1, χαμηλότερο threshold αν επιτρέπεται για την κατηγορία
-  else if (oddsOk && probOk && favLeading && win.diff <= CFG.floors.maxSet2Diff_RISKY && (thr.RISKY!=null) && confFinal >= thr.RISKY){
+  else if (oddsOk && probOk && diffOk && trailingBy <= T.ALLOW_TRAIL_BY + 1 && confFinal >= T.RISKY_CONF) {
     label = 'RISKY';
     tip = `${favName} to win match`;
-  } else {
-    label = 'AVOID';
   }
 
   const kellyLevel = confFinal >= 0.90 ? 'HIGH' : confFinal >= 0.80 ? 'MED' : 'LOW';
@@ -251,7 +240,6 @@ export default function analyzeMatch(m = {}){
       favOdds,
       setNum: status.setNum,
       live: status.live ? 1 : 0,
-      category: catKey,
       catBonus,
       surface: surf,
       set2Total: win.total,
