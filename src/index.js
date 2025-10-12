@@ -4,15 +4,13 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App';
 
-// Λογική (καθαρά helpers, καμία UI αλλαγή)
+// Helpers (δεν αλλάζουν UI)
 import { exposeLiveCounter } from './utils/liveCounter';
 import { ensurePermissionIfEnabled } from './push/notifyControl';
 
-// Εκθέτουμε τα helpers στο window για τεστ
 exposeLiveCounter();
-
-// Αν ο χρήστης είχε ανοίξει τις ειδοποιήσεις, ζήτα άδεια «ήσυχα».
 ensurePermissionIfEnabled();
 
-const root = teRoot(document.getElementById('root'));
+const container = document.getElementById('root');
+const root = createRoot(container);
 root.render(<App />);
