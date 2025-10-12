@@ -1,23 +1,21 @@
 // src/utils/analyzeMatch.js
-// v3.7-lite — "4 numbers + band for RISKY"
+// v3.7-lite (relaxed) — "4 numbers + band for RISKY"
 // Κρατάμε SET 2 window (games 3–6, χωρίς tiebreak)
 
 const T = {
   // τα 4 βασικά νούμερα:
   MIN_ODDS: 1.50,
-  MIN_PROB: 0.54,
-  MAX_SET2_DIFF: 3,
-  SAFE_CONF: 0.83,
+  MIN_PROB: 0.53,       // 0.54 -> 0.53
+  MAX_SET2_DIFF: 4,     // 3 -> 4
+  SAFE_CONF: 0.80,      // 0.83 -> 0.80
 
   // band για RISKY:
-  RISKY_MIN_CONF: 0.72,
+  RISKY_MIN_CONF: 0.66, // 0.72 -> 0.66
 
   // σταθεροποίηση διακύμανσης
-  CLAMP_UP: 0.05,
+  CLAMP_UP: 0.06,       // 0.05 -> 0.06
   CLAMP_DOWN: -0.05,
 };
-
-const EVT_LIVE_COUNT = 'live-count';
 
 const toNum = (x) => {
   const n = Number(x);
@@ -207,11 +205,21 @@ export default function analyzeMatch(m = {}) {
   const surf = detectSurface(m); conf += surfaceAdj(surf);
   conf += timeToStartAdj(m, status);
 
+  // --- optional tiny boost: ATP/WTA + good window & fav leading
+  const favLeadingNow = favIsA ? ((ga || 0) >= (gb || 0)) : ((gb || 0) >= (ga || 0));
+  if (favLeadingNow) {
+    const cat = (m.categoryName || m.category || m["@category"] || "").toString().toLowerCase();
+    const isTour = cat.includes("atp") || cat.includes("wta");
+    if (isTour && win.total >= 4 && win.total <= 5) {
+      conf += 0.01; // μικρό ώθημα στο "γλυκό" σημείο
+    }
+  }
+
   // Clamp & bounds
   const confFinal = Math.max(0.51, Math.min(0.95, volatilityClamp(confBase, conf)));
 
   // Precision filters (τα 4 νούμερα)
-  const favLeading = favIsA ? ((ga || 0) >= (gb || 0)) : ((gb || 0) >= (ga || 0));
+  const favLeading = favLeadingNow;
   const oddsOk = Number.isFinite(favOdds) && favOdds >= T.MIN_ODDS;
   const probOk = favProb >= T.MIN_PROB;
   const diffOk = win.diff <= T.MAX_SET2_DIFF;
