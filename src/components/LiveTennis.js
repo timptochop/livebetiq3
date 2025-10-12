@@ -4,13 +4,12 @@ import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
 import { showToast } from '../utils/toast';
 import useLiveCount from '../hooks/useLiveCount';
-import sendTg from '../utils/sendTg'; // helper που χτυπά /api/tg
 
-const FINISHED = new Set(['finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over']);
+const FINISHED = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
 const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
 
-const num = (v) => {
+const toInt = (v) => {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
   if (!s) return null;
@@ -21,8 +20,8 @@ const num = (v) => {
 function currentSetFromScores(players) {
   const p = Array.isArray(players) ? players : [];
   const a = p[0] || {}, b = p[1] || {};
-  const sA = [num(a.s1), num(a.s2), num(a.s3), num(a.s4), num(a.s5)];
-  const sB = [num(b.s1), num(b.s2), num(b.s3), num(b.s4), num(b.s5)];
+  const sA = [toInt(a.s1), toInt(a.s2), toInt(a.s3), toInt(a.s4), toInt(a.s5)];
+  const sB = [toInt(b.s1), toInt(b.s2), toInt(b.s3), toInt(b.s4), toInt(b.s5)];
   let k = 0;
   for (let i = 0; i < 5; i++) if (sA[i] !== null || sB[i] !== null) k = i + 1;
   return k || 0;
@@ -32,11 +31,7 @@ function parseStart(dateStr, timeStr) {
   const d = String(dateStr || '').trim();
   const t = String(timeStr || '').trim();
   if (!d || !t) return null;
-  let iso = `${d}T${t}`;
-  if (!/Z$/.test(iso) && !/[+-]\d{2}:\d{2}$/.test(iso)) {
-    iso += '';
-  }
-  const dt = new Date(iso);
+  const dt = new Date(`${d}T${t}`);
   return Number.isFinite(dt.getTime()) ? dt : null;
 }
 
@@ -52,6 +47,13 @@ function formatDiff(ms) {
   return `${d}d ${rh}h`;
 }
 
+// optional, θα αγνοηθεί αν δεν υπάρχει /api/tg
+async function tryTg(text) {
+  try {
+    await fetch('/api/tg?text=' + encodeURIComponent(text));
+  } catch {}
+}
+
 export default function LiveTennis({
   onLiveCount = () => {},
   notificationsOn = true,
@@ -59,7 +61,6 @@ export default function LiveTennis({
 }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-
   const lastLabelRef = useRef(new Map());
 
   async function load() {
@@ -101,6 +102,7 @@ export default function LiveTennis({
           startAt, startInMs, startInText
         };
       });
+
       setRows(enriched);
     } catch (e) {
       setRows([]);
@@ -136,7 +138,7 @@ export default function LiveTennis({
       } else if (!label || label === 'PENDING') {
         label = live ? `SET ${m.setNum || 1}` : 'UPCOMING';
       }
-      if (label?.startsWith?.('SET')) {
+      if (label && label.startsWith && label.startsWith('SET')) {
         const parts = label.split(/\s+/);
         const n = Number(parts[1]) || m.setNum || 1;
         label = `SET ${n}`;
@@ -164,17 +166,18 @@ export default function LiveTennis({
     });
   }, [rows]);
 
+  // Ζωντανά entries για counter
   const liveList = useMemo(() => list.filter(m => m.live), [list]);
 
-  // ενημέρωση TopBar
+  // ενημέρωση TopBar μέσω event
   useLiveCount(liveList);
 
-  // ενημέρωση γονέα (αν χρειάζεται)
+  // παλιά ειδοποίηση σε γονέα αν τη χρειάζεσαι
   useEffect(() => {
     onLiveCount(liveList.length);
   }, [liveList, onLiveCount]);
 
-  // toasts + ήχος + Telegram όταν αλλάζει label
+  // ειδοποίηση όταν αλλάζει label (πιο «ήπια» και χωρίς διπλές)
   useEffect(() => {
     list.forEach((m) => {
       const cur = m.uiLabel || null;
@@ -188,11 +191,8 @@ export default function LiveTennis({
         if (notificationsOn) {
           const t = `${cur}: ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ''}`;
           showToast(t, 3500);
-        }
-        // Στέλνουμε μόνο όταν γίνεται SAFE για να μην σπαμάρει
-        if (cur === 'SAFE' && prev !== 'SAFE') {
-          const msg = `SAFE · ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ''}${m.ai?.tip ? `\nTIP: ${m.ai.tip}` : ''}`;
-          sendTg(msg).catch(() => {});
+          // optional push προς Telegram αν υπάρχει API route
+          tryTg(t);
         }
       }
       lastLabelRef.current.set(m.id, cur);
@@ -204,7 +204,7 @@ export default function LiveTennis({
     if (label === 'SAFE') { bg = '#1fdd73'; text = 'SAFE'; }
     else if (label === 'RISKY') { bg = '#ffbf0a'; fg = '#151515'; }
     else if (label === 'AVOID') { bg = '#e53935'; }
-    else if (label?.startsWith?.('SET')) { bg = '#6e42c1'; }
+    else if (label && label.startsWith('SET')) { bg = '#6e42c1'; }
     else if (label === 'UPCOMING') { bg = '#3a4452'; }
     return (
       <span style={{
@@ -268,17 +268,15 @@ export default function LiveTennis({
         ))}
 
         {list.length === 0 && !loading && (
-          <div
-            style={{
-              marginTop: 12,
-              padding: '14px 16px',
-              borderRadius: 12,
-              background: '#121416',
-              border: '1px solid #22272c',
-              color: '#c7d1dc',
-              fontSize: 13,
-            }}
-          >
+          <div style={{
+            marginTop: 12,
+            padding: '14px 16px',
+            borderRadius: 12,
+            background: '#121416',
+            border: '1px solid #22272c',
+            color: '#c7d1dc',
+            fontSize: 13,
+          }}>
             No live/upcoming matches found.
           </div>
         )}
