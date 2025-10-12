@@ -14,5 +14,5 @@ exposeLiveCounter();
 // Αν ο χρήστης είχε ανοίξει τις ειδοποιήσεις, ζήτα άδεια «ήσυχα».
 ensurePermissionIfEnabled();
 
-const root = createRoot(document.getElementById('root'));
+const root = teRoot(document.getElementById('root'));
 root.render(<App />);

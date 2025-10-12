@@ -3,9 +3,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
 import { showToast } from '../utils/toast';
-import useLiveCount from '../hooks/useLiveCount'; // <<< ΝΕΟ
+import useLiveCount from '../hooks/useLiveCount';
+import sendTg from '../utils/sendTg'; // helper που χτυπά /api/tg
 
-const FINISHED = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
+const FINISHED = new Set(['finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over']);
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
 const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
 
@@ -114,7 +115,6 @@ export default function LiveTennis({
     return () => clearInterval(t);
   }, []);
 
-  // --- Κατασκευή της λίστας για το UI (όπως πριν)
   const labelPriority = {
     SAFE: 1,
     RISKY: 2,
@@ -136,7 +136,7 @@ export default function LiveTennis({
       } else if (!label || label === 'PENDING') {
         label = live ? `SET ${m.setNum || 1}` : 'UPCOMING';
       }
-      if (label.startsWith && label.startsWith('SET')) {
+      if (label?.startsWith?.('SET')) {
         const parts = label.split(/\s+/);
         const n = Number(parts[1]) || m.setNum || 1;
         label = `SET ${n}`;
@@ -164,23 +164,23 @@ export default function LiveTennis({
     });
   }, [rows]);
 
-  // --- Ζωντανά entries για counter
   const liveList = useMemo(() => list.filter(m => m.live), [list]);
 
-  // 1) Ενημέρωση TopBar (μέσω global event) χωρίς να πειράζουμε UI
+  // ενημέρωση TopBar
   useLiveCount(liveList);
 
-  // 2) Διατηρούμε και την παλιά ειδοποίηση προς γονέα αν τη χρειάζεσαι
+  // ενημέρωση γονέα (αν χρειάζεται)
   useEffect(() => {
     onLiveCount(liveList.length);
   }, [liveList, onLiveCount]);
 
+  // toasts + ήχος + Telegram όταν αλλάζει label
   useEffect(() => {
     list.forEach((m) => {
       const cur = m.uiLabel || null;
       const prev = lastLabelRef.current.get(m.id) || null;
       const isPred = cur === 'SAFE' || cur === 'RISKY' || cur === 'AVOID';
-      const wasPred = prev === 'SAFE' || prev === 'RISKY' || prev === 'AVOID';
+
       if (isPred && cur !== prev) {
         if (cur === 'SAFE' && audioOn) {
           try { new Audio('/notify.mp3').play().catch(() => {}); } catch {}
@@ -188,6 +188,11 @@ export default function LiveTennis({
         if (notificationsOn) {
           const t = `${cur}: ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ''}`;
           showToast(t, 3500);
+        }
+        // Στέλνουμε μόνο όταν γίνεται SAFE για να μην σπαμάρει
+        if (cur === 'SAFE' && prev !== 'SAFE') {
+          const msg = `SAFE · ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ''}${m.ai?.tip ? `\nTIP: ${m.ai.tip}` : ''}`;
+          sendTg(msg).catch(() => {});
         }
       }
       lastLabelRef.current.set(m.id, cur);
@@ -199,7 +204,7 @@ export default function LiveTennis({
     if (label === 'SAFE') { bg = '#1fdd73'; text = 'SAFE'; }
     else if (label === 'RISKY') { bg = '#ffbf0a'; fg = '#151515'; }
     else if (label === 'AVOID') { bg = '#e53935'; }
-    else if (label.startsWith('SET')) { bg = '#6e42c1'; }
+    else if (label?.startsWith?.('SET')) { bg = '#6e42c1'; }
     else if (label === 'UPCOMING') { bg = '#3a4452'; }
     return (
       <span style={{
@@ -263,15 +268,17 @@ export default function LiveTennis({
         ))}
 
         {list.length === 0 && !loading && (
-          <div style={{
-            marginTop: 12,
-            padding: '14px 16px',
-            borderRadius: 12,
-            background: '#121416',
-            border: '1px solid #22272c',
-            color: '#c7d1dc',
-            fontSize: 13,
-          }}>
+          <div
+            style={{
+              marginTop: 12,
+              padding: '14px 16px',
+              borderRadius: 12,
+              background: '#121416',
+              border: '1px solid #22272c',
+              color: '#c7d1dc',
+              fontSize: 13,
+            }}
+          >
             No live/upcoming matches found.
           </div>
         )}
