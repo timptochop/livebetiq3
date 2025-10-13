@@ -74,7 +74,7 @@ export default function LiveTennis({
 
       const enriched = keep.map((m, idx) => {
         const players = Array.isArray(m.players) ? m.players
-                      : Array.isArray(m.player)  ? m.player : [];
+                     : Array.isArray(m.player)  ? m.player : [];
         const p1 = players[0] || {}, p2 = players[1] || {};
         const name1 = p1.name || p1['@name'] || '';
         const name2 = p2.name || p2['@name'] || '';
@@ -177,7 +177,7 @@ export default function LiveTennis({
     onLiveCount(liveList.length);
   }, [liveList, onLiveCount]);
 
-  // ειδοποίηση όταν αλλάζει label (πιο «ήπια» και χωρίς διπλές)
+  // ειδοποίηση όταν αλλάζει label (toasts) + Telegram ΜΟΝΟ για SAFE
   useEffect(() => {
     list.forEach((m) => {
       const cur = m.uiLabel || null;
@@ -191,8 +191,8 @@ export default function LiveTennis({
         if (notificationsOn) {
           const t = `${cur}: ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ''}`;
           showToast(t, 3500);
-          // optional push προς Telegram αν υπάρχει API route
-          tryTg(t);
+          // 🔔 Στείλε στο Telegram ΜΟΝΟ αν είναι SAFE
+          if (cur === 'SAFE') tryTg(t);
         }
       }
       lastLabelRef.current.set(m.id, cur);
@@ -237,7 +237,7 @@ export default function LiveTennis({
           <div key={m.id} style={{
             borderRadius: 18,
             background: '#1b1e22',
-            border: '1px solid #22272c',
+            border: '1px solid #22272c',      // ✅ fixed quotes
             boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
             padding: '14px 16px',
             display: 'flex', alignItems: 'center', gap: 12,
