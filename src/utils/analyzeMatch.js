@@ -1,20 +1,20 @@
 // src/utils/analyzeMatch.js
-// v3.8-relaxed — ανοίγουμε λίγο τα thresholds ώστε να εμφανίζονται και RISKY/SAFE
-// Κρατάμε ΠΛΗΡΩΣ το SET-2 window (games 3–6, χωρίς tiebreak)
+// v3.9-open — πιο χαλαρά thresholds για να εμφανιστούν περισσότερα SAFE/RISKY
+// Κρατάμε SET-2 window, αλλά total games 2..7 (χωρίς tiebreak)
 
 const T = {
-  // Τα 4 βασικά νούμερα (RELAXED):
-  MIN_ODDS: 1.50,     // ίδιο
-  MIN_PROB: 0.50,     // πριν 0.54 → πιο χαλαρό
-  MAX_SET2_DIFF: 5,   // πριν 3 → δέχεται πιο “ανοικτά” set2
-  SAFE_CONF: 0.78,    // πριν 0.83 → λίγο χαμηλότερο
+  // Πιο “ανοιχτά” νούμερα:
+  MIN_ODDS: 1.40,      // πριν 1.50 → επιτρέπουμε λίγο χαμηλότερες αποδόσεις
+  MIN_PROB: 0.47,      // πριν 0.50 → πιο χαλαρό
+  MAX_SET2_DIFF: 6,    // πριν 5 → δέχεται πιο “ανοικτά” set 2
+  SAFE_CONF: 0.70,     // πριν 0.78 → αρκετά χαμηλότερο για να δούμε SAFE
 
-  // band για RISKY:
-  RISKY_MIN_CONF: 0.62, // πριν 0.72 → θα δεις περισσότερα RISKY
+  // band για RISKY (επίσης χαμηλότερο):
+  RISKY_MIN_CONF: 0.58,
 
-  // σταθεροποίηση διακύμανσης
-  CLAMP_UP: 0.06,     // πριν 0.05 → επιτρέπει λίγο μεγαλύτερο “πάνω” drift
-  CLAMP_DOWN: -0.05
+  // σταθεροποίηση διακύμανσης (λίγο πιο “ελεύθερη” προς τα πάνω)
+  CLAMP_UP: 0.08,
+  CLAMP_DOWN: -0.06
 };
 
 const toNum = (x) => {
@@ -152,14 +152,15 @@ function timeToStartAdj(m, status) {
   return -0.02;
 }
 
+// Ανοίγουμε το SET-2 παράθυρο: total games 2..7 (όχι tie-break)
 function set2WindowGuard(status, ga, gb) {
   if (status.setNum !== 2) return { pass: false, badge: `SET ${status.setNum || 1}` };
   if (ga === null || gb === null) return { pass: false, badge: `SET 2` };
   const total = (ga || 0) + (gb || 0);
   const tieBreak = (ga >= 6 && gb >= 6);
   if (tieBreak) return { pass: false, badge: 'AVOID' };
-  if (total < 3) return { pass: false, badge: 'SET 2' };
-  if (total > 6) return { pass: false, badge: 'AVOID' };
+  if (total < 2) return { pass: false, badge: 'SET 2' };
+  if (total > 7) return { pass: false, badge: 'AVOID' };
   return { pass: true, total, diff: Math.abs((ga || 0) - (gb || 0)), ga, gb };
 }
 
@@ -186,7 +187,7 @@ export default function analyzeMatch(m = {}) {
   if (status.setNum === 1) return { label: "SET 1", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: 1, live: 1 } };
   if (status.setNum >= 3) return { label: "SET 3", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: status.setNum, live: 1 } };
 
-  // Set 2 window (games 3–6, no TB)
+  // SET 2 window
   const { ga, gb } = currentSetPair(m, status);
   const win = set2WindowGuard(status, ga, gb);
   if (!win.pass)
@@ -205,23 +206,22 @@ export default function analyzeMatch(m = {}) {
   const surf = detectSurface(m); conf += surfaceAdj(surf);
   conf += timeToStartAdj(m, status);
 
-  // Μικρό στοχευμένο boost όταν έχει νόημα:
-  // +0.01 σε ATP/WTA όταν ο favLeading ισχύει & set2Total ∈ [4..5]
+  // Στοχευμένο μικρό boost όταν έχει νόημα:
   const favLeadingNow = favIsA ? ((win.ga || 0) >= (win.gb || 0)) : ((win.gb || 0) >= (win.ga || 0));
-  if ((catBonus >= 0.07) && favLeadingNow && win.total >= 4 && win.total <= 5) {
-    conf += 0.01;
+  if ((catBonus >= 0.07) && favLeadingNow && win.total >= 3 && win.total <= 6) {
+    conf += 0.012; // λίγο μεγαλύτερο boost από v3.8
   }
 
   // Clamp & bounds
-  const confFinal = Math.max(0.51, Math.min(0.95, volatilityClamp(confBase, conf)));
+  const confFinal = Math.max(0.50, Math.min(0.97, volatilityClamp(confBase, conf)));
 
-  // Precision filters (τα 4 νούμερα)
+  // Precision filters (πιο χαλαρά)
   const favLeading = favLeadingNow;
   const oddsOk = Number.isFinite(favOdds) && favOdds >= T.MIN_ODDS;
   const probOk = favProb >= T.MIN_PROB;
   const diffOk = win.diff <= T.MAX_SET2_DIFF;
 
-  // Labeling: SAFE / RISKY band / AVOID
+  // Labeling
   let label = 'AVOID';
   let tip = '';
 
@@ -231,7 +231,7 @@ export default function analyzeMatch(m = {}) {
       tip = `${favName} to win match`;
     } else if (confFinal >= T.RISKY_MIN_CONF && confFinal < T.SAFE_CONF) {
       label = 'RISKY';
-      tip = ''; // προαιρετικά άδειο, το UI το χειρίζεται
+      tip = '';
     } else {
       label = 'AVOID';
     }
@@ -239,9 +239,9 @@ export default function analyzeMatch(m = {}) {
     label = 'AVOID';
   }
 
-  const kellyLevel = confFinal >= 0.90 ? 'HIGH' : confFinal >= 0.80 ? 'MED' : 'LOW';
+  const kellyLevel = confFinal >= 0.90 ? 'HIGH' : confFinal >= 0.78 ? 'MED' : 'LOW';
 
-  // Optional lightweight debug
+  // Optional debug
   try {
     if (process?.env?.REACT_APP_LOG_PREDICTIONS === '1') {
       // eslint-disable-next-line no-console

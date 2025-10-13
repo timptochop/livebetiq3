@@ -22,6 +22,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ ok: false, error: 'Empty text' });
     }
 
+    // 🔒 Ασφάλεια: Στέλνουμε ΜΟΝΟ SAFE (αγνοούμε AVOID/RISKY/οτιδήποτε άλλο)
+    if (!/^\s*SAFE\b/i.test(text)) {
+      return res.status(200).json({ ok: true, skipped: 'not-safe' });
+    }
+
     const tgUrl = `https://api.telegram.org/bot${token}/sendMessage`;
     const payload = {
       chat_id: chatId,
