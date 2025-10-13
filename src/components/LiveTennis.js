@@ -5,7 +5,7 @@ import analyzeMatch from '../utils/analyzeMatch';
 import { showToast } from '../utils/toast';
 import useLiveCount from '../hooks/useLiveCount';
 
-const FINISHED = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
+const FINISHED = new Set(['finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over']);
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
 const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
 
@@ -47,8 +47,9 @@ function formatDiff(ms) {
   return `${d}d ${rh}h`;
 }
 
-// optional, θα αγνοηθεί αν δεν υπάρχει /api/tg
-async function tryTg(text) {
+// Send to Telegram only for SAFE
+async function tryTgSafe(text, label) {
+  if (label !== 'SAFE') return;
   try {
     await fetch('/api/tg?text=' + encodeURIComponent(text));
   } catch {}
@@ -74,7 +75,7 @@ export default function LiveTennis({
 
       const enriched = keep.map((m, idx) => {
         const players = Array.isArray(m.players) ? m.players
-                     : Array.isArray(m.player)  ? m.player : [];
+          : Array.isArray(m.player) ? m.player : [];
         const p1 = players[0] || {}, p2 = players[1] || {};
         const name1 = p1.name || p1['@name'] || '';
         const name2 = p2.name || p2['@name'] || '';
@@ -155,7 +156,7 @@ export default function LiveTennis({
     return items.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
       if (a.order >= 4 && a.order <= 6 && b.order >= 4 && b.order <= 6) {
-        return a.order - b.order; // SET 3 -> SET 2 -> SET 1
+        return a.order - b.order;
       }
       if (a.live && b.live) return (b.setNum || 0) - (a.setNum || 0);
       if (a.uiLabel === 'UPCOMING' && b.uiLabel === 'UPCOMING') {
@@ -166,23 +167,19 @@ export default function LiveTennis({
     });
   }, [rows]);
 
-  // Ζωντανά entries για counter
   const liveList = useMemo(() => list.filter(m => m.live), [list]);
-
-  // ενημέρωση TopBar μέσω event
   useLiveCount(liveList);
 
-  // παλιά ειδοποίηση σε γονέα αν τη χρειάζεσαι
   useEffect(() => {
     onLiveCount(liveList.length);
   }, [liveList, onLiveCount]);
 
-  // ειδοποίηση όταν αλλάζει label (toasts) + Telegram ΜΟΝΟ για SAFE
+  // Notify only for SAFE
   useEffect(() => {
     list.forEach((m) => {
       const cur = m.uiLabel || null;
       const prev = lastLabelRef.current.get(m.id) || null;
-      const isPred = cur === 'SAFE' || cur === 'RISKY' || cur === 'AVOID';
+      const isPred = cur === 'SAFE';
 
       if (isPred && cur !== prev) {
         if (cur === 'SAFE' && audioOn) {
@@ -191,8 +188,7 @@ export default function LiveTennis({
         if (notificationsOn) {
           const t = `${cur}: ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ''}`;
           showToast(t, 3500);
-          // 🔔 Στείλε στο Telegram ΜΟΝΟ αν είναι SAFE
-          if (cur === 'SAFE') tryTg(t);
+          tryTgSafe(t, cur);
         }
       }
       lastLabelRef.current.set(m.id, cur);
@@ -237,7 +233,7 @@ export default function LiveTennis({
           <div key={m.id} style={{
             borderRadius: 18,
             background: '#1b1e22',
-            border: '1px solid #22272c',      // ✅ fixed quotes
+            border: '1px solid #22272c',
             boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
             padding: '14px 16px',
             display: 'flex', alignItems: 'center', gap: 12,
