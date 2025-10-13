@@ -1,21 +1,20 @@
 // src/utils/analyzeMatch.js
-// v3.7-lite+ — relax για να εμφανίζονται RISKY (και λίγα παραπάνω SAFE)
-// Κρατάμε SET 2 window (games 3–6, χωρίς tiebreak)
+// v3.8-relaxed — ανοίγουμε λίγο τα thresholds ώστε να εμφανίζονται και RISKY/SAFE
+// Κρατάμε ΠΛΗΡΩΣ το SET-2 window (games 3–6, χωρίς tiebreak)
 
 const T = {
-  // τα 4 βασικά νούμερα:
-  MIN_ODDS: 1.45,
-  MIN_PROB: 0.52,
-  MAX_SET2_DIFF: 4,
-  SAFE_CONF: 0.80,
+  // Τα 4 βασικά νούμερα (RELAXED):
+  MIN_ODDS: 1.50,     // ίδιο
+  MIN_PROB: 0.50,     // πριν 0.54 → πιο χαλαρό
+  MAX_SET2_DIFF: 5,   // πριν 3 → δέχεται πιο “ανοικτά” set2
+  SAFE_CONF: 0.78,    // πριν 0.83 → λίγο χαμηλότερο
 
   // band για RISKY:
-  RISKY_MIN_CONF: 0.66,
-  RISKY_MAX_DEFICIT: 1, // επιτρέπουμε να είναι -1 game πίσω για RISKY
+  RISKY_MIN_CONF: 0.62, // πριν 0.72 → θα δεις περισσότερα RISKY
 
   // σταθεροποίηση διακύμανσης
-  CLAMP_UP: 0.06,
-  CLAMP_DOWN: -0.05,
+  CLAMP_UP: 0.06,     // πριν 0.05 → επιτρέπει λίγο μεγαλύτερο “πάνω” drift
+  CLAMP_DOWN: -0.05
 };
 
 const toNum = (x) => {
@@ -206,37 +205,33 @@ export default function analyzeMatch(m = {}) {
   const surf = detectSurface(m); conf += surfaceAdj(surf);
   conf += timeToStartAdj(m, status);
 
-  // optional micro-boost σε ATP/WTA όταν είμαστε στο “γλυκό σημείο” set2Total
-  if ((m.categoryName || "").toLowerCase().match(/atp|wta/) && win.total >= 4 && win.total <= 5) {
-    // μόνο όταν το φαβορί δεν χάνει καθαρά
-    const favLeading = favIsA ? ((ga || 0) >= (gb || 0)) : ((gb || 0) >= (ga || 0));
-    if (favLeading) conf += 0.01;
+  // Μικρό στοχευμένο boost όταν έχει νόημα:
+  // +0.01 σε ATP/WTA όταν ο favLeading ισχύει & set2Total ∈ [4..5]
+  const favLeadingNow = favIsA ? ((win.ga || 0) >= (win.gb || 0)) : ((win.gb || 0) >= (win.ga || 0));
+  if ((catBonus >= 0.07) && favLeadingNow && win.total >= 4 && win.total <= 5) {
+    conf += 0.01;
   }
 
   // Clamp & bounds
   const confFinal = Math.max(0.51, Math.min(0.95, volatilityClamp(confBase, conf)));
 
   // Precision filters (τα 4 νούμερα)
-  const favLeading = favIsA ? ((ga || 0) >= (gb || 0)) : ((gb || 0) >= (ga || 0));
-  const diffGames = Math.abs((ga || 0) - (gb || 0));
+  const favLeading = favLeadingNow;
   const oddsOk = Number.isFinite(favOdds) && favOdds >= T.MIN_ODDS;
   const probOk = favProb >= T.MIN_PROB;
-  const diffOk = diffGames <= T.MAX_SET2_DIFF;
+  const diffOk = win.diff <= T.MAX_SET2_DIFF;
 
   // Labeling: SAFE / RISKY band / AVOID
   let label = 'AVOID';
   let tip = '';
 
-  if (oddsOk && probOk && diffOk) {
-    // SAFE: απαιτεί να ΜΗΝ χάνει (>=) + conf ≥ SAFE_CONF
-    if (favLeading && confFinal >= T.SAFE_CONF) {
+  if (oddsOk && probOk && favLeading && diffOk) {
+    if (confFinal >= T.SAFE_CONF) {
       label = 'SAFE';
       tip = `${favName} to win match`;
-    }
-    // RISKY: επιτρέπεται μικρό έλλειμμα στο set (έως 1 game) + conf ≥ RISKY_MIN_CONF
-    else if ((favLeading || diffGames <= T.RISKY_MAX_DEFICIT) && confFinal >= T.RISKY_MIN_CONF) {
+    } else if (confFinal >= T.RISKY_MIN_CONF && confFinal < T.SAFE_CONF) {
       label = 'RISKY';
-      tip = '';
+      tip = ''; // προαιρετικά άδειο, το UI το χειρίζεται
     } else {
       label = 'AVOID';
     }
@@ -246,20 +241,16 @@ export default function analyzeMatch(m = {}) {
 
   const kellyLevel = confFinal >= 0.90 ? 'HIGH' : confFinal >= 0.80 ? 'MED' : 'LOW';
 
-  // Προαιρετικό logging για debugging
+  // Optional lightweight debug
   try {
-    if (String(process.env.REACT_APP_LOG_PREDICTIONS) === '1') {
-      const [p1, p2] = parsePlayers(m);
+    if (process?.env?.REACT_APP_LOG_PREDICTIONS === '1') {
       // eslint-disable-next-line no-console
       console.table([{
-        match: `${p1} vs ${p2}`,
-        set2: `${win.ga}-${win.gb} (tot:${win.total}, diff:${win.diff})`,
-        favName, favOdds: Number(favOdds||0).toFixed(2), favProb: Number(favProb||0).toFixed(3),
-        confBase: Number(confBase).toFixed(3),
-        confAfterAdj: Number(conf).toFixed(3),
-        confFinal: Number(confFinal).toFixed(3),
-        favLeading, oddsOk, probOk, diffOk,
-        label
+        label, conf: +confFinal.toFixed(3),
+        favProb: +favProb.toFixed(3),
+        favOdds: +(+favOdds || 0).toFixed(2),
+        set2Total: win.total, set2Diff: win.diff,
+        catBonus: +catBonus.toFixed(3), surface: surf || '-'
       }]);
     }
   } catch {}
