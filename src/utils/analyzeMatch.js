@@ -1,19 +1,20 @@
 // src/utils/analyzeMatch.js
-// v3.7-lite (relaxed) — "4 numbers + band for RISKY"
+// v3.7-lite+ — relax για να εμφανίζονται RISKY (και λίγα παραπάνω SAFE)
 // Κρατάμε SET 2 window (games 3–6, χωρίς tiebreak)
 
 const T = {
   // τα 4 βασικά νούμερα:
-  MIN_ODDS: 1.50,
-  MIN_PROB: 0.53,       // 0.54 -> 0.53
-  MAX_SET2_DIFF: 4,     // 3 -> 4
-  SAFE_CONF: 0.80,      // 0.83 -> 0.80
+  MIN_ODDS: 1.45,
+  MIN_PROB: 0.52,
+  MAX_SET2_DIFF: 4,
+  SAFE_CONF: 0.80,
 
   // band για RISKY:
-  RISKY_MIN_CONF: 0.66, // 0.72 -> 0.66
+  RISKY_MIN_CONF: 0.66,
+  RISKY_MAX_DEFICIT: 1, // επιτρέπουμε να είναι -1 game πίσω για RISKY
 
   // σταθεροποίηση διακύμανσης
-  CLAMP_UP: 0.06,       // 0.05 -> 0.06
+  CLAMP_UP: 0.06,
   CLAMP_DOWN: -0.05,
 };
 
@@ -205,36 +206,37 @@ export default function analyzeMatch(m = {}) {
   const surf = detectSurface(m); conf += surfaceAdj(surf);
   conf += timeToStartAdj(m, status);
 
-  // --- optional tiny boost: ATP/WTA + good window & fav leading
-  const favLeadingNow = favIsA ? ((ga || 0) >= (gb || 0)) : ((gb || 0) >= (ga || 0));
-  if (favLeadingNow) {
-    const cat = (m.categoryName || m.category || m["@category"] || "").toString().toLowerCase();
-    const isTour = cat.includes("atp") || cat.includes("wta");
-    if (isTour && win.total >= 4 && win.total <= 5) {
-      conf += 0.01; // μικρό ώθημα στο "γλυκό" σημείο
-    }
+  // optional micro-boost σε ATP/WTA όταν είμαστε στο “γλυκό σημείο” set2Total
+  if ((m.categoryName || "").toLowerCase().match(/atp|wta/) && win.total >= 4 && win.total <= 5) {
+    // μόνο όταν το φαβορί δεν χάνει καθαρά
+    const favLeading = favIsA ? ((ga || 0) >= (gb || 0)) : ((gb || 0) >= (ga || 0));
+    if (favLeading) conf += 0.01;
   }
 
   // Clamp & bounds
   const confFinal = Math.max(0.51, Math.min(0.95, volatilityClamp(confBase, conf)));
 
   // Precision filters (τα 4 νούμερα)
-  const favLeading = favLeadingNow;
+  const favLeading = favIsA ? ((ga || 0) >= (gb || 0)) : ((gb || 0) >= (ga || 0));
+  const diffGames = Math.abs((ga || 0) - (gb || 0));
   const oddsOk = Number.isFinite(favOdds) && favOdds >= T.MIN_ODDS;
   const probOk = favProb >= T.MIN_PROB;
-  const diffOk = win.diff <= T.MAX_SET2_DIFF;
+  const diffOk = diffGames <= T.MAX_SET2_DIFF;
 
   // Labeling: SAFE / RISKY band / AVOID
   let label = 'AVOID';
   let tip = '';
 
-  if (oddsOk && probOk && favLeading && diffOk) {
-    if (confFinal >= T.SAFE_CONF) {
+  if (oddsOk && probOk && diffOk) {
+    // SAFE: απαιτεί να ΜΗΝ χάνει (>=) + conf ≥ SAFE_CONF
+    if (favLeading && confFinal >= T.SAFE_CONF) {
       label = 'SAFE';
       tip = `${favName} to win match`;
-    } else if (confFinal >= T.RISKY_MIN_CONF && confFinal < T.SAFE_CONF) {
+    }
+    // RISKY: επιτρέπεται μικρό έλλειμμα στο set (έως 1 game) + conf ≥ RISKY_MIN_CONF
+    else if ((favLeading || diffGames <= T.RISKY_MAX_DEFICIT) && confFinal >= T.RISKY_MIN_CONF) {
       label = 'RISKY';
-      tip = ''; // προαιρετικά άδειο, το UI το χειρίζεται
+      tip = '';
     } else {
       label = 'AVOID';
     }
@@ -243,6 +245,24 @@ export default function analyzeMatch(m = {}) {
   }
 
   const kellyLevel = confFinal >= 0.90 ? 'HIGH' : confFinal >= 0.80 ? 'MED' : 'LOW';
+
+  // Προαιρετικό logging για debugging
+  try {
+    if (String(process.env.REACT_APP_LOG_PREDICTIONS) === '1') {
+      const [p1, p2] = parsePlayers(m);
+      // eslint-disable-next-line no-console
+      console.table([{
+        match: `${p1} vs ${p2}`,
+        set2: `${win.ga}-${win.gb} (tot:${win.total}, diff:${win.diff})`,
+        favName, favOdds: Number(favOdds||0).toFixed(2), favProb: Number(favProb||0).toFixed(3),
+        confBase: Number(confBase).toFixed(3),
+        confAfterAdj: Number(conf).toFixed(3),
+        confFinal: Number(confFinal).toFixed(3),
+        favLeading, oddsOk, probOk, diffOk,
+        label
+      }]);
+    }
+  } catch {}
 
   return {
     label,
