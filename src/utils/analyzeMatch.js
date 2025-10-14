@@ -1,31 +1,24 @@
 // src/utils/analyzeMatch.js
-// v3.10-tuned — SAFE/RISKY require odds ≥ 1.50, relaxed tier for RISKY
-// Window: SET 2 only, total games 3–6, no tiebreak. Strict leading (>).
+// v3.10b-relax-risky — χαλαρώνουμε ΜΟΝΟ το RISKY, κρατάμε MIN_ODDS=1.50 και για SAFE και για RISKY
+// Παράθυρο SET 2: total games 2–7 (no tiebreak)
 
 const T = {
-  // Odds requirements (both tiers)
-  MIN_ODDS_SAFE: 1.50,
-  MIN_ODDS_RISKY: 1.50,
-
-  // Probability thresholds
-  MIN_PROB_SAFE: 0.53,  // λίγο αυστηρότερο για SAFE
-  MIN_PROB_RISKY: 0.50, // χαλαρό για RISKY
-
-  // Set-2 diff thresholds
-  MAX_SET2_DIFF_SAFE: 4,
-  MAX_SET2_DIFF_RISKY: 5,
-
-  // Set-2 total games window
-  SET2_TOTAL_MIN: 3,
-  SET2_TOTAL_MAX: 6,
-
-  // Confidence bands
-  SAFE_CONF: 0.76,
-  RISKY_MIN_CONF: 0.60,
-
-  // Volatility clamp
+  // ΚΟΙΝΑ
+  MIN_ODDS: 1.50,
   CLAMP_UP: 0.06,
   CLAMP_DOWN: -0.05,
+  SET2_TOTAL_MIN: 2,
+  SET2_TOTAL_MAX: 7,
+
+  // SAFE thresholds (ίδια με πριν)
+  SAFE_CONF: 0.72,
+  MIN_PROB_SAFE: 0.50,
+  MAX_SET2_DIFF_SAFE: 6,
+
+  // RISKY (πιο χαλαρά)
+  RISKY_MIN_CONF: 0.52,
+  MIN_PROB_RISKY: 0.46,
+  MAX_SET2_DIFF_RISKY: 7,
 };
 
 const toNum = (x) => {
@@ -162,12 +155,13 @@ function timeToStartAdj(m, status) {
   return -0.02;
 }
 
+/** SET-2 guard (relaxed total 2–7, no TB). */
 function set2WindowGuard(status, ga, gb) {
   if (status.setNum !== 2) return { pass: false, badge: `SET ${status.setNum || 1}` };
   if (ga === null || gb === null) return { pass: false, badge: `SET 2` };
   const total = (ga || 0) + (gb || 0);
-  const tieBreak = (ga >= 6 && gb >= 6);
-  if (tieBreak) return { pass: false, badge: 'AVOID' };
+  const isTB = (ga >= 6 && gb >= 6);
+  if (isTB) return { pass: false, badge: 'AVOID' };
   if (total < T.SET2_TOTAL_MIN) return { pass: false, badge: 'SET 2' };
   if (total > T.SET2_TOTAL_MAX) return { pass: false, badge: 'AVOID' };
   return { pass: true, total, diff: Math.abs((ga || 0) - (gb || 0)), ga, gb };
@@ -181,43 +175,43 @@ function volatilityClamp(confBase, confNow) {
 }
 
 export default function analyzeMatch(m = {}) {
-  const why = [];
   const [pA, pB] = parsePlayers(m);
   const status = parseStatus(m);
-
   const oddsObj = m.odds || m.market || m.oddsFT || {};
   const { oA, oB } = pickTwoOdds(oddsObj, pA, pB);
   const haveOdds = (oA > 1 && oB > 1);
 
+  // ΧΩΡΙΣ odds, δεν δίνουμε πρόβλεψη (σύμφωνα με το request για έμφαση στα odds)
+  if (!haveOdds) {
+    if (!status.live) return { label: "UPCOMING", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: status.setNum || 0, live: 0 } };
+    if (status.setNum === 1) return { label: "SET 1", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: 1, live: 1 } };
+    if (status.setNum >= 3) return { label: "SET 3", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: status.setNum, live: 1 } };
+    const { ga, gb } = currentSetPair(m, status);
+    const win = set2WindowGuard(status, ga, gb);
+    const badge = win.pass ? 'AVOID' : win.badge;
+    return { label: badge, conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: status.setNum, live: 1 } };
+  }
+
   let { pa, pb } = implied(oA, oB);
   const favIsA = pa >= pb;
   const favName = favIsA ? pA : pB;
-  const favProbRaw = favIsA ? pa : pb;
+  const favProb = favIsA ? pa : pb;
   const favOdds = favIsA ? oA : oB;
 
-  // Early guards
   if (!status.live) return { label: "UPCOMING", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: status.setNum || 0, live: 0 } };
   if (status.setNum === 1) return { label: "SET 1", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: 1, live: 1 } };
   if (status.setNum >= 3) return { label: "SET 3", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: status.setNum, live: 1 } };
 
-  // Set 2 guard
+  // Set 2 window
   const { ga, gb } = currentSetPair(m, status);
   const win = set2WindowGuard(status, ga, gb);
-  if (!win.pass) {
+  if (!win.pass)
     return { label: win.badge, conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: status.setNum, live: 1 } };
-  }
-
-  // Strict leading (no draws)
-  const favLeadingNow = favIsA ? ((win.ga || 0) > (win.gb || 0))
-                               : ((win.gb || 0) > (win.ga || 0));
-  if (!favLeadingNow) why.push('fav-not-leading');
 
   // Base confidence
   const catBonus = categoryWeight(m);
   const liveBonus = 0.03;
-  const confBase = haveOdds
-    ? (0.50 + ((favProbRaw - 0.5) * 1.20) + catBonus + liveBonus)
-    : (0.56 + catBonus + liveBonus); // δεν θα πάμε σε SAFE/RISKY αν δεν έχουμε odds (αλλά κρατάμε conf για info)
+  const confBase = 0.50 + ((favProb - 0.5) * 1.20) + catBonus + liveBonus;
   let conf = confBase;
 
   // Momentum & context
@@ -225,56 +219,54 @@ export default function analyzeMatch(m = {}) {
   const surf = detectSurface(m); conf += surfaceAdj(surf);
   conf += timeToStartAdj(m, status);
 
-  // μικρό targeted boost (ATP/WTA + leading & total 4..5)
-  if ((catBonus >= 0.07) && favLeadingNow && win.total >= 4 && win.total <= 5) {
-    conf += 0.01;
-  }
+  // Στοχευμένο μικρό boost (ATP/WTA + fav leading + total 4..5)
+  const favLeadingNow = favIsA ? ((win.ga || 0) >= (win.gb || 0)) : ((win.gb || 0) >= (win.ga || 0));
+  if ((catBonus >= 0.07) && favLeadingNow && win.total >= 4 && win.total <= 5) conf += 0.01;
 
+  // Clamp & bounds
   const confFinal = Math.max(0.51, Math.min(0.95, volatilityClamp(confBase, conf)));
 
-  // Filters per tier
-  const hasOddsAndSafe = haveOdds && favOdds >= T.MIN_ODDS_SAFE;
-  const hasOddsAndRisky = haveOdds && favOdds >= T.MIN_ODDS_RISKY;
+  // Precision filters
+  const minOddsOk = Number.isFinite(favOdds) && favOdds >= T.MIN_ODDS;
 
-  const probOkSafe  = (favProbRaw >= T.MIN_PROB_SAFE);
-  const probOkRisky = (favProbRaw >= T.MIN_PROB_RISKY);
+  // SAFE strict
+  const safeProbOk = favProb >= T.MIN_PROB_SAFE;
+  const safeDiffOk = (win.diff || 0) <= T.MAX_SET2_DIFF_SAFE;
+  const safeAll = (favLeadingNow && minOddsOk && safeProbOk && safeDiffOk && confFinal >= T.SAFE_CONF);
 
-  const diffOkSafe  = (win.diff || 0) <= T.MAX_SET2_DIFF_SAFE;
-  const diffOkRisky = (win.diff || 0) <= T.MAX_SET2_DIFF_RISKY;
-
-  if (!haveOdds) why.push('no-odds'); // ζητήθηκε 1.50 για όλα, άρα χωρίς odds δεν δίνουμε pick
-  if (haveOdds && favOdds < 1.50) why.push('odds-too-low');
+  // RISKY relaxed (μπορεί να μην προηγείται, αλλά max 1 παιχνίδι πίσω)
+  const withinOneGameBehind = !favLeadingNow && Math.abs((win.ga || 0) - (win.gb || 0)) === 1;
+  const riskyProbOk = favProb >= T.MIN_PROB_RISKY;
+  const riskyDiffOk = (win.diff || 0) <= T.MAX_SET2_DIFF_RISKY;
+  const riskyLeadOk = favLeadingNow || withinOneGameBehind;
+  const riskyAll = (riskyLeadOk && minOddsOk && riskyProbOk && riskyDiffOk && confFinal >= T.RISKY_MIN_CONF);
 
   // Labeling
   let label = 'AVOID';
   let tip = '';
-
-  if (favLeadingNow && hasOddsAndSafe && probOkSafe && diffOkSafe && confFinal >= T.SAFE_CONF) {
+  if (safeAll) {
     label = 'SAFE';
     tip = `${favName} to win match`;
-  } else if (favLeadingNow && hasOddsAndRisky && probOkRisky && diffOkRisky && confFinal >= T.RISKY_MIN_CONF) {
+  } else if (riskyAll) {
     label = 'RISKY';
   } else {
-    if (!favLeadingNow) why.push('filters-leading-fail');
-    // άλλοι λόγοι ήδη έχουν μπει στο why[]
+    label = 'AVOID';
   }
 
   const kellyLevel = confFinal >= 0.90 ? 'HIGH' : confFinal >= 0.80 ? 'MED' : 'LOW';
 
-  // Optional debug (enable with REACT_APP_LOG_PREDICTIONS=1)
   try {
     if (process?.env?.REACT_APP_LOG_PREDICTIONS === '1') {
       // eslint-disable-next-line no-console
       console.table([{
         label,
         conf: +confFinal.toFixed(3),
-        favProb: +favProbRaw.toFixed(3),
-        favOdds: haveOdds ? +favOdds.toFixed(2) : 'n/a',
+        favProb: +favProb.toFixed(3),
+        favOdds: +favOdds.toFixed(2),
         set2Total: win.total, set2Diff: win.diff,
         favLeading: favLeadingNow ? 1 : 0,
         catBonus: +catBonus.toFixed(3),
-        surface: surf || '-',
-        why: why.join('|') || '-'
+        surface: surf || '-'
       }]);
     }
   } catch {}
@@ -285,17 +277,16 @@ export default function analyzeMatch(m = {}) {
     kellyLevel,
     tip,
     features: {
-      favName,
       pOdds: { a: oA, b: oB },
-      favProb: favProbRaw,
-      favOdds: haveOdds ? favOdds : null,
+      favName,
+      favProb,
+      favOdds,
       setNum: status.setNum,
       live: status.live ? 1 : 0,
       catBonus,
       surface: surf,
       set2Total: win.total,
-      set2Diff: win.diff,
-      why
+      set2Diff: win.diff
     }
   };
 }
