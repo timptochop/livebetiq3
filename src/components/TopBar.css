@@ -1,32 +1,85 @@
-.tb-wrap{
-  position:sticky; top:0; z-index:10;
-  display:flex; align-items:center; justify-content:space-between;
-  gap:12px; padding:10px 12px; background:#0b0b0b; border-bottom:1px solid #1f1f1f;
-}
-.tb-left{ display:flex; align-items:center; gap:8px; }
-.tb-logo{
-  width:34px; height:34px; border-radius:8px; background:#16a34a; color:#fff;
-  display:flex; align-items:center; justify-content:center; font-weight:800;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@600;800&display=swap');
+
+:root{
+  --tb-h: 60px;
+  --tb-bg: #0b0f10;              /* μαύρο που ξεχωρίζει */
+  --tb-grad: linear-gradient(180deg, rgba(0,0,0,.35), rgba(0,0,0,0));
+  --tb-chip: #102324;
+  --tb-text: #e8f2ee;
+  --tb-accent: #16d37a;
 }
 
-.tb-center{ flex:1; display:flex; justify-content:center; }
-.tb-pill{
-  display:flex; align-items:center; gap:8px;
-  padding:6px 12px; border-radius:999px; border:1px solid #234;
-  background:#122; color:#9fe7c3; font-weight:800;
-}
-.tb-dot{ width:8px; height:8px; border-radius:50%; background:#16e06e; box-shadow:0 0 8px rgba(22,224,110,.8); }
-.tb-live{ letter-spacing:.5px; }
-.tb-num{ background:#0b3; color:#fff; padding:2px 8px; border-radius:999px; }
+/* 👉 ΧΩΡΙΣ 100vw/αρνητικά margins για να μην βγαίνει οριζόντιο scroll */
+.topbar{
+  position: sticky; top: 0; left: 0; right: 0;
+  z-index: 1000;
 
-.tb-right{ display:flex; align-items:center; gap:8px; }
-.tb-icon{
-  display:flex; align-items:center; gap:8px;
-  background:#151515; color:#e5e7eb; border:1px solid #262626; border-radius:10px;
-  padding:8px 10px; cursor:pointer;
+  background: var(--tb-grad), var(--tb-bg);
+  backdrop-filter: saturate(120%) blur(6px);
+  -webkit-backdrop-filter: saturate(120%) blur(6px);
+
+  padding: max(10px, env(safe-area-inset-top)) 16px 12px 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  box-shadow: 0 1px 0 rgba(0,0,0,.35);
 }
-.tb-icon:hover{ background:#1b1b1b; }
-.tb-toggle{
-  font-size:12px; font-weight:800; letter-spacing:.4px;
-  padding:2px 6px; border-radius:999px; background:#243; color:#a7f3d0;
+
+/* Αριστερά: brand + LIVE ΠΑΝΤΑ στην ίδια σειρά */
+.tb-left{
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;        /* ❗ δεν τυλίγεται σε 2η γραμμή */
+}
+
+.brand-text{
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  font-weight: 800;
+  letter-spacing: .3px;
+  color: var(--tb-text);
+  text-shadow: 0 1px 1px rgba(0,0,0,.35);
+  white-space: nowrap;      /* ❗ */
+  user-select: none;
+  font-size: clamp(15px, 1.95vw, 18px); /* λίγο δυναμικό για να χωράει */
+  padding-left: 2px;
+}
+.brand-text .b1{ color:#e9fcff; }
+.brand-text .b2{ color:var(--tb-accent); }
+.brand-text .b3{ color:#e9fcff; opacity:.95; }
+
+/* LIVE chip — πιο μικρό από το brand */
+.live-chip{
+  display:inline-flex; align-items:center; gap:6px;
+  background: var(--tb-chip); color: var(--tb-text);
+  height: 22px;                         /* μικρότερο */
+  padding: 0 8px;
+  border-radius: 999px;
+  font-weight: 800; font-size: 11px; letter-spacing:.3px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+  white-space: nowrap;                  /* ❗ */
+}
+.live-chip .dot{
+  width:6px; height:6px; border-radius:999px; background: var(--tb-accent);
+  box-shadow: 0 0 10px var(--tb-accent), 0 0 2px var(--tb-accent);
+}
+.live-chip .count{ opacity:.95; }
+
+.tb-right{ display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+
+.icon-btn{
+  width: 34px; height: 34px; display:grid; place-items:center;
+  border-radius: 10px; border: none; cursor: pointer;
+  background: rgba(255,255,255,.06); color: #dfe;
+  transition: .15s ease; box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+}
+.icon-btn:hover{ transform: translateY(-1px); background: rgba(255,255,255,.10); }
+.icon-btn svg{ fill: currentColor; opacity: .9; }
+.icon-btn.off svg{ opacity:.5; }
+
+/* Mobile μικρές πινελιές */
+@media (max-width: 560px){
+  .brand-text{ font-size: clamp(14px, 4vw, 16px); }
+  .live-chip{ height: 20px; font-size: 10.5px; padding: 0 7px; gap:5px; }
 }

@@ -1,22 +1,30 @@
-<!DOCTYPE html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" href="%PUBLIC_URL%/logo192.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-
-    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/apple-touch-icon.png" />
-
-    <meta name="theme-color" content="#111111" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="LiveBet IQ" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
 
     <title>LiveBet IQ</title>
+
+    <!-- PWA / Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#111111" />
+
+    <!-- Icons (προαιρετικά αλλά καλά να υπάρχουν) -->
+    <link rel="icon" href="/logo192.png" sizes="192x192" />
+    <link rel="icon" href="/logo512.png" sizes="512x512" />
+    <link rel="apple-touch-icon" href="/logo192.png" />
+
+    <!-- iOS full-screen bar (δεν αλλάζει το UI σου) -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   </head>
-  <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
+
+  <body style="margin:0;background:#0b0f10;color:#e8f2ee;">
     <div id="root"></div>
+    <!-- Σημείωση: σε CRA/Vite το build θα εισάγει μόνο του τα JS bundles. Δεν βάζουμε χειροκίνητα <script>. -->
   </body>
 </html>

@@ -1,14 +1,26 @@
 // src/utils/aiPredictionEngineModules/estimateConfidence.js
 
-export default function estimateConfidence(prob1, prob2, winner) {
-  if (!prob1 || !prob2 || prob1 <= 0 || prob2 <= 0) return 0;
+export default function estimateConfidence(ev, momentumBonus, surfaceBoost, inputs = {}) {
+  let base = 50;
 
-  let baseConfidence = Math.abs(prob1 - prob2) * 100;
+  // Base from EV
+  base += ev * 100;
 
-  // Boost confidence if winner aligns with higher probability
-  if (winner === 'player1' && prob1 > prob2) baseConfidence += 5;
-  if (winner === 'player2' && prob2 > prob1) baseConfidence += 5;
+  // Momentum factor
+  base += momentumBonus * 100;
 
-  // Normalize between 0 and 100
-  return Math.min(100, Math.max(0, Math.round(baseConfidence)));
+  // Surface factor
+  base += surfaceBoost * 50;
+
+  // Form adjustment
+  if (inputs.formHome !== null && inputs.formAway !== null) {
+    const formDelta = inputs.formHome - inputs.formAway;
+    base += formDelta * 10;
+  }
+
+  // Line movement adjustment
+  if (inputs.lineMovement === 'up') base += 3;
+  if (inputs.lineMovement === 'down') base -= 3;
+
+  return Math.max(0, Math.min(100, base));
 }

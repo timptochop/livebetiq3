@@ -1,16 +1,10 @@
 // src/components/TopSpacer.js
-import React from "react";
+import React from 'react';
 
+/**
+ * Κενό κάτω από το fixed TopBar ώστε να μη «σκεπάζει» το πρώτο card.
+ * Το πραγματικό ύψος ορίζεται στο CSS (.top-spacer { height: var(--topbar-h); }).
+ */
 export default function TopSpacer() {
-  return (
-    <div style={{
-      height: 40,
-      background: "#0a0c0e",
-      width: "100%",
-      position: "fixed",
-      top: 0,
-      left: 0,
-      zIndex: 999
-    }} />
-  );
+  return <div className="top-spacer" aria-hidden="true" />;
 }

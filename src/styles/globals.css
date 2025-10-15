@@ -1,0 +1,33 @@
+/* Container */
+.livebar{
+  --bg:#0e2624;               /* σκούρο πράσινο background */
+  --chip:#0f3732;             /* χρώμα του chip */
+  --text:#e7f5ef;
+  --accent:#16d37a;           /* πράσινη τελεία LIVE */
+  display:flex; align-items:center; justify-content:space-between;
+  background:var(--bg);
+  padding:10px 14px; border-radius:16px;
+  box-shadow:0 2px 14px rgba(0,0,0,.24) inset;
+}
+.livebar-left{display:flex; align-items:center; gap:10px;}
+.livebar-right{display:flex; align-items:center; gap:8px;}
+
+.livebar img, .livebar span, .livebar svg{vertical-align:middle}
+
+/* LIVE chip */
+.livechip{
+  display:flex; align-items:center; gap:8px;
+  background:var(--chip); color:var(--text);
+  padding:6px 12px; border-radius:999px; font-weight:800;
+  letter-spacing:.3px;
+}
+.livechip .dot{
+  width:8px; height:8px; border-radius:50%;
+  background:var(--accent);
+  box-shadow:0 0 8px var(--accent);
+}
+.livechip .count{opacity:.9}
+
+/* Προαιρετικά εικονίδια δεξιά (dummy) */
+.icon-btn{width:28px;height:28px;border-radius:8px;border:0;background:#102f2b}
+.icon-btn:hover{background:#143a35}

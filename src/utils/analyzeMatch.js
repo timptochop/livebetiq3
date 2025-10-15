@@ -1,74 +1,292 @@
 // src/utils/analyzeMatch.js
-import calculateEV from '../utils/aiPredictionEngineModules/calculateEV';
-import estimateConfidence from '../utils/aiPredictionEngineModules/estimateConfidence';
-import calculateKelly from '../utils/aiPredictionEngineModules/calculateKelly';
-import detectLineMovement from '../utils/aiPredictionEngineModules/detectLineMovement';
-import applySurfaceAdjustment from '../utils/aiPredictionEngineModules/surfaceAdjustment';
-import calculateTimeWeightedForm from '../utils/aiPredictionEngineModules/timeWeightedForm';
-import generateLabel from '../utils/aiPredictionEngineModules/generateLabel';
-import generateNote from '../utils/aiPredictionEngineModules/generateNote';
+// v3.10b-relax-risky — χαλαρώνουμε ΜΟΝΟ το RISKY, κρατάμε MIN_ODDS=1.50 και για SAFE και για RISKY
+// Παράθυρο SET 2: total games 2–7 (no tiebreak)
 
-export default function analyzeMatch(match) {
-  const {
-    id,
-    player1,
-    player2,
-    status,
-    odds,
-    surface,
-    h2h,
-    score,
-    lastMatches,
-    pregameOdds,
-  } = match;
+const T = {
+  // ΚΟΙΝΑ
+  MIN_ODDS: 1.50,
+  CLAMP_UP: 0.06,
+  CLAMP_DOWN: -0.05,
+  SET2_TOTAL_MIN: 2,
+  SET2_TOTAL_MAX: 7,
 
-  if (!odds || !odds.prob1 || !odds.prob2) {
-    return { ...match, ai: { label: 'NO ODDS', ev: null, confidence: null } };
+  // SAFE thresholds (ίδια με πριν)
+  SAFE_CONF: 0.72,
+  MIN_PROB_SAFE: 0.50,
+  MAX_SET2_DIFF_SAFE: 6,
+
+  // RISKY (πιο χαλαρά)
+  RISKY_MIN_CONF: 0.52,
+  MIN_PROB_RISKY: 0.46,
+  MAX_SET2_DIFF_RISKY: 7,
+};
+
+const toNum = (x) => {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : 0;
+};
+
+function pickTwoOdds(oddsObj = {}, nameA = "", nameB = "") {
+  let oA = 0, oB = 0;
+  if (oddsObj && typeof oddsObj === "object") {
+    if (toNum(oddsObj.p1) > 1 && toNum(oddsObj.p2) > 1) {
+      oA = toNum(oddsObj.p1); oB = toNum(oddsObj.p2);
+    } else if (nameA && nameB && toNum(oddsObj[nameA]) > 1 && toNum(oddsObj[nameB]) > 1) {
+      oA = toNum(oddsObj[nameA]); oB = toNum(oddsObj[nameB]);
+    } else {
+      const vals = Object.values(oddsObj).map(toNum).filter(v => v > 1);
+      if (vals.length >= 2) { oA = vals[0]; oB = vals[1]; }
+    }
+  }
+  return { oA, oB };
+}
+
+function implied(oA, oB) {
+  if (oA > 1 && oB > 1) {
+    const pa = 1 / oA, pb = 1 / oB, s = pa + pb;
+    return { pa: pa / s, pb: pb / s };
+  }
+  return { pa: 0.5, pb: 0.5 };
+}
+
+function parsePlayers(m = {}) {
+  if (Array.isArray(m.players) && m.players.length >= 2) {
+    return [
+      (m.players[0]?.name || m.players[0]?.["@name"] || "").trim() || "Player A",
+      (m.players[1]?.name || m.players[1]?.["@name"] || "").trim() || "Player B",
+    ];
+  }
+  if (typeof m.name === "string" && m.name.includes(" vs ")) {
+    const [a, b] = m.name.split(" vs ");
+    return [(a || "").trim() || "Player A", (b || "").trim() || "Player B"];
+  }
+  return ["Player A", "Player B"];
+}
+
+function parseStatus(m = {}) {
+  const raw = String(m.status || m["@status"] || "");
+  const s = raw.toLowerCase();
+  const live = s.includes("set") || s.includes("live") || s.includes("in play") || s.includes("1st") || s.includes("2nd");
+  let setNum = 0; const mt = /set\s*(\d+)/i.exec(raw); if (mt && mt[1]) setNum = Number(mt[1]) || 0;
+  const finished = s.includes("finished") || s.includes("retired") || s.includes("walkover") || s.includes("walk over") || s.includes("abandoned");
+  const cancelled = s.includes("cancel") || s.includes("postpon");
+  return { live, setNum, finished, cancelled };
+}
+
+function categoryWeight(m = {}) {
+  const cat = (m.categoryName || m.category || m["@category"] || "").toString().toLowerCase();
+  if (cat.includes("atp") || cat.includes("wta")) return 0.07;
+  if (cat.includes("challenger")) return 0.03;
+  if (cat.includes("itf")) return -0.05;
+  return 0.0;
+}
+
+function readSetGames(p, idx) {
+  const key = "s" + idx; if (!p) return null; const v = p[key];
+  if (v !== undefined && v !== null && v !== "") return toNum(v);
+  return null;
+}
+
+function currentSetPair(m, status) {
+  if (!Array.isArray(m.players) || m.players.length < 2) return { ga: null, gb: null };
+  const A = m.players[0] || {}, B = m.players[1] || {};
+  const idx = status.setNum > 0 ? status.setNum : 1;
+  const ga = readSetGames(A, idx), gb = readSetGames(B, idx);
+  return { ga, gb };
+}
+
+function computeMomentum(m, favIsA) {
+  if (!Array.isArray(m.players) || m.players.length < 2) return 0;
+  const A = m.players[0] || {}, B = m.players[1] || {};
+  let setsCounted = 0, setsLeadA = 0, lastDiff = 0;
+  for (let i = 1; i <= 5; i++) {
+    const ga = readSetGames(A, i), gb = readSetGames(B, i);
+    if (ga === null || gb === null) break;
+    if (ga === 0 && gb === 0) break;
+    setsCounted++;
+    if (ga > gb) setsLeadA++;
+    if (ga !== gb) lastDiff = ga - gb;
+  }
+  if (setsCounted === 0) return 0;
+  const setsLead = setsLeadA - (setsCounted - setsLeadA);
+  let score = 0.02 * setsLead + 0.01 * lastDiff;
+  if (!favIsA) score = -score;
+  if (score > 0.06) score = 0.06;
+  if (score < -0.04) score = -0.04;
+  return score;
+}
+
+function detectSurface(m = {}) {
+  const fields = [m.surface, m.court, m.courtType, m.categoryName, m.league, m.tournament, m.info, m.meta]
+    .filter(Boolean).map(x => String(x).toLowerCase()).join(" ");
+  if (fields.includes("clay")) return "clay";
+  if (fields.includes("grass")) return "grass";
+  if (fields.includes("indoor")) return "indoor";
+  if (fields.includes("hard")) return "hard";
+  return "";
+}
+function surfaceAdj(surf) {
+  if (surf === "grass") return 0.02;
+  if (surf === "hard") return 0.01;
+  if (surf === "indoor") return 0.01;
+  if (surf === "clay") return -0.015;
+  return 0.0;
+}
+
+function parseStartTs(m = {}) {
+  const d = String(m.date || m["@date"] || "").trim();
+  const t = String(m.time || m["@time"] || "").trim();
+  const md = d.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  const mt = t.match(/^(\d{2}):(\d{2})$/);
+  if (!md || !mt) return null;
+  const dd = Number(md[1]), mm = Number(md[2]) - 1, yyyy = Number(md[3]);
+  const hh = Number(mt[1]), min = Number(mt[2]);
+  const ts = new Date(yyyy, mm, dd, hh, min).getTime();
+  return Number.isFinite(ts) ? ts : null;
+}
+function timeToStartAdj(m, status) {
+  if (status.live) return 0;
+  const ts = parseStartTs(m); if (!ts) return 0;
+  const diffMin = Math.round((ts - Date.now()) / 60000);
+  if (diffMin <= 0) return 0.005;
+  if (diffMin <= 120) return 0.01;
+  if (diffMin <= 720) return 0.0;
+  if (diffMin <= 1440) return -0.01;
+  return -0.02;
+}
+
+/** SET-2 guard (relaxed total 2–7, no TB). */
+function set2WindowGuard(status, ga, gb) {
+  if (status.setNum !== 2) return { pass: false, badge: `SET ${status.setNum || 1}` };
+  if (ga === null || gb === null) return { pass: false, badge: `SET 2` };
+  const total = (ga || 0) + (gb || 0);
+  const isTB = (ga >= 6 && gb >= 6);
+  if (isTB) return { pass: false, badge: 'AVOID' };
+  if (total < T.SET2_TOTAL_MIN) return { pass: false, badge: 'SET 2' };
+  if (total > T.SET2_TOTAL_MAX) return { pass: false, badge: 'AVOID' };
+  return { pass: true, total, diff: Math.abs((ga || 0) - (gb || 0)), ga, gb };
+}
+
+function volatilityClamp(confBase, confNow) {
+  let d = confNow - confBase;
+  if (d > T.CLAMP_UP) d = T.CLAMP_UP;
+  if (d < T.CLAMP_DOWN) d = T.CLAMP_DOWN;
+  return confBase + d;
+}
+
+export default function analyzeMatch(m = {}) {
+  const [pA, pB] = parsePlayers(m);
+  const status = parseStatus(m);
+  const oddsObj = m.odds || m.market || m.oddsFT || {};
+  const { oA, oB } = pickTwoOdds(oddsObj, pA, pB);
+  const haveOdds = (oA > 1 && oB > 1);
+
+  // ΧΩΡΙΣ odds, δεν δίνουμε πρόβλεψη (σύμφωνα με το request για έμφαση στα odds)
+  if (!haveOdds) {
+    if (!status.live) return { label: "UPCOMING", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: status.setNum || 0, live: 0 } };
+    if (status.setNum === 1) return { label: "SET 1", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: 1, live: 1 } };
+    if (status.setNum >= 3) return { label: "SET 3", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: status.setNum, live: 1 } };
+    const { ga, gb } = currentSetPair(m, status);
+    const win = set2WindowGuard(status, ga, gb);
+    const badge = win.pass ? 'AVOID' : win.badge;
+    return { label: badge, conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: status.setNum, live: 1 } };
   }
 
-  const ev = calculateEV(odds);
-  let confidence = estimateConfidence({ odds, score });
+  let { pa, pb } = implied(oA, oB);
+  const favIsA = pa >= pb;
+  const favName = favIsA ? pA : pB;
+  const favProb = favIsA ? pa : pb;
+  const favOdds = favIsA ? oA : oB;
 
-  // Momentum boost
-  if (score?.sets?.length >= 2) {
-    const lastSet = score.sets[score.sets.length - 1];
-    if (lastSet?.winner === 'player1') confidence += 3;
-    else if (lastSet?.winner === 'player2') confidence -= 3;
+  if (!status.live) return { label: "UPCOMING", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: status.setNum || 0, live: 0 } };
+  if (status.setNum === 1) return { label: "SET 1", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: 1, live: 1 } };
+  if (status.setNum >= 3) return { label: "SET 3", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: status.setNum, live: 1 } };
+
+  // Set 2 window
+  const { ga, gb } = currentSetPair(m, status);
+  const win = set2WindowGuard(status, ga, gb);
+  if (!win.pass)
+    return { label: win.badge, conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: status.setNum, live: 1 } };
+
+  // Base confidence
+  const catBonus = categoryWeight(m);
+  const liveBonus = 0.03;
+  const confBase = 0.50 + ((favProb - 0.5) * 1.20) + catBonus + liveBonus;
+  let conf = confBase;
+
+  // Momentum & context
+  conf += computeMomentum(m, favIsA);
+  const surf = detectSurface(m); conf += surfaceAdj(surf);
+  conf += timeToStartAdj(m, status);
+
+  // Στοχευμένο μικρό boost (ATP/WTA + fav leading + total 4..5)
+  const favLeadingNow = favIsA ? ((win.ga || 0) >= (win.gb || 0)) : ((win.gb || 0) >= (win.ga || 0));
+  if ((catBonus >= 0.07) && favLeadingNow && win.total >= 4 && win.total <= 5) conf += 0.01;
+
+  // Clamp & bounds
+  const confFinal = Math.max(0.51, Math.min(0.95, volatilityClamp(confBase, conf)));
+
+  // Precision filters
+  const minOddsOk = Number.isFinite(favOdds) && favOdds >= T.MIN_ODDS;
+
+  // SAFE strict
+  const safeProbOk = favProb >= T.MIN_PROB_SAFE;
+  const safeDiffOk = (win.diff || 0) <= T.MAX_SET2_DIFF_SAFE;
+  const safeAll = (favLeadingNow && minOddsOk && safeProbOk && safeDiffOk && confFinal >= T.SAFE_CONF);
+
+  // RISKY relaxed (μπορεί να μην προηγείται, αλλά max 1 παιχνίδι πίσω)
+  const withinOneGameBehind = !favLeadingNow && Math.abs((win.ga || 0) - (win.gb || 0)) === 1;
+  const riskyProbOk = favProb >= T.MIN_PROB_RISKY;
+  const riskyDiffOk = (win.diff || 0) <= T.MAX_SET2_DIFF_RISKY;
+  const riskyLeadOk = favLeadingNow || withinOneGameBehind;
+  const riskyAll = (riskyLeadOk && minOddsOk && riskyProbOk && riskyDiffOk && confFinal >= T.RISKY_MIN_CONF);
+
+  // Labeling
+  let label = 'AVOID';
+  let tip = '';
+  if (safeAll) {
+    label = 'SAFE';
+    tip = `${favName} to win match`;
+  } else if (riskyAll) {
+    label = 'RISKY';
+  } else {
+    label = 'AVOID';
   }
 
-  const surfaceAdjustedEV = applySurfaceAdjustment({ ev, surface, player1, player2 });
-  const formScore = calculateTimeWeightedForm({ lastMatches, player1, player2 });
-  const lineMovement = detectLineMovement({ pregameOdds, liveOdds: odds });
-  const kelly = calculateKelly({ ev: surfaceAdjustedEV, confidence });
-  const label = generateLabel({ ev: surfaceAdjustedEV, confidence });
-  const note = generateNote({ label, ev: surfaceAdjustedEV, confidence, player1, player2 });
+  const kellyLevel = confFinal >= 0.90 ? 'HIGH' : confFinal >= 0.80 ? 'MED' : 'LOW';
 
-  const ai = {
-    label,
-    ev: surfaceAdjustedEV,
-    confidence,
-    kelly,
-    formScore,
-    momentum: score?.sets?.length >= 2 ? 'active' : 'none',
-    lineMovement: lineMovement.drift,
-    note,
-  };
-
-  console.table({
-    id,
-    player1,
-    player2,
-    status,
-    ev: surfaceAdjustedEV,
-    confidence,
-    formScore,
-    kelly,
-    label,
-    note,
-  });
+  try {
+    if (process?.env?.REACT_APP_LOG_PREDICTIONS === '1') {
+      // eslint-disable-next-line no-console
+      console.table([{
+        label,
+        conf: +confFinal.toFixed(3),
+        favProb: +favProb.toFixed(3),
+        favOdds: +favOdds.toFixed(2),
+        set2Total: win.total, set2Diff: win.diff,
+        favLeading: favLeadingNow ? 1 : 0,
+        catBonus: +catBonus.toFixed(3),
+        surface: surf || '-'
+      }]);
+    }
+  } catch {}
 
   return {
-    ...match,
-    ai,
+    label,
+    conf: confFinal,
+    kellyLevel,
+    tip,
+    features: {
+      pOdds: { a: oA, b: oB },
+      favName,
+      favProb,
+      favOdds,
+      setNum: status.setNum,
+      live: status.live ? 1 : 0,
+      catBonus,
+      surface: surf,
+      set2Total: win.total,
+      set2Diff: win.diff
+    }
   };
 }
