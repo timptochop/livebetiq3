@@ -5,7 +5,10 @@ import analyzeMatch from '../utils/analyzeMatch';
 import { showToast } from '../utils/toast';
 import useLiveCount from '../hooks/useLiveCount';
 
-const FINISHED = new Set(['finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over']);
+// logging helpers (drop-in, δεν αλλάζουν UI)
+import { logPrediction, addPending, trySettleFinished } from '../utils/predictionLogger';
+
+const FINISHED = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
 const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
 
@@ -47,9 +50,8 @@ function formatDiff(ms) {
   return `${d}d ${rh}h`;
 }
 
-// Send to Telegram only for SAFE
-async function tryTgSafe(text, label) {
-  if (label !== 'SAFE') return;
+// optional, αγνοείται αν δεν υπάρχει /api/tg
+async function tryTg(text) {
   try {
     await fetch('/api/tg?text=' + encodeURIComponent(text));
   } catch {}
@@ -75,7 +77,7 @@ export default function LiveTennis({
 
       const enriched = keep.map((m, idx) => {
         const players = Array.isArray(m.players) ? m.players
-          : Array.isArray(m.player) ? m.player : [];
+                      : Array.isArray(m.player)  ? m.player : [];
         const p1 = players[0] || {}, p2 = players[1] || {};
         const name1 = p1.name || p1['@name'] || '';
         const name2 = p2.name || p2['@name'] || '';
@@ -105,6 +107,10 @@ export default function LiveTennis({
       });
 
       setRows(enriched);
+
+      // auto-settle τυχόν pending που τελείωσαν
+      trySettleFinished(enriched);
+
     } catch (e) {
       setRows([]);
     } finally {
@@ -156,7 +162,7 @@ export default function LiveTennis({
     return items.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
       if (a.order >= 4 && a.order <= 6 && b.order >= 4 && b.order <= 6) {
-        return a.order - b.order;
+        return a.order - b.order; // SET 3 -> SET 2 -> SET 1
       }
       if (a.live && b.live) return (b.setNum || 0) - (a.setNum || 0);
       if (a.uiLabel === 'UPCOMING' && b.uiLabel === 'UPCOMING') {
@@ -167,30 +173,59 @@ export default function LiveTennis({
     });
   }, [rows]);
 
+  // Ζωντανά entries για counter
   const liveList = useMemo(() => list.filter(m => m.live), [list]);
+
+  // ενημέρωση TopBar μέσω event
   useLiveCount(liveList);
 
+  // ειδοποίηση σε γονέα (αν χρειάζεται)
   useEffect(() => {
     onLiveCount(liveList.length);
   }, [liveList, onLiveCount]);
 
-  // Notify only for SAFE
+  // ειδοποίηση όταν αλλάζει label + logging/pending + Telegram μόνο για SAFE
   useEffect(() => {
     list.forEach((m) => {
       const cur = m.uiLabel || null;
       const prev = lastLabelRef.current.get(m.id) || null;
-      const isPred = cur === 'SAFE';
+      const isPred = cur === 'SAFE' || cur === 'RISKY' || cur === 'AVOID';
 
       if (isPred && cur !== prev) {
+        // Ήχος μόνο στο SAFE
         if (cur === 'SAFE' && audioOn) {
           try { new Audio('/notify.mp3').play().catch(() => {}); } catch {}
         }
+        // Toast (αν είναι ενεργό το tab)
         if (notificationsOn) {
           const t = `${cur}: ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ''}`;
           showToast(t, 3500);
-          tryTgSafe(t, cur);
+        }
+
+        // Logging & pending μόνο για SAFE/RISKY
+        if (cur === 'SAFE' || cur === 'RISKY') {
+          const fav = m.ai?.features?.favName || m.name1;
+          logPrediction({
+            matchId: m.id,
+            label: cur,
+            conf: m.ai?.conf || 0,
+            tip: m.ai?.tip || '',
+            features: {
+              ...m.ai?.features,
+              setNum: m.setNum,
+              live: m.live ? 1 : 0
+            }
+          });
+          addPending({ id: m.id, favName: fav, label: cur });
+        }
+
+        // Telegram: ΜΟΝΟ SAFE
+        if (cur === 'SAFE') {
+          const t = `SAFE: ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ''}`;
+          tryTg(t);
         }
       }
+
       lastLabelRef.current.set(m.id, cur);
     });
   }, [list, notificationsOn, audioOn]);
