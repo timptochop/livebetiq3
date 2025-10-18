@@ -1,6 +1,7 @@
 // src/components/LiveTennis.js
 // Clean, encoding-safe version. No UI layout changes. Sorting & behaviors preserved.
 // Shows "STARTS SOON" on the pill while keeping internal label "UPCOMING".
+// Ensures real player names (no "Player A") are logged in favName/tip.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
@@ -100,7 +101,8 @@ export default function LiveTennis({
           : Array.isArray(m.player)
           ? m.player
           : [];
-        const p1 = players[0] || {}, p2 = players[1] || {};
+        const p1 = players[0] || {};
+        const p2 = players[1] || {};
         const name1 = p1.name || p1['@name'] || '';
         const name2 = p2.name || p2['@name'] || '';
         const date = m.date || m['@date'] || '';
@@ -130,7 +132,7 @@ export default function LiveTennis({
 
       setRows(enriched);
 
-      // IMPORTANT: pass the RAW feed so finished matches can be auto-settled
+      // Pass RAW feed so finished matches can be auto-settled
       trySettleFinished(base);
 
     } catch (e) {
@@ -235,20 +237,33 @@ export default function LiveTennis({
           showToast(t, 3500);
         }
 
-        // Logging & pending only for SAFE/RISKY
+        // Logging & pending only for SAFE/RISKY — force real names in favName/tip
         if (cur === 'SAFE' || cur === 'RISKY') {
-          const fav = m.ai?.features?.favName || m.name1;
+          // 1) Favorite name from AI if non-empty, else fallback to name1
+          const fav = (m.ai?.features?.favName && String(m.ai.features.favName).trim())
+            ? m.ai.features.favName
+            : m.name1;
+
+          // 2) Tip: replace generic "Player A/B" with "<fav> to win"
+          const aiTip = (m.ai?.tip && String(m.ai.tip).trim()) || '';
+          const genericTip = /player\s*[ab]/i.test(aiTip);
+          const tip = genericTip ? `${fav} to win` : (aiTip || `${fav} to win`);
+
+          // 3) Log with enforced favName + contextual features
           logPrediction({
             matchId: m.id,
             label: cur,
             conf: m.ai?.conf || 0,
-            tip: m.ai?.tip || '',
+            tip,
             features: {
               ...m.ai?.features,
+              favName: fav,           // ensure real player name
               setNum: m.setNum,
               live: m.live ? 1 : 0
             }
           });
+
+          // 4) Track pending with real fav (for correct predicted on settle)
           addPending({ id: m.id, favName: fav, label: cur });
         }
 
