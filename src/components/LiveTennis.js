@@ -1,17 +1,29 @@
 // src/components/LiveTennis.js
+// Clean, encoding-safe version. No UI layout changes. Sorting & behaviors preserved.
+// Shows "STARTS SOON" on the pill while keeping internal label "UPCOMING".
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
 import { showToast } from '../utils/toast';
 import useLiveCount from '../hooks/useLiveCount';
 
-// logging helpers (drop-in, δεν αλλάζουν UI)
+// Logging helpers (drop-in; do not alter UI)
 import { logPrediction, addPending, trySettleFinished } from '../utils/predictionLogger';
 
-const FINISHED = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
+const FINISHED = new Set([
+  'finished',
+  'cancelled',
+  'retired',
+  'abandoned',
+  'postponed',
+  'walk over',
+]);
+
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
 const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
 
+// Safe integer extractor (handles "6:4", "06", "6.")
 const toInt = (v) => {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
@@ -20,6 +32,7 @@ const toInt = (v) => {
   return Number.isFinite(x) ? x : null;
 };
 
+// Derive current set number from player set scores
 function currentSetFromScores(players) {
   const p = Array.isArray(players) ? players : [];
   const a = p[0] || {}, b = p[1] || {};
@@ -30,14 +43,20 @@ function currentSetFromScores(players) {
   return k || 0;
 }
 
+// Parse start datetime from feed date/time (best-effort)
 function parseStart(dateStr, timeStr) {
   const d = String(dateStr || '').trim();
   const t = String(timeStr || '').trim();
   if (!d || !t) return null;
-  const dt = new Date(`${d}T${t}`);
-  return Number.isFinite(dt.getTime()) ? dt : null;
+
+  const dtA = new Date(`${d}T${t}`);
+  if (Number.isFinite(dtA.getTime())) return dtA;
+
+  const dtB = new Date(`${d} ${t}`);
+  return Number.isFinite(dtB.getTime()) ? dtB : null;
 }
 
+// Human-friendly countdown
 function formatDiff(ms) {
   if (ms <= 0) return 'any minute';
   const m = Math.floor(ms / 60000);
@@ -50,7 +69,7 @@ function formatDiff(ms) {
   return `${d}d ${rh}h`;
 }
 
-// optional, αγνοείται αν δεν υπάρχει /api/tg
+// Optional Telegram notifier (no-op if /api/tg missing)
 async function tryTg(text) {
   try {
     await fetch('/api/tg?text=' + encodeURIComponent(text));
@@ -60,7 +79,7 @@ async function tryTg(text) {
 export default function LiveTennis({
   onLiveCount = () => {},
   notificationsOn = true,
-  audioOn = true
+  audioOn = true,
 }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -71,13 +90,16 @@ export default function LiveTennis({
     try {
       const base = await fetchTennisLive();
       const keep = (Array.isArray(base) ? base : [])
-        .filter(m => !isFinishedLike(m.status || m['@status']));
+        .filter((m) => !isFinishedLike(m.status || m['@status']));
 
       const now = Date.now();
 
       const enriched = keep.map((m, idx) => {
-        const players = Array.isArray(m.players) ? m.players
-                      : Array.isArray(m.player)  ? m.player : [];
+        const players = Array.isArray(m.players)
+          ? m.players
+          : Array.isArray(m.player)
+          ? m.player
+          : [];
         const p1 = players[0] || {}, p2 = players[1] || {};
         const name1 = p1.name || p1['@name'] || '';
         const name2 = p2.name || p2['@name'] || '';
@@ -108,7 +130,7 @@ export default function LiveTennis({
 
       setRows(enriched);
 
-      // auto-settle τυχόν pending που τελείωσαν
+      // Try to settle any pending predictions that finished
       trySettleFinished(enriched);
 
     } catch (e) {
@@ -124,6 +146,7 @@ export default function LiveTennis({
     return () => clearInterval(t);
   }, []);
 
+  // Order: SAFE → RISKY → AVOID → SET 3/2/1 → UPCOMING (displayed as STARTS SOON)
   const labelPriority = {
     SAFE: 1,
     RISKY: 2,
@@ -145,6 +168,8 @@ export default function LiveTennis({
       } else if (!label || label === 'PENDING') {
         label = live ? `SET ${m.setNum || 1}` : 'UPCOMING';
       }
+
+      // Normalize "SET N"
       if (label && label.startsWith && label.startsWith('SET')) {
         const parts = label.split(/\s+/);
         const n = Number(parts[1]) || m.setNum || 1;
@@ -159,12 +184,19 @@ export default function LiveTennis({
       };
     });
 
+    // Sorting rules
     return items.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
+
+      // Within SET bucket keep 3 → 2 → 1
       if (a.order >= 4 && a.order <= 6 && b.order >= 4 && b.order <= 6) {
-        return a.order - b.order; // SET 3 -> SET 2 -> SET 1
+        return a.order - b.order;
       }
+
+      // For live, put higher set number first
       if (a.live && b.live) return (b.setNum || 0) - (a.setNum || 0);
+
+      // For upcoming, earliest start first
       if (a.uiLabel === 'UPCOMING' && b.uiLabel === 'UPCOMING') {
         const ax = a.startAt || 0, bx = b.startAt || 0;
         return ax - bx;
@@ -173,18 +205,18 @@ export default function LiveTennis({
     });
   }, [rows]);
 
-  // Ζωντανά entries για counter
+  // Live entries for counter
   const liveList = useMemo(() => list.filter(m => m.live), [list]);
 
-  // ενημέρωση TopBar μέσω event
+  // Update TopBar via custom hook
   useLiveCount(liveList);
 
-  // ειδοποίηση σε γονέα (αν χρειάζεται)
+  // Notify parent (if needed)
   useEffect(() => {
     onLiveCount(liveList.length);
   }, [liveList, onLiveCount]);
 
-  // ειδοποίηση όταν αλλάζει label + logging/pending + Telegram μόνο για SAFE
+  // Side-effects when labels change (sound, toast, logging, pending tracking, optional TG)
   useEffect(() => {
     list.forEach((m) => {
       const cur = m.uiLabel || null;
@@ -192,17 +224,18 @@ export default function LiveTennis({
       const isPred = cur === 'SAFE' || cur === 'RISKY' || cur === 'AVOID';
 
       if (isPred && cur !== prev) {
-        // Ήχος μόνο στο SAFE
+        // Play sound only for SAFE
         if (cur === 'SAFE' && audioOn) {
           try { new Audio('/notify.mp3').play().catch(() => {}); } catch {}
         }
-        // Toast (αν είναι ενεργό το tab)
+
+        // Toast if tab is active
         if (notificationsOn) {
           const t = `${cur}: ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ''}`;
           showToast(t, 3500);
         }
 
-        // Logging & pending μόνο για SAFE/RISKY
+        // Logging & pending only for SAFE/RISKY
         if (cur === 'SAFE' || cur === 'RISKY') {
           const fav = m.ai?.features?.favName || m.name1;
           logPrediction({
@@ -219,7 +252,7 @@ export default function LiveTennis({
           addPending({ id: m.id, favName: fav, label: cur });
         }
 
-        // Telegram: ΜΟΝΟ SAFE
+        // Telegram: ONLY SAFE
         if (cur === 'SAFE') {
           const t = `SAFE: ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ''}`;
           tryTg(t);
@@ -230,13 +263,14 @@ export default function LiveTennis({
     });
   }, [list, notificationsOn, audioOn]);
 
+  // UI helpers
   const Pill = ({ label }) => {
     let bg = '#5a5f68', fg = '#fff', text = label;
     if (label === 'SAFE') { bg = '#1fdd73'; text = 'SAFE'; }
     else if (label === 'RISKY') { bg = '#ffbf0a'; fg = '#151515'; }
     else if (label === 'AVOID') { bg = '#e53935'; }
     else if (label && label.startsWith('SET')) { bg = '#6e42c1'; }
-    else if (label === 'UPCOMING') { bg = '#3a4452'; }
+    else if (label === 'UPCOMING') { bg = '#3a4452'; text = 'STARTS SOON'; }
     return (
       <span style={{
         padding: '10px 14px',
