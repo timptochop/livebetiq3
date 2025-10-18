@@ -1,11 +1,17 @@
 // src/utils/predictionLogger.js
-// Drop-in: κρατά pending SAFE/RISKY, κάνει auto-settle, στέλνει σε /api/log-prediction.
-// Συμβατό με το παλιό API: default export log(event,data), + logPrediction(payload)
+// Unified logger for LiveBet IQ v3.10
+// - logPrediction(payload) -> POST /api/predictions (event:'prediction')
+// - addPending({id, favName, label})
+// - trySettleFinished(rawFeed) -> auto result reporting via reportResult()
+// Guarantees: favName always real (no "Player A"); predicted uses pending.favName
+
+import reportResult from './reportResult';
 
 const ENABLED = String(process.env.REACT_APP_LOG_PREDICTIONS || '0') === '1';
-const MODEL = process.env.REACT_APP_AI_ENGINE || 'v2';
-const LS_KEY = 'LB3_PENDING_PICKS';
+const MODEL   = process.env.REACT_APP_AI_ENGINE || 'v3.10';
+const LS_KEY  = 'lbq_pending_v1';
 
+// -------- SID helpers --------
 function getSid() {
   try {
     const k = 'lbq.sid';
@@ -20,6 +26,7 @@ function getSid() {
   }
 }
 
+// -------- Dedupe predictor chatter (optional) --------
 const recent = new Map();
 function dedupe(key, ttlMs = 10_000) {
   const now = Date.now();
@@ -30,143 +37,182 @@ function dedupe(key, ttlMs = 10_000) {
   return false;
 }
 
-function slimData(data = {}) {
-  const clone = { ...data };
-  if (clone.features && typeof clone.features === 'object') {
-    const { pOdds, momentum, drift, setNum, live, ..._rest } = clone.features;
-    clone.features = { pOdds, momentum, drift, setNum, live };
-  }
-  if (typeof clone.conf === 'number') clone.conf = Math.round(clone.conf * 1000) / 1000;
-  return clone;
-}
-
-function sendToServer(payload) {
-  try {
-    // πάντα κονσόλα αν ENABLED
-    if (ENABLED) { try { console.debug('[pred-log]', payload); } catch {} }
-    const body = JSON.stringify(payload);
-    if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
-      const blob = new Blob([body], { type: 'application/json' });
-      navigator.sendBeacon('/api/log-prediction', blob);
-      return;
-    }
-    if (typeof fetch === 'function') {
-      fetch('/api/log-prediction', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        keepalive: true,
-      }).catch(() => {});
-    }
-  } catch {}
-}
-
-export default function log(event, data = {}) {
-  if (!ENABLED) return;
-
-  const base = {
-    ts: new Date().toISOString(),
-    sid: getSid(),
-    app: 'livebetiq3',
-    model: MODEL,
-    event,
-    data: slimData(data),
-  };
-
-  const d = base.data || {};
-  const key = [event || '', d.matchId || d.id || '', d.label || '', Math.round((d.conf || 0) * 100)].join('|');
-  if (dedupe(key)) return;
-
-  sendToServer(base);
-}
-
-export function logPrediction(payload = {}) {
-  // Για συμβατότητα με το παλιό usage
-  return log('prediction', payload);
-}
-
-// ---------- Pending & auto-settle ----------
-
+// -------- Local storage for pendings --------
 function loadPending() {
   try {
-    const raw = localStorage.getItem(LS_KEY);
-    return Array.isArray(JSON.parse(raw)) ? JSON.parse(raw) : [];
-  } catch { return []; }
+    const raw = localStorage.getItem(LS_KEY) || '[]';
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
 }
 function savePending(list) {
   try { localStorage.setItem(LS_KEY, JSON.stringify(list)); } catch {}
 }
 
+// =====================================================
+// =============== PUBLIC API FUNCTIONS ================
+// =====================================================
+
 /**
- * Κάλεσέ το όταν εμφανιστεί ΝΕΟ label SAFE/RISKY:
- * addPending({ id, favName, label })
+ * Persist a pending pick so we can settle with the correct predicted later.
+ * @param {{id:string, favName:string, label:'SAFE'|'RISKY'}} p
  */
-export function addPending({ id, favName, label }) {
-  if (!id || !favName || !label) return;
-  const list = loadPending().filter(x => x.id !== id); // 1 ανά match
-  list.push({ id, favName, label, ts: Date.now() });
+export function addPending(p) {
+  if (!p || !p.id) return;
+  const favName = (p.favName && String(p.favName).trim()) || null;
+  const label   = p.label || null;
+  const list = loadPending().filter(x => x.id !== p.id);
+  list.push({ id: p.id, favName, label, ts: Date.now() });
   savePending(list);
 }
 
 /**
- * Υπολόγισε νικητή από per-set σκορ.
+ * Send a prediction to the unified endpoint.
+ * payload shape:
+ * {
+ *   matchId, label, conf, tip, features:{ favName, favProb, favOdds, setNum, live, ... }
+ * }
  */
-function computeWinnerFromSets(match) {
+export async function logPrediction(payload = {}) {
+  if (!ENABLED) return { ok: true, skipped: 'logging disabled' };
+
+  const matchId = payload.matchId || payload.id;
+  const label   = payload.label;
+  if (!matchId || !label) return { ok: false, error: 'missing matchId/label' };
+
+  // Enforce real favName in features & human tip
+  const favName = (payload.features?.favName && String(payload.features.favName).trim())
+    ? payload.features.favName
+    : null;
+  const aiTip = (payload.tip && String(payload.tip).trim()) || '';
+  const needsTip = !aiTip || /player\s*[ab]/i.test(aiTip);
+  const tip = needsTip && favName ? `${favName} to win` : aiTip;
+
+  const body = {
+    ts: new Date().toISOString(),
+    sid: getSid(),
+    app: 'livebetiq3',
+    model: MODEL,
+    event: 'prediction',
+    data: {
+      matchId,
+      label,
+      conf: Number(payload.conf) || 0,
+      tip,
+      features: {
+        ...(payload.features || {}),
+        favName, // may be null; frontend already tries to force real name
+      },
+    },
+  };
+
+  // Small dedupe guard
+  const key = [matchId, label, Math.round((body.data.conf || 0) * 100)].join('|');
+  if (dedupe(key)) return { ok: true, deduped: true };
+
   try {
-    const players = Array.isArray(match.players) ? match.players
-                  : (Array.isArray(match.player) ? match.player : []);
-    const A = players[0] || {}, B = players[1] || {};
-    let setsA = 0, setsB = 0;
-    for (let i=1;i<=5;i++){
-      const a = +(A['s'+i] ?? NaN), b = +(B['s'+i] ?? NaN);
-      if (Number.isFinite(a) && Number.isFinite(b)) {
-        if (a>b) setsA++; else if (b>a) setsB++;
-      }
-    }
-    if (setsA>setsB) return (A.name || A['@name'] || 'Player A');
-    if (setsB>setsA) return (B.name || B['@name'] || 'Player B');
-    return null;
-  } catch { return null; }
+    const resp = await fetch('/api/predictions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      keepalive: true,
+    });
+    const json = await resp.json().catch(() => ({}));
+    return json?.ok ? json : { ok: false, error: 'bad response', response: json };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
 }
 
 /**
- * Κάλεσέ το μετά το setRows(enriched): trySettleFinished(enriched)
- * Θα στείλει SETTLE events για τελειωμένους αγώνες και θα καθαρίσει τα pending.
+ * Auto-settle finished matches from the RAW feed (must include finished).
+ * @param {Array<any>} feed raw array from fetchTennisLive()
  */
-export function trySettleFinished(rows) {
-  const list = loadPending();
-  if (!list.length) return;
+export async function trySettleFinished(feed) {
+  const pending = loadPending();
+  if (!pending.length) return;
 
-  const byId = new Map(rows.map(r => [r.id, r]));
-  const stillOpen = [];
-  list.forEach(item => {
-    const m = byId.get(item.id);
-    const status = String(m?.status || m?.['@status'] || '').toLowerCase();
-    const finishedLike = /(finished|retired|walk ?over|abandoned|cancelled|postponed)/.test(status);
+  const arr = Array.isArray(feed) ? feed : [];
+  if (!arr.length) return;
 
-    if (!m || finishedLike) {
-      const winner = m ? computeWinnerFromSets(m) : null;
-      const result = winner && item.favName
-        ? (winner.trim().toLowerCase() === item.favName.trim().toLowerCase() ? 'WIN' : 'LOSE')
-        : 'UNKNOWN';
+  const byIdPending = new Map(pending.map(x => [x.id, x]));
 
-      sendToServer({
-        ts: new Date().toISOString(),
-        sid: getSid(),
-        app: 'livebetiq3',
-        model: MODEL,
-        event: 'settle',
-        data: {
-          id: item.id,
-          pickLabel: item.label,
-          favName: item.favName,
-          winner: winner || 'n/a',
-          result,
-        },
-      });
-    } else {
-      stillOpen.push(item);
+  // Helper: normalize names for comparison
+  const norm = (s) => String(s || '').trim().toLowerCase();
+
+  // Extract winner from a match object
+  const winnerFromMatch = (m) => {
+    const direct = m?.winner || m?.['@winner'];
+    if (direct) return String(direct);
+
+    const players = Array.isArray(m.players) ? m.players
+                 : Array.isArray(m.player)  ? m.player : [];
+    const p1 = players[0] || {}, p2 = players[1] || {};
+    const name1 = p1.name || p1['@name'] || '';
+    const name2 = p2.name || p2['@name'] || '';
+
+    const toInt = (v) => {
+      if (v === null || v === undefined) return null;
+      const s = String(v).trim();
+      if (!s) return null;
+      const x = parseInt(s.split(/[.:]/)[0], 10);
+      return Number.isFinite(x) ? x : null;
+    };
+    const sA = [toInt(p1.s1), toInt(p1.s2), toInt(p1.s3), toInt(p1.s4), toInt(p1.s5)];
+    const sB = [toInt(p2.s1), toInt(p2.s2), toInt(p2.s3), toInt(p2.s4), toInt(p2.s5)];
+    let a = 0, b = 0;
+    for (let i = 0; i < 5; i++) {
+      const A = sA[i], B = sB[i];
+      if (A === null || B === null) continue;
+      if (A > B) a++; else if (B > A) b++;
     }
+    if (a > b) return name1 || null;
+    if (b > a) return name2 || null;
+    return null;
+  };
+
+  const finished = arr.filter((m) => {
+    const s = String(m?.status || m?.['@status'] || '').toLowerCase();
+    return s === 'finished' || s === 'retired' || s === 'walk over' || s === 'walkover';
   });
-  savePending(stillOpen);
+
+  if (!finished.length) return;
+
+  const stillPending = [];
+
+  for (const m of finished) {
+    const id = m?.id || m?.['@id'];
+    if (!id) continue;
+
+    const pend = byIdPending.get(id);
+    if (!pend) continue; // we didn't predict this one (or already settled)
+
+    const predicted = pend.favName || null;
+    const winner    = winnerFromMatch(m);
+
+    if (!predicted || !winner) {
+      // not enough info; keep it for next cycle
+      stillPending.push(pend);
+      continue;
+    }
+
+    const result = norm(predicted) === norm(winner) ? 'win' : 'loss';
+
+    // Send result to unified endpoint
+    await reportResult({ matchId: id, result, winner, predicted });
+    // Do not re-add to stillPending (settled)
+  }
+
+  savePending(stillPending);
+}
+
+// -----------------------------------------------------
+// Backwards compatibility default export
+// Some old code might call: log('prediction', payload)
+export default function log(event, data = {}) {
+  if (event === 'prediction') return logPrediction(data);
+  // No other events supported in new contract
+  return { ok: true, ignored: true };
 }
