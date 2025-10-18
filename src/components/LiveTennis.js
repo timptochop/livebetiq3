@@ -88,7 +88,7 @@ export default function LiveTennis({
   async function load() {
     setLoading(true);
     try {
-      const base = await fetchTennisLive();
+      const base = await fetchTennisLive(); // raw feed (includes finished)
       const keep = (Array.isArray(base) ? base : [])
         .filter((m) => !isFinishedLike(m.status || m['@status']));
 
@@ -130,8 +130,8 @@ export default function LiveTennis({
 
       setRows(enriched);
 
-      // Try to settle any pending predictions that finished
-      trySettleFinished(enriched);
+      // IMPORTANT: pass the RAW feed so finished matches can be auto-settled
+      trySettleFinished(base);
 
     } catch (e) {
       setRows([]);
