@@ -8,6 +8,10 @@ import App from './App';
 import { exposeLiveCounter } from './utils/liveCounter';
 import { ensurePermissionIfEnabled } from './push/notifyControl';
 
+// ⬇️ Προσθήκη: side-effect import για να εκτελεστεί το hook
+// και να εκτεθεί στο window η LBQ_reportFinishedMatch
+import './ai/resultHook';
+
 exposeLiveCounter();
 ensurePermissionIfEnabled();
 
