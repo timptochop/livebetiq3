@@ -1,5 +1,5 @@
 // src/ai/feedHook.js
-import LBQ_autoReport from './resultHook';
+import { LBQ_reportIfFinished } from './resultHook';
 
 export async function reportIfFinished(match) {
   if (!match) return { ok: false, reason: 'no-match' };
@@ -7,11 +7,13 @@ export async function reportIfFinished(match) {
   const mid = String(matchId || id || '');
   if (!mid) return { ok: false, reason: 'no-id' };
   if (status !== 'finished') return { ok: false, reason: 'not-finished' };
-  return await LBQ_autoReport({
+
+  return await LBQ_reportIfFinished({
     matchId: mid,
     status: 'finished',
     winner: winner || '',
     predicted: predicted || winner || ''
   });
 }
+
 export default reportIfFinished;
