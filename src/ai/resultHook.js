@@ -1,4 +1,3 @@
-// src/ai/resultHook.js
 import { sendResult } from '../lib/log';
 
 export async function reportIfFinished({ matchId, status, winner, predicted }) {
@@ -7,8 +6,11 @@ export async function reportIfFinished({ matchId, status, winner, predicted }) {
   return await sendResult({ matchId, result, winner, predicted });
 }
 
+export default async function LBQ_autoReport(args) {
+  return reportIfFinished(args);
+}
+
 if (typeof window !== 'undefined') {
   window.LBQ_reportIfFinished = reportIfFinished;
-  window.LBQ_autoReport = async ({ matchId, winner, predicted }) =>
-    reportIfFinished({ matchId, status: 'finished', winner, predicted });
+  window.LBQ_autoReport = LBQ_autoReport;
 }
