@@ -1,16 +1,29 @@
-import { sendResult } from '../lib/log';
+// ΜΗΝ βάλεις default export εδώ.
+export async function LBQ_reportIfFinished({ matchId, status, winner, predicted }) {
+  if (!matchId) return { ok: false, reason: 'no-id' };
+  if (status !== 'finished') return { ok: false, reason: 'not-finished' };
 
-export async function reportIfFinished({ matchId, status, winner, predicted }) {
-  if (!matchId || status !== 'finished') return { ok: true, skipped: true };
-  const result = winner && predicted && winner === predicted ? 'win' : 'loss';
-  return await sendResult({ matchId, result, winner, predicted });
-}
+  const result =
+    winner && predicted ? (winner === predicted ? 'win' : 'loss') : 'loss';
 
-export default async function LBQ_autoReport(args) {
-  return reportIfFinished(args);
+  try {
+    const res = await fetch('/api/predictions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: 'result',
+        matchId,
+        result,
+        winner,
+        predicted
+      })
+    });
+    return await res.json();
+  } catch {
+    return { ok: false, reason: 'fetch-failed' };
+  }
 }
 
 if (typeof window !== 'undefined') {
-  window.LBQ_reportIfFinished = reportIfFinished;
-  window.LBQ_autoReport = LBQ_autoReport;
+  window.LBQ_reportIfFinished = LBQ_reportIfFinished;
 }
