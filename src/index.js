@@ -6,8 +6,8 @@ import App from './App';
 
 import { exposeLiveCounter } from './utils/liveCounter';
 import { ensurePermissionIfEnabled } from './push/notifyControl';
-
 import { reportIfFinished } from './ai/feedHook';
+import './ai/exposeDev';
 
 exposeLiveCounter();
 ensurePermissionIfEnabled();
