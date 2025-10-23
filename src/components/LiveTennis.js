@@ -157,6 +157,7 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
 
   const liveList = useMemo(() => list.filter(m => m.live), [list]);
   useLiveCount(liveList);
+
   useEffect(() => { onLiveCount(liveList.length); }, [liveList, onLiveCount]);
 
   useEffect(() => {

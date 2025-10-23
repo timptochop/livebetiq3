@@ -8,9 +8,11 @@ import { exposeLiveCounter } from './utils/liveCounter';
 import { ensurePermissionIfEnabled } from './push/notifyControl';
 import { reportIfFinished } from './ai/feedHook';
 import './ai/exposeDev';
+import { loadModelAndApply } from './ai/modelLoader';
 
 exposeLiveCounter();
 ensurePermissionIfEnabled();
+loadModelAndApply();
 
 if (typeof window !== 'undefined') {
   window.LBQ_reportIfFinished = reportIfFinished;
