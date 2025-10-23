@@ -1,30 +1,16 @@
 // src/components/LiveTennis.js
-// Clean, encoding-safe version. No UI layout changes. Sorting & behaviors preserved.
-// Shows "STARTS SOON" on the pill while keeping internal label "UPCOMING".
-// Ensures real player names (no "Player A") are logged in favName/tip.
-
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import fetchTennisLive from '../utils/fetchTennisLive';
 import analyzeMatch from '../utils/analyzeMatch';
 import { showToast } from '../utils/toast';
 import useLiveCount from '../hooks/useLiveCount';
-
-// Logging helpers (drop-in; do not alter UI)
 import { logPrediction, addPending, trySettleFinished } from '../utils/predictionLogger';
+import { maybeLogResult } from '../ai/autoLogger';
 
-const FINISHED = new Set([
-  'finished',
-  'cancelled',
-  'retired',
-  'abandoned',
-  'postponed',
-  'walk over',
-]);
-
+const FINISHED = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
 const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
 
-// Safe integer extractor (handles "6:4", "06", "6.")
 const toInt = (v) => {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
@@ -33,7 +19,6 @@ const toInt = (v) => {
   return Number.isFinite(x) ? x : null;
 };
 
-// Derive current set number from player set scores
 function currentSetFromScores(players) {
   const p = Array.isArray(players) ? players : [];
   const a = p[0] || {}, b = p[1] || {};
@@ -44,20 +29,16 @@ function currentSetFromScores(players) {
   return k || 0;
 }
 
-// Parse start datetime from feed date/time (best-effort)
 function parseStart(dateStr, timeStr) {
   const d = String(dateStr || '').trim();
   const t = String(timeStr || '').trim();
   if (!d || !t) return null;
-
   const dtA = new Date(`${d}T${t}`);
   if (Number.isFinite(dtA.getTime())) return dtA;
-
   const dtB = new Date(`${d} ${t}`);
   return Number.isFinite(dtB.getTime()) ? dtB : null;
 }
 
-// Human-friendly countdown
 function formatDiff(ms) {
   if (ms <= 0) return 'any minute';
   const m = Math.floor(ms / 60000);
@@ -70,18 +51,11 @@ function formatDiff(ms) {
   return `${d}d ${rh}h`;
 }
 
-// Optional Telegram notifier (no-op if /api/tg missing)
 async function tryTg(text) {
-  try {
-    await fetch('/api/tg?text=' + encodeURIComponent(text));
-  } catch {}
+  try { await fetch('/api/tg?text=' + encodeURIComponent(text)); } catch {}
 }
 
-export default function LiveTennis({
-  onLiveCount = () => {},
-  notificationsOn = true,
-  audioOn = true,
-}) {
+export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = true, audioOn = true }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const lastLabelRef = useRef(new Map());
@@ -89,18 +63,15 @@ export default function LiveTennis({
   async function load() {
     setLoading(true);
     try {
-      const base = await fetchTennisLive(); // raw feed (includes finished)
-      const keep = (Array.isArray(base) ? base : [])
-        .filter((m) => !isFinishedLike(m.status || m['@status']));
+      const base = await fetchTennisLive();
 
+      await Promise.allSettled((Array.isArray(base) ? base : []).map(m => maybeLogResult(m)));
+
+      const keep = (Array.isArray(base) ? base : []).filter((m) => !isFinishedLike(m.status || m['@status']));
       const now = Date.now();
 
       const enriched = keep.map((m, idx) => {
-        const players = Array.isArray(m.players)
-          ? m.players
-          : Array.isArray(m.player)
-          ? m.player
-          : [];
+        const players = Array.isArray(m.players) ? m.players : (Array.isArray(m.player) ? m.player : []);
         const p1 = players[0] || {};
         const p2 = players[1] || {};
         const name1 = p1.name || p1['@name'] || '';
@@ -131,10 +102,7 @@ export default function LiveTennis({
       });
 
       setRows(enriched);
-
-      // Pass RAW feed so finished matches can be auto-settled
       trySettleFinished(base);
-
     } catch (e) {
       setRows([]);
     } finally {
@@ -148,16 +116,7 @@ export default function LiveTennis({
     return () => clearInterval(t);
   }, []);
 
-  // Order: SAFE → RISKY → AVOID → SET 3/2/1 → UPCOMING (displayed as STARTS SOON)
-  const labelPriority = {
-    SAFE: 1,
-    RISKY: 2,
-    AVOID: 3,
-    'SET 3': 4,
-    'SET 2': 5,
-    'SET 1': 6,
-    UPCOMING: 7
-  };
+  const labelPriority = { SAFE: 1, RISKY: 2, AVOID: 3, 'SET 3': 4, 'SET 2': 5, 'SET 1': 6, UPCOMING: 7 };
 
   const list = useMemo(() => {
     const items = rows.map((m) => {
@@ -165,40 +124,22 @@ export default function LiveTennis({
       const live = !!s && !isUpcoming(s) && !isFinishedLike(s);
       let label = m.ai?.label || null;
 
-      if (!live && isUpcoming(s)) {
-        label = 'UPCOMING';
-      } else if (!label || label === 'PENDING') {
-        label = live ? `SET ${m.setNum || 1}` : 'UPCOMING';
-      }
+      if (!live && isUpcoming(s)) label = 'UPCOMING';
+      else if (!label || label === 'PENDING') label = live ? `SET ${m.setNum || 1}` : 'UPCOMING';
 
-      // Normalize "SET N"
       if (label && label.startsWith && label.startsWith('SET')) {
         const parts = label.split(/\s+/);
         const n = Number(parts[1]) || m.setNum || 1;
         label = `SET ${n}`;
       }
 
-      return {
-        ...m,
-        live,
-        uiLabel: label,
-        order: labelPriority[label] || 99,
-      };
+      return { ...m, live, uiLabel: label, order: labelPriority[label] || 99 };
     });
 
-    // Sorting rules
     return items.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
-
-      // Within SET bucket keep 3 → 2 → 1
-      if (a.order >= 4 && a.order <= 6 && b.order >= 4 && b.order <= 6) {
-        return a.order - b.order;
-      }
-
-      // For live, put higher set number first
+      if (a.order >= 4 && a.order <= 6 && b.order >= 4 && b.order <= 6) return a.order - b.order;
       if (a.live && b.live) return (b.setNum || 0) - (a.setNum || 0);
-
-      // For upcoming, earliest start first
       if (a.uiLabel === 'UPCOMING' && b.uiLabel === 'UPCOMING') {
         const ax = a.startAt || 0, bx = b.startAt || 0;
         return ax - bx;
@@ -207,18 +148,11 @@ export default function LiveTennis({
     });
   }, [rows]);
 
-  // Live entries for counter
   const liveList = useMemo(() => list.filter(m => m.live), [list]);
-
-  // Update TopBar via custom hook
   useLiveCount(liveList);
 
-  // Notify parent (if needed)
-  useEffect(() => {
-    onLiveCount(liveList.length);
-  }, [liveList, onLiveCount]);
+  useEffect(() => { onLiveCount(liveList.length); }, [liveList, onLiveCount]);
 
-  // Side-effects when labels change (sound, toast, logging, pending tracking, optional TG)
   useEffect(() => {
     list.forEach((m) => {
       const cur = m.uiLabel || null;
@@ -226,48 +160,30 @@ export default function LiveTennis({
       const isPred = cur === 'SAFE' || cur === 'RISKY' || cur === 'AVOID';
 
       if (isPred && cur !== prev) {
-        // Play sound only for SAFE
-        if (cur === 'SAFE' && audioOn) {
-          try { new Audio('/notify.mp3').play().catch(() => {}); } catch {}
-        }
-
-        // Toast if tab is active
+        if (cur === 'SAFE' && audioOn) { try { new Audio('/notify.mp3').play().catch(() => {}); } catch {} }
         if (notificationsOn) {
           const t = `${cur}: ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ''}`;
           showToast(t, 3500);
         }
 
-        // Logging & pending only for SAFE/RISKY — force real names in favName/tip
         if (cur === 'SAFE' || cur === 'RISKY') {
-          // 1) Favorite name from AI if non-empty, else fallback to name1
           const fav = (m.ai?.features?.favName && String(m.ai.features.favName).trim())
-            ? m.ai.features.favName
-            : m.name1;
-
-          // 2) Tip: replace generic "Player A/B" with "<fav> to win"
+            ? m.ai.features.favName : m.name1;
           const aiTip = (m.ai?.tip && String(m.ai.tip).trim()) || '';
           const genericTip = /player\s*[ab]/i.test(aiTip);
           const tip = genericTip ? `${fav} to win` : (aiTip || `${fav} to win`);
 
-          // 3) Log with enforced favName + contextual features
           logPrediction({
             matchId: m.id,
             label: cur,
             conf: m.ai?.conf || 0,
             tip,
-            features: {
-              ...m.ai?.features,
-              favName: fav,           // ensure real player name
-              setNum: m.setNum,
-              live: m.live ? 1 : 0
-            }
+            features: { ...m.ai?.features, favName: fav, setNum: m.setNum, live: m.live ? 1 : 0 }
           });
 
-          // 4) Track pending with real fav (for correct predicted on settle)
           addPending({ id: m.id, favName: fav, label: cur });
         }
 
-        // Telegram: ONLY SAFE
         if (cur === 'SAFE') {
           const t = `SAFE: ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ''}`;
           tryTg(t);
@@ -278,7 +194,6 @@ export default function LiveTennis({
     });
   }, [list, notificationsOn, audioOn]);
 
-  // UI helpers
   const Pill = ({ label }) => {
     let bg = '#5a5f68', fg = '#fff', text = label;
     if (label === 'SAFE') { bg = '#1fdd73'; text = 'SAFE'; }
@@ -287,41 +202,20 @@ export default function LiveTennis({
     else if (label && label.startsWith('SET')) { bg = '#6e42c1'; }
     else if (label === 'UPCOMING') { bg = '#3a4452'; text = 'STARTS SOON'; }
     return (
-      <span style={{
-        padding: '10px 14px',
-        borderRadius: 14,
-        fontWeight: 800,
-        background: bg, color: fg, letterSpacing: .5,
-        boxShadow: '0 6px 18px rgba(0,0,0,0.25)',
-        display: 'inline-block', minWidth: 96, textAlign: 'center'
-      }}>{text}</span>
+      <span style={{ padding: '10px 14px', borderRadius: 14, fontWeight: 800, background: bg, color: fg, letterSpacing: .5, boxShadow: '0 6px 18px rgba(0,0,0,0.25)', display: 'inline-block', minWidth: 96, textAlign: 'center' }}>{text}</span>
     );
   };
 
   const Dot = ({ on }) => (
-    <span style={{
-      width: 10, height: 10, borderRadius: 999, display: 'inline-block',
-      background: on ? '#1fdd73' : '#e53935',
-      boxShadow: on ? '0 0 0 2px rgba(31,221,115,0.25)' : 'none',
-    }} />
+    <span style={{ width: 10, height: 10, borderRadius: 999, display: 'inline-block', background: on ? '#1fdd73' : '#e53935', boxShadow: on ? '0 0 0 2px rgba(31,221,115,0.25)' : 'none' }} />
   );
 
   return (
     <div style={{ color: '#fff' }}>
-      {loading && list.length === 0 ? (
-        <div style={{ color: '#cfd3d7', padding: '8px 2px' }}>Loading...</div>
-      ) : null}
-
+      {loading && list.length === 0 ? (<div style={{ color: '#cfd3d7', padding: '8px 2px' }}>Loading...</div>) : null}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {list.map((m) => (
-          <div key={m.id} style={{
-            borderRadius: 18,
-            background: '#1b1e22',
-            border: '1px solid #22272c',
-            boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
-            padding: '14px 16px',
-            display: 'flex', alignItems: 'center', gap: 12,
-          }}>
+          <div key={m.id} style={{ borderRadius: 18, background: '#1b1e22', border: '1px solid #22272c', boxShadow: '0 10px 30px rgba(0,0,0,0.35)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
             <Dot on={m.live} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.25, color: '#fff' }}>
@@ -331,32 +225,17 @@ export default function LiveTennis({
               </div>
               <div style={{ marginTop: 6, color: '#c2c7cc', fontSize: 14 }}>
                 {m.date} {m.time} · {m.categoryName}
-                {m.uiLabel === 'UPCOMING' && (
-                  <span style={{ marginLeft: 8, color: '#9fb0c3' }}>
-                    — starts in {m.startInText || 'n/a'}
-                  </span>
-                )}
+                {m.uiLabel === 'UPCOMING' && (<span style={{ marginLeft: 8, color: '#9fb0c3' }}>— starts in {m.startInText || 'n/a'}</span>)}
               </div>
               {(m.ai?.label === 'SAFE' || m.ai?.label === 'RISKY') && m.ai?.tip && (
-                <div style={{ marginTop: 6, fontSize: 13, fontWeight: 800, color: '#1fdd73' }}>
-                  TIP: {m.ai.tip}
-                </div>
+                <div style={{ marginTop: 6, fontSize: 13, fontWeight: 800, color: '#1fdd73' }}>TIP: {m.ai.tip}</div>
               )}
             </div>
             <Pill label={m.uiLabel} />
           </div>
         ))}
-
         {list.length === 0 && !loading && (
-          <div style={{
-            marginTop: 12,
-            padding: '14px 16px',
-            borderRadius: 12,
-            background: '#121416',
-            border: '1px solid #22272c',
-            color: '#c7d1dc',
-            fontSize: 13,
-          }}>
+          <div style={{ marginTop: 12, padding: '14px 16px', borderRadius: 12, background: '#121416', border: '1px solid #22272c', color: '#c7d1dc', fontSize: 13 }}>
             No live/upcoming matches found.
           </div>
         )}
