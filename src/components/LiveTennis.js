@@ -6,6 +6,7 @@ import { showToast } from '../utils/toast';
 import useLiveCount from '../hooks/useLiveCount';
 import { logPrediction, addPending, trySettleFinished } from '../utils/predictionLogger';
 import { maybeLogResult } from '../ai/autoLogger';
+import { ingestBatch } from '../ai/adaptTuner';
 
 const FINISHED = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
@@ -102,13 +103,12 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
       });
 
       setRows(enriched);
+      ingestBatch(enriched);
 
-      // μία ελεγχόμενη κλήση προς autoLogger (δεν στέλνει τίποτα αν το flag είναι 0)
       await Promise.allSettled(
         (Array.isArray(base) ? base : []).map((m) => maybeLogResult(m))
       );
 
-      // settle τυχόν τελειωμένα
       trySettleFinished(base);
     } catch (e) {
       setRows([]);
@@ -157,7 +157,6 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
 
   const liveList = useMemo(() => list.filter(m => m.live), [list]);
   useLiveCount(liveList);
-
   useEffect(() => { onLiveCount(liveList.length); }, [liveList, onLiveCount]);
 
   useEffect(() => {
