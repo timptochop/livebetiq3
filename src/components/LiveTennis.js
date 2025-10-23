@@ -65,9 +65,9 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
     try {
       const base = await fetchTennisLive();
 
-      await Promise.allSettled((Array.isArray(base) ? base : []).map(m => maybeLogResult(m)));
-
-      const keep = (Array.isArray(base) ? base : []).filter((m) => !isFinishedLike(m.status || m['@status']));
+      const keep = (Array.isArray(base) ? base : []).filter(
+        (m) => !isFinishedLike(m.status || m['@status'])
+      );
       const now = Date.now();
 
       const enriched = keep.map((m, idx) => {
@@ -102,6 +102,13 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
       });
 
       setRows(enriched);
+
+      // μία ελεγχόμενη κλήση προς autoLogger (δεν στέλνει τίποτα αν το flag είναι 0)
+      await Promise.allSettled(
+        (Array.isArray(base) ? base : []).map((m) => maybeLogResult(m))
+      );
+
+      // settle τυχόν τελειωμένα
       trySettleFinished(base);
     } catch (e) {
       setRows([]);
