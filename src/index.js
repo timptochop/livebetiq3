@@ -8,11 +8,10 @@ import { exposeLiveCounter } from './utils/liveCounter';
 import { ensurePermissionIfEnabled } from './push/notifyControl';
 import { reportIfFinished } from './ai/feedHook';
 import './ai/exposeDev';
-import { loadModelAndApply } from './ai/modelLoader';
+import { loadModelFromServer } from './ai/modelBootstrap';
 
 exposeLiveCounter();
 ensurePermissionIfEnabled();
-loadModelAndApply();
 
 if (typeof window !== 'undefined') {
   window.LBQ_reportIfFinished = reportIfFinished;
@@ -21,3 +20,6 @@ if (typeof window !== 'undefined') {
 const container = document.getElementById('root');
 const root = createRoot(container);
 root.render(<App />);
+
+// auto-fetch μοντέλο (cutoffs) στην εκκίνηση
+loadModelFromServer().catch(() => {});
