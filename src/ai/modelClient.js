@@ -3,7 +3,9 @@ import { setCutoffsRuntime } from './adaptTuner';
 
 function modelUrl() {
   try {
-    if (typeof window !== 'undefined' && window.__LBQ_WEBAPP_URL) return String(window.__LBQ_WEBAPP_URL);
+    if (typeof window !== 'undefined' && window.__LBQ_WEBAPP_URL) {
+      return String(window.__LBQ_WEBAPP_URL);
+    }
     return String(process.env.REACT_APP_MODEL_URL || '');
   } catch {
     return '';
@@ -12,7 +14,9 @@ function modelUrl() {
 
 function modelSecret() {
   try {
-    if (typeof window !== 'undefined' && window.__LBQ_SECRET) return String(window.__LBQ_SECRET);
+    if (typeof window !== 'undefined' && window.__LBQ_SECRET) {
+      return String(window.__LBQ_SECRET);
+    }
     return String(process.env.REACT_APP_LBQ_SECRET || '');
   } catch {
     return '';
@@ -23,20 +27,25 @@ function normalizeCutoffs(src) {
   if (!src || typeof src !== 'object') return null;
 
   // υποστηρίζουμε και παλιά και νέα σχήματα
-  let thrSafe =
+  const thrSafe =
     typeof src.thrSafe === 'number' ? src.thrSafe :
     typeof src.safeConf === 'number' ? src.safeConf :
-    typeof src.minSAFE === 'number' ? src.minSAFE : null;
+    typeof src.minSAFE  === 'number' ? src.minSAFE  : null;
 
-  let thrRisky =
+  const thrRisky =
     typeof src.thrRisky === 'number' ? src.thrRisky :
     typeof src.riskyConf === 'number' ? src.riskyConf :
-    typeof src.minRISKY === 'number' ? src.minRISKY : null;
+    typeof src.minRISKY  === 'number' ? src.minRISKY  : null;
 
-  if (thrSafe == null && thrRisky == null) return null;
+  const minEV =
+    typeof src.minEV === 'number' ? src.minEV : null;
+
+  if (thrSafe == null && thrRisky == null && minEV == null) return null;
+
   const out = {};
-  if (thrSafe != null) out.thrSafe = thrSafe;
+  if (thrSafe  != null) out.thrSafe  = thrSafe;
   if (thrRisky != null) out.thrRisky = thrRisky;
+  if (minEV    != null) out.minEV    = minEV;
   return out;
 }
 
@@ -45,25 +54,25 @@ export async function loadModelAndApply() {
     const base = modelUrl();
     if (!base) return { ok: false, reason: 'no-url' };
 
-    const url = base.includes('?') ? `${base}&model=1` : `${base}?model=1`;
-    const headers = {};
+    // ΠΕΡΝΑΜΕ ΤΟ SECRET ΩΣ QUERY (ΟΧΙ HEADER) → αποφεύγουμε CORS preflight
     const secret = modelSecret();
-    if (secret) headers['X-LBQ-SECRET'] = secret;
+    const url =
+      base + (base.includes('?') ? '&' : '?') +
+      'model=1' +
+      (secret ? `&secret=${encodeURIComponent(secret)}` : '');
 
-    const res = await fetch(url, { method: 'GET', headers });
+    const res = await fetch(url, { method: 'GET' }); // καθόλου custom headers
     if (!res.ok) return { ok: false, reason: `http-${res.status}` };
 
     const j = await res.json();
 
-    // αποδοχή είτε {model:{...}} είτε flat {...} είτε {cutoffs:{...}}
-    const candidate =
-      (j && j.model) ? j.model :
-      (j && j.cutoffs) ? j.cutoffs :
-      j;
+    // αποδοχή είτε {model:{...}} είτε {cutoffs:{...}} είτε flat {...}
+    const candidate = (j && j.model) ? j.model : (j && j.cutoffs) ? j.cutoffs : j;
 
     const cut = normalizeCutoffs(candidate);
     if (cut) {
-      setCutoffsRuntime(cut);               // ενημέρωση runtime
+      setCutoffsRuntime(cut);
+      if (typeof console !== 'undefined') console.info('[LBQ] Model cutoffs loaded:', cut);
       return { ok: true, cutoffs: cut };
     }
 
