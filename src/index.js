@@ -8,8 +8,6 @@ import { exposeLiveCounter } from './utils/liveCounter';
 import { ensurePermissionIfEnabled } from './push/notifyControl';
 import { reportIfFinished } from './ai/feedHook';
 import './ai/exposeDev';
-
-// NEW: pull tuner cutoffs from Apps Script WebApp on startup
 import { loadModelAndApply } from './ai/modelClient';
 
 exposeLiveCounter();
@@ -19,23 +17,20 @@ if (typeof window !== 'undefined') {
   window.LBQ_reportIfFinished = reportIfFinished;
 }
 
-// Fire-and-forget: load cutoffs (thrSafe/thrRisky[/minEV]) at app start
-(async () => {
-  try {
-    const res = await loadModelAndApply();
-    if (res?.ok) {
-      const c = res.cutoffs || {};
-      console.log('[LBQ] Model cutoffs loaded:', c);
-      // keep the last loaded cutoffs handy for quick devtools inspection
-      if (typeof window !== 'undefined') window.__LBQ_LAST_CUTOFFS__ = c;
-    } else {
-      console.warn('[LBQ] Model cutoffs NOT loaded:', res);
-    }
-  } catch (err) {
-    console.error('[LBQ] Model fetch failed:', err);
-  }
-})();
-
 const container = document.getElementById('root');
 const root = createRoot(container);
 root.render(<App />);
+
+// Bootstrap μοντέλου (cutoffs) στην εκκίνηση
+(async function initModel() {
+  try {
+    const res = await loadModelAndApply();
+    if (res && res.ok && res.cutoffs) {
+      if (window.__LBQ_DEBUG) console.log('[LBQ] Model cutoffs loaded:', res.cutoffs);
+    } else {
+      console.warn('[LBQ] Model: using defaults', res && res.reason ? `(${res.reason})` : '');
+    }
+  } catch (err) {
+    console.warn('[LBQ] Model bootstrap failed:', err);
+  }
+})();
