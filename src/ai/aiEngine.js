@@ -1,35 +1,30 @@
 // src/ai/aiEngine.js
-// v4.2 — compat exports (estimateConfidence, calculateEV) + Kelly (drift/momentum/volatility)
+// v4.3 — compat exports: estimateConfidence, calculateEV, generateLabel
 
 import kellyDynamic from '../utils/aiPredictionEngineModules/kellyDynamic.js';
 import volatilityScore from '../utils/aiPredictionEngineModules/volatilityScore.js';
 import { validateInsightsHost } from '../utils/content.js';
 
-// ===== Tunables =====
-const DAILY_STAKE_CAP_PCT = 0.10;          // max συνολικό ρίσκο/μέρα (10%)
-const PER_MATCH_COOLDOWN_MIN = 45;         // lockout λεπτά στο ίδιο ματς
-const MIN_CONF = 0.55;                     // ελάχιστο confidence για να εξεταστεί
-const MIN_EV = 0.01;                       // ελάχιστο EV (αν υπάρχει)
-const DEFAULT_KELLY_FACTOR = 0.5;          // half-Kelly
-const DEFAULT_CAP_PCT = 0.02;              // 2% cap ανά bet
+const DAILY_STAKE_CAP_PCT = 0.10;
+const PER_MATCH_COOLDOWN_MIN = 45;
+const MIN_CONF = 0.55;
+const MIN_EV_FALLBACK = 0.01;
+const DEFAULT_KELLY_FACTOR = 0.5;
+const DEFAULT_CAP_PCT = 0.02;
 const LEDGER_KEY_PREFIX = 'LBQ_LEDGER_';
 const MODEL_CACHE_KEY = 'LBQ_MODEL_CUTOFFS_CACHE';
 const MODEL_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
-// ===== Persistence =====
 function todayKey() {
   const d = new Date();
-  const k = `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
-  return LEDGER_KEY_PREFIX + k;
+  return `${LEDGER_KEY_PREFIX}${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
 }
 function loadLedger() {
-  try {
-    const raw = localStorage.getItem(todayKey());
-    return raw ? JSON.parse(raw) : { totalStakePct: 0, bets: {} };
-  } catch { return { totalStakePct: 0, bets: {} }; }
+  try { const raw = localStorage.getItem(todayKey()); return raw ? JSON.parse(raw) : { totalStakePct: 0, bets: {} }; }
+  catch { return { totalStakePct: 0, bets: {} }; }
 }
-function saveLedger(ledger) { try { localStorage.setItem(todayKey(), JSON.stringify(ledger)); } catch {} }
-function minutesSince(ts) { return ts ? (Date.now() - ts) / 60000 : 1e9; }
+function saveLedger(ledger){ try{ localStorage.setItem(todayKey(), JSON.stringify(ledger)); }catch{} }
+function minutesSince(ts){ return ts ? (Date.now() - ts) / 60000 : 1e9; }
 
 function readModelCutoffs() {
   try {
@@ -41,9 +36,18 @@ function readModelCutoffs() {
     return j.cutoffs || null;
   } catch { return null; }
 }
+function activeCutoffs() {
+  const m = readModelCutoffs();
+  const thrSafe = Number(m?.thrSafe);
+  const thrRisky = Number(m?.thrRisky);
+  const minEV = Number(m?.minEV);
+  return {
+    thrSafe: Number.isFinite(thrSafe) ? thrSafe : 0.60,
+    thrRisky: Number.isFinite(thrRisky) ? thrRisky : 0.50,
+    minEV: Number.isFinite(minEV) ? minEV : 0.03
+  };
+}
 
-// ===== Compat helpers =====
-// EV per 1 unit stake. Δέχεται (p, odds) ή ({ conf|prob|p, odds }).
 export function calculateEV(arg1, arg2) {
   let p, odds;
   if (typeof arg1 === 'object' && arg1 !== null) {
@@ -60,20 +64,13 @@ export function calculateEV(arg1, arg2) {
   return b * p - (1 - p);
 }
 
-// Εκτίμηση confidence σε [0..1]. Δουλεύει με:
-//  • αριθμό (επιστρέφει clamp) ή
-//  • object με conf/prob/p ή
-//  • object με { ev, odds }  -> p = (ev + 1) / odds  (από EV = p*(odds) - 1)
 export function estimateConfidence(x, oddsMaybe) {
   if (typeof x === 'number') return clamp01(x);
   if (typeof x === 'object' && x !== null) {
-    const src = x;
-    // 1) άμεσο πεδίο
-    const direct = src.conf ?? src.prob ?? src.p;
+    const direct = x.conf ?? x.prob ?? x.p;
     if (Number.isFinite(direct)) return clamp01(Number(direct));
-    // 2) από EV + odds
-    const ev = Number(src.ev);
-    const odds = Number(src.odds ?? oddsMaybe);
+    const ev = Number(x.ev);
+    const odds = Number(x.odds ?? oddsMaybe);
     if (Number.isFinite(ev) && Number.isFinite(odds) && odds > 1) {
       const p = (ev + 1) / odds;
       return clamp01(p);
@@ -82,7 +79,21 @@ export function estimateConfidence(x, oddsMaybe) {
   return 0;
 }
 
-// ===== Core API =====
+export function generateLabel(input = {}) {
+  const c = activeCutoffs();
+  const conf = clamp01(Number(input.conf ?? input.prob ?? input.p ?? 0));
+  let ev = Number(input.ev);
+  if (!Number.isFinite(ev)) {
+    const odds = Number(input.odds);
+    if (Number.isFinite(odds) && odds > 1) ev = calculateEV(conf, odds);
+  }
+  const minEV = Number.isFinite(c.minEV) ? c.minEV : MIN_EV_FALLBACK;
+  if (!Number.isFinite(ev) || ev < minEV) return 'AVOID';
+  if (conf >= c.thrSafe) return 'SAFE';
+  if (conf >= c.thrRisky) return 'RISKY';
+  return 'AVOID';
+}
+
 export function suggestBet({
   match,
   odds,
@@ -94,17 +105,15 @@ export function suggestBet({
 }) {
   validateInsightsHost();
 
-  // Confidence gate (με fallback στα model cutoffs)
-  const model = readModelCutoffs();
-  const thrConf = Math.max(MIN_CONF, Number(model?.thrRisky || 0));
+  const model = activeCutoffs();
+  const thrConf = Math.max(MIN_CONF, Number(model.thrRisky || 0));
   const confidence = clamp01(conf ?? estimateConfidence(match ?? {}));
   if (!Number.isFinite(confidence) || confidence < thrConf) return deny('low-confidence');
 
-  // EV gate (αν υπάρχει)
   const ev = Number(match?.ev);
-  if (Number.isFinite(ev) && ev < MIN_EV) return deny('low-ev');
+  const minEV = Number.isFinite(model.minEV) ? model.minEV : MIN_EV_FALLBACK;
+  if (Number.isFinite(ev) && ev < minEV) return deny('low-ev');
 
-  // Daily cap / cooldown
   const ledger = loadLedger();
   if (ledger.totalStakePct >= DAILY_STAKE_CAP_PCT - 1e-6) return deny('daily-cap-reached');
 
@@ -114,10 +123,7 @@ export function suggestBet({
   const lastBetTs = ledger.bets[matchId]?.ts || 0;
   if (minutesSince(lastBetTs) < PER_MATCH_COOLDOWN_MIN) return deny('match-cooldown');
 
-  // Volatility
   const vol = clamp01(Number(match?.volatility) || volatilityScore(match));
-
-  // Kelly sizing
   const { stakePct } = kellyDynamic({
     conf: confidence,
     odds,
@@ -146,6 +152,7 @@ export function suggestBet({
       remainingDailyCap: round4(remaining),
       cooldownMin: PER_MATCH_COOLDOWN_MIN,
       ev: Number.isFinite(ev) ? round4(ev) : null,
+      cutoffs: model
     },
   };
 }
@@ -170,9 +177,8 @@ export function canBet(match) {
   return { ok: true, reason: 'ok' };
 }
 
-// ===== utils =====
-function clamp01(x) { const n = Number(x); return !Number.isFinite(n) ? 0 : n < 0 ? 0 : n > 1 ? 1 : n; }
-function round4(x) { return Math.round((Number(x) || 0) * 1e4) / 1e4; }
-function deny(reason) { return { ok: false, reason, stakePct: 0, meta: {} }; }
+function clamp01(x){ const n = Number(x); return !Number.isFinite(n) ? 0 : n < 0 ? 0 : n > 1 ? 1 : n; }
+function round4(x){ return Math.round((Number(x) || 0) * 1e4) / 1e4; }
+function deny(reason){ return { ok: false, reason, stakePct: 0, meta: {} }; }
 
-export default { suggestBet, registerBet, canBet, calculateEV, estimateConfidence };
+export default { suggestBet, registerBet, canBet, calculateEV, estimateConfidence, generateLabel };
