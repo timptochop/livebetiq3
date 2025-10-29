@@ -1,8 +1,8 @@
-// src/ai/modelClient.js
 import { setCutoffsRuntime } from './adaptTuner';
 
 const CACHE_KEY = 'LBQ_MODEL_CUTOFFS_CACHE';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const AUTO_REFRESH_MS = 10 * 60 * 1000;
 
 function modelUrl() {
   try {
@@ -92,4 +92,12 @@ export async function loadModelAndApply() {
     if (cached) { setCutoffsRuntime(cached); return { ok: true, cutoffs: cached, source: 'cache', reason: 'fetch-failed' }; }
     return { ok: false, reason: 'fetch-failed', error: String(err) };
   }
+}
+
+if (typeof window !== 'undefined') {
+  setInterval(() => {
+    loadModelAndApply().then(r => {
+      console.log('[LBQ] Auto-refreshed cutoffs', r?.cutoffs || null, 'source:', r?.source);
+    }).catch(() => {});
+  }, AUTO_REFRESH_MS);
 }
