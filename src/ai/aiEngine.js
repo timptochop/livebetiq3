@@ -1,17 +1,17 @@
 // src/ai/aiEngine.js
-// v4.1 — guardrails + model fallback + Kelly (drift/momentum/volatility) + EV helper
+// v4.2 — compat exports (estimateConfidence, calculateEV) + Kelly (drift/momentum/volatility)
 
 import kellyDynamic from '../utils/aiPredictionEngineModules/kellyDynamic.js';
 import volatilityScore from '../utils/aiPredictionEngineModules/volatilityScore.js';
 import { validateInsightsHost } from '../utils/content.js';
 
 // ===== Tunables =====
-const DAILY_STAKE_CAP_PCT = 0.10;            // max συνολικό ρίσκο/μέρα (10%)
-const PER_MATCH_COOLDOWN_MIN = 45;           // lockout λεπτά στο ίδιο ματς
-const MIN_CONF = 0.55;                       // ελάχιστο confidence για να εξεταστεί
-const MIN_EV = 0.01;                         // ελάχιστο EV όταν υπάρχει
-const DEFAULT_KELLY_FACTOR = 0.5;            // half-Kelly
-const DEFAULT_CAP_PCT = 0.02;                // 2% cap ανά bet
+const DAILY_STAKE_CAP_PCT = 0.10;          // max συνολικό ρίσκο/μέρα (10%)
+const PER_MATCH_COOLDOWN_MIN = 45;         // lockout λεπτά στο ίδιο ματς
+const MIN_CONF = 0.55;                     // ελάχιστο confidence για να εξεταστεί
+const MIN_EV = 0.01;                       // ελάχιστο EV (αν υπάρχει)
+const DEFAULT_KELLY_FACTOR = 0.5;          // half-Kelly
+const DEFAULT_CAP_PCT = 0.02;              // 2% cap ανά bet
 const LEDGER_KEY_PREFIX = 'LBQ_LEDGER_';
 const MODEL_CACHE_KEY = 'LBQ_MODEL_CUTOFFS_CACHE';
 const MODEL_MAX_AGE_MS = 12 * 60 * 60 * 1000;
@@ -42,9 +42,9 @@ function readModelCutoffs() {
   } catch { return null; }
 }
 
-// ===== EV helper (για συμβατότητα με παλιούς imports) =====
+// ===== Compat helpers =====
+// EV per 1 unit stake. Δέχεται (p, odds) ή ({ conf|prob|p, odds }).
 export function calculateEV(arg1, arg2) {
-  // Δέχεται είτε (p, odds) είτε ({ conf|prob|p, odds })
   let p, odds;
   if (typeof arg1 === 'object' && arg1 !== null) {
     const src = arg1;
@@ -57,7 +57,29 @@ export function calculateEV(arg1, arg2) {
   p = clamp01(p);
   if (!Number.isFinite(odds) || odds <= 1) return 0;
   const b = odds - 1;
-  return b * p - (1 - p); // EV per 1 unit stake
+  return b * p - (1 - p);
+}
+
+// Εκτίμηση confidence σε [0..1]. Δουλεύει με:
+//  • αριθμό (επιστρέφει clamp) ή
+//  • object με conf/prob/p ή
+//  • object με { ev, odds }  -> p = (ev + 1) / odds  (από EV = p*(odds) - 1)
+export function estimateConfidence(x, oddsMaybe) {
+  if (typeof x === 'number') return clamp01(x);
+  if (typeof x === 'object' && x !== null) {
+    const src = x;
+    // 1) άμεσο πεδίο
+    const direct = src.conf ?? src.prob ?? src.p;
+    if (Number.isFinite(direct)) return clamp01(Number(direct));
+    // 2) από EV + odds
+    const ev = Number(src.ev);
+    const odds = Number(src.odds ?? oddsMaybe);
+    if (Number.isFinite(ev) && Number.isFinite(odds) && odds > 1) {
+      const p = (ev + 1) / odds;
+      return clamp01(p);
+    }
+  }
+  return 0;
 }
 
 // ===== Core API =====
@@ -72,12 +94,13 @@ export function suggestBet({
 }) {
   validateInsightsHost();
 
-  // Confidence gate με fallback στα model cutoffs
+  // Confidence gate (με fallback στα model cutoffs)
   const model = readModelCutoffs();
   const thrConf = Math.max(MIN_CONF, Number(model?.thrRisky || 0));
-  if (!Number.isFinite(conf) || conf < thrConf) return deny('low-confidence');
+  const confidence = clamp01(conf ?? estimateConfidence(match ?? {}));
+  if (!Number.isFinite(confidence) || confidence < thrConf) return deny('low-confidence');
 
-  // EV gate (αν υπάρχει match.ev)
+  // EV gate (αν υπάρχει)
   const ev = Number(match?.ev);
   if (Number.isFinite(ev) && ev < MIN_EV) return deny('low-ev');
 
@@ -96,7 +119,7 @@ export function suggestBet({
 
   // Kelly sizing
   const { stakePct } = kellyDynamic({
-    conf,
+    conf: confidence,
     odds,
     volatility: vol,
     capPct,
@@ -115,7 +138,7 @@ export function suggestBet({
     reason: 'ok',
     stakePct: finalStake,
     meta: {
-      conf: round4(conf),
+      conf: round4(confidence),
       odds: round4(odds),
       volatility: vol,
       drift: round4(drift),
@@ -152,4 +175,4 @@ function clamp01(x) { const n = Number(x); return !Number.isFinite(n) ? 0 : n < 
 function round4(x) { return Math.round((Number(x) || 0) * 1e4) / 1e4; }
 function deny(reason) { return { ok: false, reason, stakePct: 0, meta: {} }; }
 
-export default { suggestBet, registerBet, canBet, calculateEV };
+export default { suggestBet, registerBet, canBet, calculateEV, estimateConfidence };
