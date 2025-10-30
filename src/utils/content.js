@@ -1,5 +1,5 @@
 // src/utils/content.js
-// v4.1 — Insights whitelist + host validation (QUIET on production, info only on dev)
+// v4.2 — hard-quiet insights: no console output in any env
 
 const INSIGHTS_WHITELIST = [
   'localhost',
@@ -39,6 +39,7 @@ export function isInsightsWhitelisted(hostname = getHost()) {
 export function insightsConfig() {
   const host = getHost();
   const enabled = isInsightsWhitelisted(host);
+
   // expose minimal runtime flags (read-only) to window
   try {
     if (typeof window !== 'undefined') {
@@ -52,17 +53,14 @@ export function insightsConfig() {
   } catch {
     // ignore defineProperty errors
   }
+
   return { host, enabled };
 }
 
 // Backwards-compat shim used by older modules
 export function validateInsightsHost() {
-  const { host, enabled } = insightsConfig();
-  // quiet on production so we don't see "Host is not supported..." in Vercel prod
-  if (!enabled && process.env.NODE_ENV !== 'production') {
-    // eslint-disable-next-line no-console
-    console.info('[LBQ] Insights disabled for host:', host || '(empty)');
-  }
+  // we just compute & return; no console logs in v4.2
+  const { enabled } = insightsConfig();
   return enabled;
 }
 
