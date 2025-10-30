@@ -1,5 +1,5 @@
 // src/utils/content.js
-// v4.2 — hard-quiet insights: no console output in any env
+// v4.3 — hard-quiet insights (no console output anywhere)
 
 const INSIGHTS_WHITELIST = [
   'localhost',
@@ -11,6 +11,7 @@ const INSIGHTS_WHITELIST = [
   /-tim-ptochopoulos-projects\.vercel\.app$/i,
 ];
 
+// -------- core helpers --------
 function getHost() {
   try {
     if (typeof window !== 'undefined' && window.location) {
@@ -39,10 +40,9 @@ export function isInsightsWhitelisted(hostname = getHost()) {
 export function insightsConfig() {
   const host = getHost();
   const enabled = isInsightsWhitelisted(host);
-
-  // expose minimal runtime flags (read-only) to window
+  // expose minimal runtime flags (read-only)
   try {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && !window.__LBQ_INSIGHTS__) {
       Object.defineProperty(window, '__LBQ_INSIGHTS__', {
         value: Object.freeze({ host, enabled }),
         writable: false,
@@ -51,20 +51,19 @@ export function insightsConfig() {
       });
     }
   } catch {
-    // ignore defineProperty errors
+    // ignore
   }
-
   return { host, enabled };
 }
 
-// Backwards-compat shim used by older modules
+// backwards-compat shim used by older modules
 export function validateInsightsHost() {
-  // we just compute & return; no console logs in v4.2
+  // we still compute it, but we DO NOT log anything
   const { enabled } = insightsConfig();
   return enabled;
 }
 
-// Auto-run once at import
+// auto-run once at import
 validateInsightsHost();
 
 export default {
