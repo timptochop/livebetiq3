@@ -1,4 +1,6 @@
-const ADAPTIVE_WEIGHTS_URL = 'PASTE_YOUR_APPS_SCRIPT_WEBAPP_URL_HERE';
+// src/utils/fetchAdaptiveWeights.js
+
+const ADAPTIVE_WEIGHTS_URL = 'https://script.google.com/macros/s/AKfycbxWd_BhtjqE78k0pzgAOv1PAG0-F3QsuUy6sU-TChOgyKCCjM0nrebsAd068P3GFYI/exec';
 
 export default async function fetchAdaptiveWeights() {
   if (!ADAPTIVE_WEIGHTS_URL || ADAPTIVE_WEIGHTS_URL.indexOf('http') !== 0) {
@@ -14,7 +16,12 @@ export default async function fetchAdaptiveWeights() {
   }
 
   try {
-    const res = await fetch(ADAPTIVE_WEIGHTS_URL);
+    const res = await fetch(ADAPTIVE_WEIGHTS_URL, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
     if (!res.ok) {
       return {
         ev: 0.3,
