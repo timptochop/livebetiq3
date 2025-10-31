@@ -1,25 +1,42 @@
 // src/utils/analyzeMatch.js
-// v3.10b-relax-risky — χαλαρώνουμε ΜΟΝΟ το RISKY, κρατάμε MIN_ODDS=1.50 και για SAFE και για RISKY
-// Παράθυρο SET 2: total games 2–7 (no tiebreak)
+// v5.0-phase1-wired
 
 const T = {
-  // ΚΟΙΝΑ
-  MIN_ODDS: 1.50,
+  MIN_ODDS: 1.5,
   CLAMP_UP: 0.06,
   CLAMP_DOWN: -0.05,
   SET2_TOTAL_MIN: 2,
   SET2_TOTAL_MAX: 7,
-
-  // SAFE thresholds (ίδια με πριν)
   SAFE_CONF: 0.72,
-  MIN_PROB_SAFE: 0.50,
+  MIN_PROB_SAFE: 0.5,
   MAX_SET2_DIFF_SAFE: 6,
-
-  // RISKY (πιο χαλαρά)
   RISKY_MIN_CONF: 0.52,
   MIN_PROB_RISKY: 0.46,
-  MAX_SET2_DIFF_RISKY: 7,
+  MAX_SET2_DIFF_RISKY: 7
 };
+
+const DEFAULT_WEIGHTS = {
+  ev: 0.3,
+  confidence: 0.25,
+  momentum: 0.15,
+  drift: 0.1,
+  surface: 0.1,
+  form: 0.1
+};
+
+function getAdaptiveWeights() {
+  if (typeof window !== 'undefined' && window.__LBQ_WEIGHTS__ && typeof window.__LBQ_WEIGHTS__ === 'object') {
+    return {
+      ev: Number(window.__LBQ_WEIGHTS__.ev || DEFAULT_WEIGHTS.ev),
+      confidence: Number(window.__LBQ_WEIGHTS__.confidence || DEFAULT_WEIGHTS.confidence),
+      momentum: Number(window.__LBQ_WEIGHTS__.momentum || DEFAULT_WEIGHTS.momentum),
+      drift: Number(window.__LBQ_WEIGHTS__.drift || DEFAULT_WEIGHTS.drift),
+      surface: Number(window.__LBQ_WEIGHTS__.surface || DEFAULT_WEIGHTS.surface),
+      form: Number(window.__LBQ_WEIGHTS__.form || DEFAULT_WEIGHTS.form)
+    };
+  }
+  return DEFAULT_WEIGHTS;
+}
 
 const toNum = (x) => {
   const n = Number(x);
@@ -53,7 +70,7 @@ function parsePlayers(m = {}) {
   if (Array.isArray(m.players) && m.players.length >= 2) {
     return [
       (m.players[0]?.name || m.players[0]?.["@name"] || "").trim() || "Player A",
-      (m.players[1]?.name || m.players[1]?.["@name"] || "").trim() || "Player B",
+      (m.players[1]?.name || m.players[1]?.["@name"] || "").trim() || "Player B"
     ];
   }
   if (typeof m.name === "string" && m.name.includes(" vs ")) {
@@ -125,6 +142,7 @@ function detectSurface(m = {}) {
   if (fields.includes("hard")) return "hard";
   return "";
 }
+
 function surfaceAdj(surf) {
   if (surf === "grass") return 0.02;
   if (surf === "hard") return 0.01;
@@ -144,6 +162,7 @@ function parseStartTs(m = {}) {
   const ts = new Date(yyyy, mm, dd, hh, min).getTime();
   return Number.isFinite(ts) ? ts : null;
 }
+
 function timeToStartAdj(m, status) {
   if (status.live) return 0;
   const ts = parseStartTs(m); if (!ts) return 0;
@@ -155,7 +174,6 @@ function timeToStartAdj(m, status) {
   return -0.02;
 }
 
-/** SET-2 guard (relaxed total 2–7, no TB). */
 function set2WindowGuard(status, ga, gb) {
   if (status.setNum !== 2) return { pass: false, badge: `SET ${status.setNum || 1}` };
   if (ga === null || gb === null) return { pass: false, badge: `SET 2` };
@@ -175,13 +193,13 @@ function volatilityClamp(confBase, confNow) {
 }
 
 export default function analyzeMatch(m = {}) {
+  const weights = getAdaptiveWeights();
   const [pA, pB] = parsePlayers(m);
   const status = parseStatus(m);
   const oddsObj = m.odds || m.market || m.oddsFT || {};
   const { oA, oB } = pickTwoOdds(oddsObj, pA, pB);
   const haveOdds = (oA > 1 && oB > 1);
 
-  // ΧΩΡΙΣ odds, δεν δίνουμε πρόβλεψη (σύμφωνα με το request για έμφαση στα odds)
   if (!haveOdds) {
     if (!status.live) return { label: "UPCOMING", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: status.setNum || 0, live: 0 } };
     if (status.setNum === 1) return { label: "SET 1", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: 1, live: 1 } };
@@ -202,62 +220,62 @@ export default function analyzeMatch(m = {}) {
   if (status.setNum === 1) return { label: "SET 1", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: 1, live: 1 } };
   if (status.setNum >= 3) return { label: "SET 3", conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: status.setNum, live: 1 } };
 
-  // Set 2 window
   const { ga, gb } = currentSetPair(m, status);
   const win = set2WindowGuard(status, ga, gb);
   if (!win.pass)
     return { label: win.badge, conf: 0, kellyLevel: "LOW", tip: "", features: { setNum: status.setNum, live: 1 } };
 
-  // Base confidence
   const catBonus = categoryWeight(m);
   const liveBonus = 0.03;
   const confBase = 0.50 + ((favProb - 0.5) * 1.20) + catBonus + liveBonus;
   let conf = confBase;
 
-  // Momentum & context
-  conf += computeMomentum(m, favIsA);
-  const surf = detectSurface(m); conf += surfaceAdj(surf);
-  conf += timeToStartAdj(m, status);
+  const momentumRaw = computeMomentum(m, favIsA);
+  const momentumWeighted = momentumRaw * weights.momentum;
 
-  // Στοχευμένο μικρό boost (ATP/WTA + fav leading + total 4..5)
+  const surf = detectSurface(m);
+  const surfaceRaw = surfaceAdj(surf);
+  const surfaceWeighted = surfaceRaw * weights.surface;
+
+  const timeAdjRaw = timeToStartAdj(m, status);
+  const timeWeighted = timeAdjRaw * weights.form;
+
+  conf += momentumWeighted;
+  conf += surfaceWeighted;
+  conf += timeWeighted;
+
   const favLeadingNow = favIsA ? ((win.ga || 0) >= (win.gb || 0)) : ((win.gb || 0) >= (win.ga || 0));
-  if ((catBonus >= 0.07) && favLeadingNow && win.total >= 4 && win.total <= 5) conf += 0.01;
+  if ((catBonus >= 0.07) && favLeadingNow && win.total >= 4 && win.total <= 5) conf += 0.01 * weights.confidence;
 
-  // Clamp & bounds
   const confFinal = Math.max(0.51, Math.min(0.95, volatilityClamp(confBase, conf)));
 
-  // Precision filters
   const minOddsOk = Number.isFinite(favOdds) && favOdds >= T.MIN_ODDS;
 
-  // SAFE strict
   const safeProbOk = favProb >= T.MIN_PROB_SAFE;
   const safeDiffOk = (win.diff || 0) <= T.MAX_SET2_DIFF_SAFE;
   const safeAll = (favLeadingNow && minOddsOk && safeProbOk && safeDiffOk && confFinal >= T.SAFE_CONF);
 
-  // RISKY relaxed (μπορεί να μην προηγείται, αλλά max 1 παιχνίδι πίσω)
   const withinOneGameBehind = !favLeadingNow && Math.abs((win.ga || 0) - (win.gb || 0)) === 1;
   const riskyProbOk = favProb >= T.MIN_PROB_RISKY;
   const riskyDiffOk = (win.diff || 0) <= T.MAX_SET2_DIFF_RISKY;
   const riskyLeadOk = favLeadingNow || withinOneGameBehind;
   const riskyAll = (riskyLeadOk && minOddsOk && riskyProbOk && riskyDiffOk && confFinal >= T.RISKY_MIN_CONF);
 
-  // Labeling
   let label = 'AVOID';
   let tip = '';
   if (safeAll) {
     label = 'SAFE';
-    tip = `${favName} to win match`;
+    tip = favName + ' to win match';
   } else if (riskyAll) {
     label = 'RISKY';
   } else {
     label = 'AVOID';
   }
 
-  const kellyLevel = confFinal >= 0.90 ? 'HIGH' : confFinal >= 0.80 ? 'MED' : 'LOW';
+  const kellyLevel = confFinal >= 0.9 ? 'HIGH' : confFinal >= 0.8 ? 'MED' : 'LOW';
 
   try {
     if (process?.env?.REACT_APP_LOG_PREDICTIONS === '1') {
-      // eslint-disable-next-line no-console
       console.table([{
         label,
         conf: +confFinal.toFixed(3),
@@ -266,7 +284,8 @@ export default function analyzeMatch(m = {}) {
         set2Total: win.total, set2Diff: win.diff,
         favLeading: favLeadingNow ? 1 : 0,
         catBonus: +catBonus.toFixed(3),
-        surface: surf || '-'
+        surface: surf || '-',
+        weights
       }]);
     }
   } catch {}
@@ -286,7 +305,8 @@ export default function analyzeMatch(m = {}) {
       catBonus,
       surface: surf,
       set2Total: win.total,
-      set2Diff: win.diff
+      set2Diff: win.diff,
+      weightsSource: typeof window !== 'undefined' && window.__LBQ_WEIGHTS__ ? 'adaptive' : 'default'
     }
   };
 }
