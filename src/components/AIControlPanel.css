@@ -3,7 +3,7 @@
   flex-direction: column;
   padding: 8px 0;
   gap: 10px;
-  transform: scale(0.6); /* Makes the panel and all its children smaller */
+  transform: scale(0.6); /* your setting */
   transform-origin: top left;
 }
 
@@ -22,7 +22,7 @@
 
 .ai-slider {
   flex: 1;
-  accent-color: #00C853;
+  accent-color: #00c853;
   height: 4px;
 }
 
@@ -44,4 +44,38 @@
 
 .ai-checkbox {
   transform: scale(1.2);
+}
+
+/* ========================= */
+/* additions for remote view */
+/* ========================= */
+.ai-remote-box {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(0, 255, 0, 0.15);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 10px;
+  color: #d4ffd4;
+  line-height: 1.35;
+}
+
+.ai-remote-title {
+  font-weight: 600;
+  margin-bottom: 3px;
+  color: #ffffff;
+  font-size: 10px;
+}
+
+.ai-remote-row {
+  white-space: nowrap;
+}
+
+.ai-remote-meta {
+  margin-top: 2px;
+  font-size: 9px;
+  color: #aaaaaa;
+}
+
+.ai-remote-error {
+  color: #ff6b6b;
 }
