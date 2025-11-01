@@ -1,37 +1,60 @@
+// src/ai/modelClient.js
+// v5.0-phase1d – proxy-first, GAS-fallback, with localStorage cache
 import { setCutoffsRuntime } from './adaptTuner';
 
 const CACHE_KEY = 'LBQ_MODEL_CUTOFFS_CACHE';
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const AUTO_REFRESH_MS = 10 * 60 * 1000;
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+const AUTO_REFRESH_MS = 10 * 60 * 1000; // 10min
+const PROXY_URL = '/api/lbq-config'; // ίδιο origin → no CORS
 
 function modelUrl() {
   try {
-    if (typeof window !== 'undefined' && window.__LBQ_WEBAPP_URL) return String(window.__LBQ_WEBAPP_URL);
+    if (typeof window !== 'undefined' && window.__LBQ_WEBAPP_URL) {
+      return String(window.__LBQ_WEBAPP_URL);
+    }
     return String(process.env.REACT_APP_MODEL_URL || '');
-  } catch { return ''; }
+  } catch {
+    return '';
+  }
 }
 
 function modelSecret() {
   try {
-    if (typeof window !== 'undefined' && window.__LBQ_SECRET) return String(window.__LBQ_SECRET);
+    if (typeof window !== 'undefined' && window.__LBQ_SECRET) {
+      return String(window.__LBQ_SECRET);
+    }
     return String(process.env.REACT_APP_LBQ_SECRET || '');
-  } catch { return ''; }
+  } catch {
+    return '';
+  }
 }
 
 function normalizeCutoffs(src) {
   if (!src || typeof src !== 'object') return null;
+
   let thrSafe =
-    typeof src.thrSafe === 'number' ? src.thrSafe :
-    typeof src.safeConf === 'number' ? src.safeConf :
-    typeof src.minSAFE === 'number' ? src.minSAFE : null;
+    typeof src.thrSafe === 'number'
+      ? src.thrSafe
+      : typeof src.safeConf === 'number'
+      ? src.safeConf
+      : typeof src.minSAFE === 'number'
+      ? src.minSAFE
+      : null;
+
   let thrRisky =
-    typeof src.thrRisky === 'number' ? src.thrRisky :
-    typeof src.riskyConf === 'number' ? src.riskyConf :
-    typeof src.minRISKY === 'number' ? src.minRISKY : null;
-  let minEV =
-    typeof src.minEV === 'number' ? src.minEV : null;
+    typeof src.thrRisky === 'number'
+      ? src.thrRisky
+      : typeof src.riskyConf === 'number'
+      ? src.riskyConf
+      : typeof src.minRISKY === 'number'
+      ? src.minRISKY
+      : null;
+
+  let minEV = typeof src.minEV === 'number' ? src.minEV : null;
+
   const none = thrSafe == null && thrRisky == null && minEV == null;
   if (none) return null;
+
   const out = {};
   if (thrSafe != null) out.thrSafe = thrSafe;
   if (thrRisky != null) out.thrRisky = thrRisky;
@@ -48,56 +71,145 @@ function readCache() {
     if (typeof j.ts !== 'number' || !j.cutoffs) return null;
     if (Date.now() - j.ts > CACHE_TTL_MS) return null;
     return j.cutoffs;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function writeCache(cutoffs) {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), cutoffs }));
+    localStorage.setItem(
+      CACHE_KEY,
+      JSON.stringify({ ts: Date.now(), cutoffs })
+    );
   } catch {}
 }
 
-export async function loadModelAndApply() {
-  try {
-    const base = modelUrl();
-    if (!base) return { ok: false, reason: 'no-url' };
+// --- 1) δοκιμή proxy (Vercel) ---
+async function loadFromProxy() {
+  const res = await fetch(PROXY_URL, {
+    method: 'GET',
+    headers: {
+      'cache-control': 'no-cache',
+    },
+  });
+  if (!res.ok) {
+    throw new Error('proxy-not-ok-' + res.status);
+  }
+  const json = await res.json();
+  // παίζει να είναι { ok:true, data:{...} } ή κατευθείαν {...}
+  const payload =
+    json && json.ok && json.data && typeof json.data === 'object'
+      ? json.data
+      : json;
 
-    const secret = modelSecret();
-    const url = (() => {
-      const u = base.includes('?') ? `${base}&model=1` : `${base}?model=1`;
-      return secret ? `${u}&secret=${encodeURIComponent(secret)}` : u;
-    })();
+  const cut = normalizeCutoffs(payload);
+  if (!cut) {
+    throw new Error('proxy-no-cutoffs');
+  }
+  return { cut, raw: json };
+}
 
-    const res = await fetch(url, { method: 'GET' });
-    if (!res.ok) {
-      const cached = readCache();
-      if (cached) { setCutoffsRuntime(cached); return { ok: true, cutoffs: cached, source: 'cache', http: res.status }; }
-      return { ok: false, reason: `http-${res.status}` };
-    }
+// --- 2) original τρόπος σου (GAS / Apps Script) ---
+async function loadFromGasOrDirect() {
+  const base = modelUrl();
+  if (!base) return { ok: false, reason: 'no-url' };
 
-    const j = await res.json();
-    const candidate = (j && j.model) ? j.model : (j && j.cutoffs) ? j.cutoffs : j;
-    const cut = normalizeCutoffs(candidate);
-    if (cut) {
-      setCutoffsRuntime(cut);
-      writeCache(cut);
-      return { ok: true, cutoffs: cut, source: 'network' };
-    }
+  const secret = modelSecret();
+  const url = (() => {
+    const u = base.includes('?') ? `${base}&model=1` : `${base}?model=1`;
+    return secret ? `${u}&secret=${encodeURIComponent(secret)}` : u;
+  })();
 
-    const cached = readCache();
-    if (cached) { setCutoffsRuntime(cached); return { ok: true, cutoffs: cached, source: 'cache', reason: 'no-cutoffs-in-response' }; }
+  const res = await fetch(url, { method: 'GET' });
+  if (!res.ok) {
+    return { ok: false, reason: `http-${res.status}` };
+  }
+
+  const j = await res.json();
+  const candidate =
+    j && j.model
+      ? j.model
+      : j && j.cutoffs
+      ? j.cutoffs
+      : j;
+
+  const cut = normalizeCutoffs(candidate);
+  if (!cut) {
     return { ok: false, reason: 'no-cutoffs-in-response', raw: j };
-  } catch (err) {
+  }
+
+  return { ok: true, cut, raw: j };
+}
+
+export async function loadModelAndApply() {
+  // 1. proxy-first (για να εξαφανίσουμε τα CORS)
+  try {
+    const { cut, raw } = await loadFromProxy();
+    setCutoffsRuntime(cut);
+    writeCache(cut);
+    return { ok: true, cutoffs: cut, source: 'proxy', raw };
+  } catch (proxyErr) {
+    // πάμε στο plan B
+  }
+
+  // 2. GAS / direct (όπως το είχες)
+  try {
+    const r = await loadFromGasOrDirect();
+    if (r.ok && r.cut) {
+      setCutoffsRuntime(r.cut);
+      writeCache(r.cut);
+      return { ok: true, cutoffs: r.cut, source: 'network', raw: r.raw || null };
+    }
+
+    // 3. cache fallback
     const cached = readCache();
-    if (cached) { setCutoffsRuntime(cached); return { ok: true, cutoffs: cached, source: 'cache', reason: 'fetch-failed' }; }
-    return { ok: false, reason: 'fetch-failed', error: String(err) };
+    if (cached) {
+      setCutoffsRuntime(cached);
+      return {
+        ok: true,
+        cutoffs: cached,
+        source: 'cache',
+        reason: r.reason || 'network-failed',
+      };
+    }
+
+    return {
+      ok: false,
+      reason: r.reason || 'network-failed',
+    };
+  } catch (err) {
+    // 3. cache fallback (σε exception)
+    const cached = readCache();
+    if (cached) {
+      setCutoffsRuntime(cached);
+      return {
+        ok: true,
+        cutoffs: cached,
+        source: 'cache',
+        reason: 'fetch-exception',
+      };
+    }
+    return {
+      ok: false,
+      reason: 'fetch-exception',
+      error: String(err),
+    };
   }
 }
 
+// auto-refresh όπως το είχες
 if (typeof window !== 'undefined') {
   setInterval(() => {
-    loadModelAndApply().then(r => {
-      console.log('[LBQ] Auto-refreshed cutoffs', r?.cutoffs || null, 'source:', r?.source);
-    }).catch(() => {});
+    loadModelAndApply()
+      .then((r) => {
+        console.log(
+          '[LBQ] Auto-refreshed cutoffs',
+          r?.cutoffs || null,
+          'source:',
+          r?.source
+        );
+      })
+      .catch(() => {});
   }, AUTO_REFRESH_MS);
 }
