@@ -9,6 +9,7 @@ import { ensurePermissionIfEnabled } from './push/notifyControl';
 import { reportIfFinished } from './ai/feedHook';
 import './ai/exposeDev';
 import { loadModelAndApply } from './ai/modelClient';
+import { loadLbqConfigOnce } from './utils/loadLbqConfig';
 
 // ---- Bootstrap: URL/SECRET από query ή localStorage (χωρίς index.html) ----
 (function bootstrapLBQGlobals() {
@@ -37,6 +38,17 @@ import { loadModelAndApply } from './ai/modelClient';
     console.warn('[LBQ] bootstrap globals failed:', err);
   }
 })();
+
+// ---- Pull adaptive weights from GAS (fire-and-forget) ----
+loadLbqConfigOnce().then((res) => {
+  if (res && res.ok && res.updated) {
+    console.log('[LBQ] adaptive weights loaded from GAS:', res.weights, res.meta);
+  } else if (res && res.skipped) {
+    console.log('[LBQ] adaptive weights skipped (older-or-same)');
+  }
+}).catch(() => {
+  // fail silent
+});
 
 // ---- App boot ----
 exposeLiveCounter();
