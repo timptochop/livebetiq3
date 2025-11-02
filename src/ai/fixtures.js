@@ -1,8 +1,6 @@
 // src/ai/fixtures.js
-// v5.0-phase2 – diagnostic fixtures aligned with analyzeMatch v5.0-phase1-wired
 import analyzeMatch from '../utils/analyzeMatch';
 
-// small helper to build GoalServe-like match objects
 function makeMatch(overrides = {}) {
   return {
     id: overrides.id || 'fx-' + Math.random().toString(36).slice(2, 8),
@@ -32,7 +30,6 @@ function makeMatch(overrides = {}) {
   };
 }
 
-// fixture: expected SAFE
 const FIX_SAFE = makeMatch({
   id: 'fx-safe-001',
   name: 'Alcaraz vs Medvedev',
@@ -46,7 +43,6 @@ const FIX_SAFE = makeMatch({
   surface: 'Hard (Indoor)',
 });
 
-// fixture: expected RISKY
 const FIX_RISKY = makeMatch({
   id: 'fx-risky-001',
   name: 'Sinner vs Rublev',
@@ -60,7 +56,6 @@ const FIX_RISKY = makeMatch({
   surface: 'Hard',
 });
 
-// fixture: expected AVOID
 const FIX_AVOID = makeMatch({
   id: 'fx-avoid-001',
   name: 'Unknown vs Random',
@@ -74,7 +69,6 @@ const FIX_AVOID = makeMatch({
   surface: 'Clay',
 });
 
-// fixture: borderline (to test thresholds)
 const FIX_BORDER = makeMatch({
   id: 'fx-border-001',
   name: 'Border Guy vs Edge Man',
@@ -129,6 +123,26 @@ export function listFixtures() {
   ];
 }
 
+export function runFixtureByKey(key) {
+  switch (key) {
+    case 'safe':
+    case 'fx-safe-001':
+      return runFixtureSafe();
+    case 'risky':
+    case 'fx-risky-001':
+      return runFixtureRisky();
+    case 'avoid':
+    case 'fx-avoid-001':
+      return runFixtureAvoid();
+    case 'border':
+    case 'fx-border-001':
+      return runFixtureBorder();
+    default:
+      console.warn('[LBQ][fixtures] unknown key:', key);
+      return null;
+  }
+}
+
 export default {
   runFixtureSafe,
   runFixtureRisky,
@@ -136,4 +150,5 @@ export default {
   runFixtureBorder,
   runAllFixtures,
   listFixtures,
+  runFixtureByKey,
 };
