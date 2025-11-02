@@ -1,5 +1,5 @@
 // src/ai/modelClient.js
-// v5.0-phase1d – proxy-first, GAS-fallback, with localStorage cache
+// v5.0-phase1e – proxy-first, tolerant-to-weights, GAS-fallback, with localStorage cache
 import { setCutoffsRuntime } from './adaptTuner';
 
 const CACHE_KEY = 'LBQ_MODEL_CUTOFFS_CACHE';
@@ -85,7 +85,7 @@ function writeCache(cutoffs) {
   } catch {}
 }
 
-// 1) try proxy (Vercel)
+// 1) proxy (Vercel) – μπορεί να δώσει cutoffs ή μόνο weights
 async function loadFromProxy() {
   const res = await fetch(PROXY_URL, {
     method: 'GET',
@@ -100,18 +100,29 @@ async function loadFromProxy() {
 
   const json = await res.json();
 
-  // could be { ok: true, data: {...} } or plain {...}
   const payload =
     json && json.ok && json.data && typeof json.data === 'object'
       ? json.data
       : json;
 
   const cut = normalizeCutoffs(payload);
-  if (!cut) {
-    throw new Error('proxy-no-cutoffs');
+
+  if (cut) {
+    return {
+      ok: true,
+      cutoffs: cut,
+      source: 'proxy-cutoffs',
+      raw: json,
+    };
   }
 
-  return { cut, raw: json };
+  // εδώ είμαστε στην περίπτωση που έχεις τώρα: μόνο weights
+  return {
+    ok: true,
+    cutoffs: null,
+    source: 'proxy-weights-only',
+    raw: json,
+  };
 }
 
 // 2) original GAS / direct
@@ -147,17 +158,37 @@ async function loadFromGasOrDirect() {
 }
 
 export async function loadModelAndApply() {
-  // 1. proxy-first → no CORS
+  // 1. proxy-first
   try {
-    const { cut, raw } = await loadFromProxy();
-    setCutoffsRuntime(cut);
-    writeCache(cut);
-    return { ok: true, cutoffs: cut, source: 'proxy', raw };
-  } catch (proxyErr) {
-    // fall through to plan B
+    const r = await loadFromProxy();
+
+    if (r.ok && r.cutoffs) {
+      setCutoffsRuntime(r.cutoffs);
+      writeCache(r.cutoffs);
+      return { ok: true, cutoffs: r.cutoffs, source: r.source, raw: r.raw };
+    }
+
+    if (r.ok && !r.cutoffs) {
+      const cached = readCache();
+      if (cached) {
+        setCutoffsRuntime(cached);
+        return {
+          ok: true,
+          cutoffs: cached,
+          source: 'cache-after-proxy-weights',
+        };
+      }
+      return {
+        ok: true,
+        cutoffs: null,
+        source: r.source,
+      };
+    }
+  } catch (_) {
+    // continue with GAS
   }
 
-  // 2. GAS / direct (your original flow)
+  // 2. GAS / direct
   try {
     const r = await loadFromGasOrDirect();
     if (r.ok && r.cut) {
@@ -171,7 +202,6 @@ export async function loadModelAndApply() {
       };
     }
 
-    // 3. cache fallback
     const cached = readCache();
     if (cached) {
       setCutoffsRuntime(cached);
@@ -184,11 +214,11 @@ export async function loadModelAndApply() {
     }
 
     return {
-      ok: false,
-      reason: r.reason || 'network-failed',
+      ok: true,
+      cutoffs: null,
+      source: 'gas-no-cutoffs',
     };
   } catch (err) {
-    // 3. cache fallback on exception
     const cached = readCache();
     if (cached) {
       setCutoffsRuntime(cached);
@@ -207,14 +237,14 @@ export async function loadModelAndApply() {
   }
 }
 
-// keep your auto-refresh
+// auto-refresh
 if (typeof window !== 'undefined') {
   setInterval(() => {
     loadModelAndApply()
       .then((r) => {
         console.log(
-          '[LBQ] Auto-refreshed cutoffs',
-          r?.cutoffs || null,
+          '[LBQ] Auto-refreshed model',
+          r?.cutoffs || '(no-cutoffs)',
           'source:',
           r?.source
         );
