@@ -1,8 +1,16 @@
 // src/ai/exposeDev.js
 import { calculateEV, estimateConfidence, generateLabel, generateNote } from './aiEngine';
+import {
+  runFixtureSafe,
+  runFixtureRisky,
+  runFixtureAvoid,
+  runFixtureBorder,
+  runAllFixtures,
+} from './fixtures';
 
 const PROXY_URL = '/api/lbq-config';
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbxWd_BhtjqE78k0pzgAOv1PAG0-F3QsuUy6sU-TChOgyKCCjM0nrebsAd068P3GFYI/exec';
+const GAS_URL =
+  'https://script.google.com/macros/s/AKfycbxWd_BhtjqE78k0pzgAOv1PAG0-F3QsuUy6sU-TChOgyKCCjM0nrebsAd068P3GFYI/exec';
 
 async function tryProxy(mode) {
   const url = mode ? `${PROXY_URL}?mode=${encodeURIComponent(mode)}` : PROXY_URL;
@@ -62,9 +70,19 @@ async function lbqFetchConfig() {
 }
 
 if (typeof window !== 'undefined') {
-  window.LBQ_ai = { calculateEV, estimateConfidence, generateLabel, generateNote };
+  window.LBQ_ai = {
+    calculateEV,
+    estimateConfidence,
+    generateLabel,
+    generateNote,
+    runFixtureSafe,
+    runFixtureRisky,
+    runFixtureAvoid,
+    runFixtureBorder,
+    runAllFixtures,
+  };
   window.__LBQ_PING = lbqPing;
   window.__LBQ_RECALC = lbqRecalc;
   window.__LBQ_FETCH_CONFIG = lbqFetchConfig;
-  console.log('[LBQ][dev] helpers ready (proxy-first)');
+  console.log('[LBQ][dev] helpers ready (proxy-first + fixtures)');
 }
