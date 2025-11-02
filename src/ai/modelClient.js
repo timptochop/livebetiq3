@@ -5,7 +5,7 @@ import { setCutoffsRuntime } from './adaptTuner';
 const CACHE_KEY = 'LBQ_MODEL_CUTOFFS_CACHE';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const AUTO_REFRESH_MS = 10 * 60 * 1000; // 10min
-const PROXY_URL = '/api/lbq-config'; // ίδιο origin → no CORS
+const PROXY_URL = '/api/lbq-config'; // same origin → no CORS
 
 function modelUrl() {
   try {
@@ -85,7 +85,7 @@ function writeCache(cutoffs) {
   } catch {}
 }
 
-// --- 1) δοκιμή proxy (Vercel) ---
+// 1) try proxy (Vercel)
 async function loadFromProxy() {
   const res = await fetch(PROXY_URL, {
     method: 'GET',
@@ -93,11 +93,14 @@ async function loadFromProxy() {
       'cache-control': 'no-cache',
     },
   });
+
   if (!res.ok) {
     throw new Error('proxy-not-ok-' + res.status);
   }
+
   const json = await res.json();
-  // παίζει να είναι { ok:true, data:{...} } ή κατευθείαν {...}
+
+  // could be { ok: true, data: {...} } or plain {...}
   const payload =
     json && json.ok && json.data && typeof json.data === 'object'
       ? json.data
@@ -107,10 +110,11 @@ async function loadFromProxy() {
   if (!cut) {
     throw new Error('proxy-no-cutoffs');
   }
+
   return { cut, raw: json };
 }
 
-// --- 2) original τρόπος σου (GAS / Apps Script) ---
+// 2) original GAS / direct
 async function loadFromGasOrDirect() {
   const base = modelUrl();
   if (!base) return { ok: false, reason: 'no-url' };
@@ -143,23 +147,28 @@ async function loadFromGasOrDirect() {
 }
 
 export async function loadModelAndApply() {
-  // 1. proxy-first (για να εξαφανίσουμε τα CORS)
+  // 1. proxy-first → no CORS
   try {
     const { cut, raw } = await loadFromProxy();
     setCutoffsRuntime(cut);
     writeCache(cut);
     return { ok: true, cutoffs: cut, source: 'proxy', raw };
   } catch (proxyErr) {
-    // πάμε στο plan B
+    // fall through to plan B
   }
 
-  // 2. GAS / direct (όπως το είχες)
+  // 2. GAS / direct (your original flow)
   try {
     const r = await loadFromGasOrDirect();
     if (r.ok && r.cut) {
       setCutoffsRuntime(r.cut);
       writeCache(r.cut);
-      return { ok: true, cutoffs: r.cut, source: 'network', raw: r.raw || null };
+      return {
+        ok: true,
+        cutoffs: r.cut,
+        source: 'network',
+        raw: r.raw || null,
+      };
     }
 
     // 3. cache fallback
@@ -179,7 +188,7 @@ export async function loadModelAndApply() {
       reason: r.reason || 'network-failed',
     };
   } catch (err) {
-    // 3. cache fallback (σε exception)
+    // 3. cache fallback on exception
     const cached = readCache();
     if (cached) {
       setCutoffsRuntime(cached);
@@ -198,7 +207,7 @@ export async function loadModelAndApply() {
   }
 }
 
-// auto-refresh όπως το είχες
+// keep your auto-refresh
 if (typeof window !== 'undefined') {
   setInterval(() => {
     loadModelAndApply()
