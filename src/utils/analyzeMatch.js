@@ -1,5 +1,5 @@
 // src/utils/analyzeMatch.js
-// v5.0-phase1-wired (threshold-tuned)
+// v5.1-phase2-momentum (based on your v5.0-phase1-wired)
 
 // hard tennis rules / guardrails
 const T = {
@@ -8,15 +8,14 @@ const T = {
   CLAMP_DOWN: -0.05,
   SET2_TOTAL_MIN: 2,
   SET2_TOTAL_MAX: 7,
-  SAFE_CONF: 0.66,          // was 0.72 → softened so we can actually get SAFE
+  SAFE_CONF: 0.66,
   MIN_PROB_SAFE: 0.5,
   MAX_SET2_DIFF_SAFE: 6,
-  RISKY_MIN_CONF: 0.50,     // was 0.52 → small soften
+  RISKY_MIN_CONF: 0.50,
   MIN_PROB_RISKY: 0.46,
   MAX_SET2_DIFF_RISKY: 7
 };
 
-// fallback weights (if window.__LBQ_WEIGHTS__ is not present from GAS)
 const DEFAULT_WEIGHTS = {
   ev: 0.3,
   confidence: 0.25,
@@ -26,7 +25,12 @@ const DEFAULT_WEIGHTS = {
   form: 0.1
 };
 
-// read adaptive weights from browser (injected from GAS endpoint)
+const BOOST = {
+  fixture: 0.018,
+  momentumMult: 1.25,
+  momentumCap: 0.075
+};
+
 function getAdaptiveWeights() {
   if (
     typeof window !== 'undefined' &&
@@ -50,7 +54,6 @@ const toNum = (x) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-// try to extract two odds from different GoalServe shapes
 function pickTwoOdds(oddsObj = {}, nameA = "", nameB = "") {
   let oA = 0, oB = 0;
   if (oddsObj && typeof oddsObj === "object") {
@@ -66,7 +69,6 @@ function pickTwoOdds(oddsObj = {}, nameA = "", nameB = "") {
   return { oA, oB };
 }
 
-// convert odds to normalized implied probabilities
 function implied(oA, oB) {
   if (oA > 1 && oB > 1) {
     const pa = 1 / oA, pb = 1 / oB, s = pa + pb;
@@ -75,7 +77,6 @@ function implied(oA, oB) {
   return { pa: 0.5, pb: 0.5 };
 }
 
-// detect players from array OR from "A vs B"
 function parsePlayers(m = {}) {
   if (Array.isArray(m.players) && m.players.length >= 2) {
     return [
@@ -90,7 +91,6 @@ function parsePlayers(m = {}) {
   return ["Player A", "Player B"];
 }
 
-// normalize match status
 function parseStatus(m = {}) {
   const raw = String(m.status || m["@status"] || "");
   const s = raw.toLowerCase();
@@ -103,7 +103,6 @@ function parseStatus(m = {}) {
   return { live, setNum, finished, cancelled };
 }
 
-// small category-based bonus
 function categoryWeight(m = {}) {
   const cat = (m.categoryName || m.category || m["@category"] || "").toString().toLowerCase();
   if (cat.includes("atp") || cat.includes("wta")) return 0.07;
@@ -112,7 +111,6 @@ function categoryWeight(m = {}) {
   return 0.0;
 }
 
-// read set games from player object
 function readSetGames(p, idx) {
   const key = "s" + idx;
   if (!p) return null;
@@ -121,7 +119,6 @@ function readSetGames(p, idx) {
   return null;
 }
 
-// current set pair (games for A/B)
 function currentSetPair(m, status) {
   if (!Array.isArray(m.players) || m.players.length < 2) return { ga: null, gb: null };
   const A = m.players[0] || {}, B = m.players[1] || {};
@@ -130,7 +127,6 @@ function currentSetPair(m, status) {
   return { ga, gb };
 }
 
-// momentum based on past sets
 function computeMomentum(m, favIsA) {
   if (!Array.isArray(m.players) || m.players.length < 2) return 0;
   const A = m.players[0] || {}, B = m.players[1] || {};
@@ -152,7 +148,6 @@ function computeMomentum(m, favIsA) {
   return score;
 }
 
-// detect surface from various fields
 function detectSurface(m = {}) {
   const fields = [m.surface, m.court, m.courtType, m.categoryName, m.league, m.tournament, m.info, m.meta]
     .filter(Boolean).map(x => String(x).toLowerCase()).join(" ");
@@ -163,7 +158,6 @@ function detectSurface(m = {}) {
   return "";
 }
 
-// surface → small confidence tweak
 function surfaceAdj(surf) {
   if (surf === "grass") return 0.02;
   if (surf === "hard") return 0.01;
@@ -172,7 +166,6 @@ function surfaceAdj(surf) {
   return 0.0;
 }
 
-// parse start time for upcoming
 function parseStartTs(m = {}) {
   const d = String(m.date || m["@date"] || "").trim();
   const t = String(m.time || m["@time"] || "").trim();
@@ -185,7 +178,6 @@ function parseStartTs(m = {}) {
   return Number.isFinite(ts) ? ts : null;
 }
 
-// small time-based adjustment (not big)
 function timeToStartAdj(m, status) {
   if (status.live) return 0;
   const ts = parseStartTs(m); if (!ts) return 0;
@@ -197,7 +189,6 @@ function timeToStartAdj(m, status) {
   return -0.02;
 }
 
-// guard: only set 2, only certain score windows
 function set2WindowGuard(status, ga, gb) {
   if (status.setNum !== 2) return { pass: false, badge: `SET ${status.setNum || 1}` };
   if (ga === null || gb === null) return { pass: false, badge: `SET 2` };
@@ -209,7 +200,6 @@ function set2WindowGuard(status, ga, gb) {
   return { pass: true, total, diff: Math.abs((ga || 0) - (gb || 0)), ga, gb };
 }
 
-// control sudden jumps
 function volatilityClamp(confBase, confNow) {
   let d = confNow - confBase;
   if (d > T.CLAMP_UP) d = T.CLAMP_UP;
@@ -217,7 +207,36 @@ function volatilityClamp(confBase, confNow) {
   return confBase + d;
 }
 
-// MAIN EXPORT
+function fixtureBoost(m = {}, favName = "") {
+  try {
+    if (typeof window === 'undefined') return 0;
+    const fx = window.__LBQ_FIXTURES__;
+    if (!fx) return 0;
+    if (Array.isArray(fx)) {
+      const matchId = m.id || m.matchId || m.uid || "";
+      const title = m.name || "";
+      const tour = m.tournament || m.categoryName || "";
+      const lowerFav = favName ? favName.toLowerCase() : "";
+      for (const item of fx) {
+        if (!item) continue;
+        const s = String(item).toLowerCase();
+        if (
+          (matchId && s.includes(String(matchId).toLowerCase())) ||
+          (title && s.includes(String(title).toLowerCase())) ||
+          (tour && s.includes(String(tour).toLowerCase())) ||
+          (lowerFav && s.includes(lowerFav))
+        ) {
+          return BOOST.fixture;
+        }
+      }
+    } else if (typeof fx === 'object') {
+      const matchId = m.id || m.matchId || m.uid || "";
+      if (matchId && fx[matchId]) return BOOST.fixture;
+    }
+  } catch {}
+  return 0;
+}
+
 export default function analyzeMatch(m = {}) {
   const weights = getAdaptiveWeights();
   const [pA, pB] = parsePlayers(m);
@@ -226,7 +245,6 @@ export default function analyzeMatch(m = {}) {
   const { oA, oB } = pickTwoOdds(oddsObj, pA, pB);
   const haveOdds = (oA > 1 && oB > 1);
 
-  // no odds → only label by status/set
   if (!haveOdds) {
     if (!status.live) {
       return {
@@ -267,14 +285,12 @@ export default function analyzeMatch(m = {}) {
     };
   }
 
-  // odds present → real evaluation
   let { pa, pb } = implied(oA, oB);
   const favIsA = pa >= pb;
   const favName = favIsA ? pA : pB;
   const favProb = favIsA ? pa : pb;
   const favOdds = favIsA ? oA : oB;
 
-  // still not live? → upcoming
   if (!status.live) {
     return {
       label: "UPCOMING",
@@ -285,7 +301,6 @@ export default function analyzeMatch(m = {}) {
     };
   }
 
-  // set 1 → not yet
   if (status.setNum === 1) {
     return {
       label: "SET 1",
@@ -296,7 +311,6 @@ export default function analyzeMatch(m = {}) {
     };
   }
 
-  // set 3+ → exit
   if (status.setNum >= 3) {
     return {
       label: "SET 3",
@@ -307,7 +321,6 @@ export default function analyzeMatch(m = {}) {
     };
   }
 
-  // we only fully score in live set 2
   const { ga, gb } = currentSetPair(m, status);
   const win = set2WindowGuard(status, ga, gb);
   if (!win.pass) {
@@ -320,43 +333,45 @@ export default function analyzeMatch(m = {}) {
     };
   }
 
-  // base confidence from odds + category + live
   const catBonus = categoryWeight(m);
   const liveBonus = 0.03;
   const confBase = 0.50 + ((favProb - 0.5) * 1.20) + catBonus + liveBonus;
   let conf = confBase;
 
-  // momentum
-  const momentumRaw = computeMomentum(m, favIsA);
+  const momentumRawBase = computeMomentum(m, favIsA);
+  let momentumRaw = momentumRawBase;
+
+  const isCleanSet2 = win.total >= 3 && win.total <= 5;
+  const favLeadingNow = favIsA ? ((win.ga || 0) >= (win.gb || 0)) : ((win.gb || 0) >= (win.ga || 0));
+  if (momentumRaw > 0 && isCleanSet2 && favLeadingNow) {
+    momentumRaw = momentumRaw * BOOST.momentumMult;
+    if (momentumRaw > BOOST.momentumCap) momentumRaw = BOOST.momentumCap;
+  }
+
   const momentumWeighted = momentumRaw * weights.momentum;
 
-  // surface
   const surf = detectSurface(m);
   const surfaceRaw = surfaceAdj(surf);
   const surfaceWeighted = surfaceRaw * weights.surface;
 
-  // time-based adj (light)
   const timeAdjRaw = timeToStartAdj(m, status);
   const timeWeighted = timeAdjRaw * weights.form;
 
-  // apply all
+  const fixtureWeighted = fixtureBoost(m, favName);
+
   conf += momentumWeighted;
   conf += surfaceWeighted;
   conf += timeWeighted;
+  conf += fixtureWeighted;
 
-  // ATP/WTA + fav leading in good window → tiny bonus
-  const favLeadingNow = favIsA ? ((win.ga || 0) >= (win.gb || 0)) : ((win.gb || 0) >= (win.ga || 0));
   if ((catBonus >= 0.07) && favLeadingNow && win.total >= 4 && win.total <= 5) {
     conf += 0.01 * weights.confidence;
   }
 
-  // clamp
   const confFinal = Math.max(0.51, Math.min(0.95, volatilityClamp(confBase, conf)));
 
-  // odds check
   const minOddsOk = Number.isFinite(favOdds) && favOdds >= T.MIN_ODDS;
 
-  // SAFE conditions
   const safeProbOk = favProb >= T.MIN_PROB_SAFE;
   const safeDiffOk = (win.diff || 0) <= T.MAX_SET2_DIFF_SAFE;
   const safeAll = (
@@ -367,7 +382,6 @@ export default function analyzeMatch(m = {}) {
     confFinal >= T.SAFE_CONF
   );
 
-  // RISKY conditions
   const withinOneGameBehind = !favLeadingNow && Math.abs((win.ga || 0) - (win.gb || 0)) === 1;
   const riskyProbOk = favProb >= T.MIN_PROB_RISKY;
   const riskyDiffOk = (win.diff || 0) <= T.MAX_SET2_DIFF_RISKY;
@@ -380,7 +394,6 @@ export default function analyzeMatch(m = {}) {
     confFinal >= T.RISKY_MIN_CONF
   );
 
-  // final label
   let label = 'AVOID';
   let tip = '';
   if (safeAll) {
@@ -392,10 +405,8 @@ export default function analyzeMatch(m = {}) {
     label = 'AVOID';
   }
 
-  // kelly level (kept the same)
   const kellyLevel = confFinal >= 0.9 ? 'HIGH' : confFinal >= 0.8 ? 'MED' : 'LOW';
 
-  // optional logging
   try {
     if (process?.env?.REACT_APP_LOG_PREDICTIONS === '1') {
       console.table([{
@@ -408,12 +419,14 @@ export default function analyzeMatch(m = {}) {
         favLeading: favLeadingNow ? 1 : 0,
         catBonus: +catBonus.toFixed(3),
         surface: surf || '-',
+        fixtureBoost: +fixtureWeighted.toFixed(3),
+        momentumBase: +momentumRawBase.toFixed(3),
+        momentumUsed: +momentumRaw.toFixed(3),
         weights
       }]);
     }
   } catch (_) {}
 
-  // final return
   return {
     label,
     conf: confFinal,
@@ -430,6 +443,9 @@ export default function analyzeMatch(m = {}) {
       surface: surf,
       set2Total: win.total,
       set2Diff: win.diff,
+      fixtureBoost: fixtureWeighted,
+      momentumBase: momentumRawBase,
+      momentumUsed: momentumRaw,
       weightsSource: typeof window !== 'undefined' && window.__LBQ_WEIGHTS__ ? 'adaptive' : 'default'
     }
   };
