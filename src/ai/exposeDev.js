@@ -6,6 +6,8 @@ import {
   runFixtureAvoid,
   runFixtureBorder,
   runAllFixtures,
+  listFixtures,
+  runFixtureByKey,
 } from './fixtures';
 
 const PROXY_URL = '/api/lbq-config';
@@ -80,9 +82,13 @@ if (typeof window !== 'undefined') {
     runFixtureAvoid,
     runFixtureBorder,
     runAllFixtures,
+    listFixtures,
+    runFixtureByKey,
   };
   window.__LBQ_PING = lbqPing;
   window.__LBQ_RECALC = lbqRecalc;
   window.__LBQ_FETCH_CONFIG = lbqFetchConfig;
+  window.LBQ_listFixtures = typeof listFixtures === 'function' ? listFixtures : () => [];
+  window.LBQ_testFixture = typeof runFixtureByKey === 'function' ? runFixtureByKey : () => null;
   console.log('[LBQ][dev] helpers ready (proxy-first + fixtures)');
 }
