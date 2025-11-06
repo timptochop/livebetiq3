@@ -1,4 +1,6 @@
 // src/ai/exposeDev.js
+// v6.0-phase3 – proxy-first + fixtures + adaptive loop + convenience globals
+
 import { calculateEV, estimateConfidence, generateLabel, generateNote } from './aiEngine';
 import {
   runFixtureSafe,
@@ -9,6 +11,11 @@ import {
   listFixtures,
   runFixtureByKey,
 } from './fixtures';
+import {
+  runAdaptiveCycle,
+  pushFeedback,
+  getAdaptiveSnapshot,
+} from './adaptiveLoop';
 
 const PROXY_URL = '/api/lbq-config';
 const GAS_URL =
@@ -73,10 +80,12 @@ async function lbqFetchConfig() {
 
 if (typeof window !== 'undefined') {
   window.LBQ_ai = {
+    // core AI
     calculateEV,
     estimateConfidence,
     generateLabel,
     generateNote,
+    // fixtures
     runFixtureSafe,
     runFixtureRisky,
     runFixtureAvoid,
@@ -84,11 +93,46 @@ if (typeof window !== 'undefined') {
     runAllFixtures,
     listFixtures,
     runFixtureByKey,
+    // adaptive
+    runAdaptiveCycle,
+    pushFeedback,
+    getAdaptiveSnapshot,
   };
+
+  // quick console helpers όπως τα θέλεις
   window.__LBQ_PING = lbqPing;
   window.__LBQ_RECALC = lbqRecalc;
   window.__LBQ_FETCH_CONFIG = lbqFetchConfig;
-  window.LBQ_listFixtures = typeof listFixtures === 'function' ? listFixtures : () => [];
-  window.LBQ_testFixture = typeof runFixtureByKey === 'function' ? runFixtureByKey : () => null;
-  console.log('[LBQ][dev] helpers ready (proxy-first + fixtures)');
+
+  // fixtures short-hands (να μη γράφεις window.LBQ_ai.κάτι)
+  window.LBQ_listFixtures =
+    typeof listFixtures === 'function' ? listFixtures : () => [];
+  window.LBQ_testFixture =
+    typeof runFixtureByKey === 'function'
+      ? runFixtureByKey
+      : () => null;
+
+  // adaptive short-hands
+  window.LBQ_adapt =
+    typeof runAdaptiveCycle === 'function'
+      ? runAdaptiveCycle
+      : () => ({ changed: false });
+  window.LBQ_feedback =
+    typeof pushFeedback === 'function'
+      ? pushFeedback
+      : () => null;
+  window.LBQ_adaptSnapshot =
+    typeof getAdaptiveSnapshot === 'function'
+      ? getAdaptiveSnapshot
+      : () => ({});
+
+  console.log(
+    '[LBQ][dev] helpers ready (proxy-first + fixtures + adaptive)',
+  );
 }
+
+export {
+  lbqPing,
+  lbqRecalc,
+  lbqFetchConfig,
+};

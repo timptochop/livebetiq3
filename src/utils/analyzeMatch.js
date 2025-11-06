@@ -1,7 +1,4 @@
 // src/utils/analyzeMatch.js
-// v5.1-phase2-momentum (based on your v5.0-phase1-wired)
-
-// hard tennis rules / guardrails
 const T = {
   MIN_ODDS: 1.5,
   CLAMP_UP: 0.06,
@@ -11,7 +8,7 @@ const T = {
   SAFE_CONF: 0.66,
   MIN_PROB_SAFE: 0.5,
   MAX_SET2_DIFF_SAFE: 6,
-  RISKY_MIN_CONF: 0.50,
+  RISKY_MIN_CONF: 0.5,
   MIN_PROB_RISKY: 0.46,
   MAX_SET2_DIFF_RISKY: 7
 };
@@ -27,16 +24,14 @@ const DEFAULT_WEIGHTS = {
 
 const BOOST = {
   fixture: 0.018,
+  fixtureHard: 0.035,
   momentumMult: 1.25,
+  momentumMultFixture: 1.35,
   momentumCap: 0.075
 };
 
 function getAdaptiveWeights() {
-  if (
-    typeof window !== 'undefined' &&
-    window.__LBQ_WEIGHTS__ &&
-    typeof window.__LBQ_WEIGHTS__ === 'object'
-  ) {
+  if (typeof window !== 'undefined' && window.__LBQ_WEIGHTS__ && typeof window.__LBQ_WEIGHTS__ === 'object') {
     return {
       ev: Number(window.__LBQ_WEIGHTS__.ev || DEFAULT_WEIGHTS.ev),
       confidence: Number(window.__LBQ_WEIGHTS__.confidence || DEFAULT_WEIGHTS.confidence),
@@ -207,16 +202,16 @@ function volatilityClamp(confBase, confNow) {
   return confBase + d;
 }
 
-function fixtureBoost(m = {}, favName = "") {
+function matchFixtureHit(m = {}, favName = "") {
   try {
-    if (typeof window === 'undefined') return 0;
+    if (typeof window === 'undefined') return null;
     const fx = window.__LBQ_FIXTURES__;
-    if (!fx) return 0;
+    if (!fx) return null;
+    const matchId = m.id || m.matchId || m.uid || "";
+    const title = m.name || "";
+    const tour = m.tournament || m.categoryName || "";
+    const lowerFav = favName ? favName.toLowerCase() : "";
     if (Array.isArray(fx)) {
-      const matchId = m.id || m.matchId || m.uid || "";
-      const title = m.name || "";
-      const tour = m.tournament || m.categoryName || "";
-      const lowerFav = favName ? favName.toLowerCase() : "";
       for (const item of fx) {
         if (!item) continue;
         const s = String(item).toLowerCase();
@@ -226,15 +221,26 @@ function fixtureBoost(m = {}, favName = "") {
           (tour && s.includes(String(tour).toLowerCase())) ||
           (lowerFav && s.includes(lowerFav))
         ) {
-          return BOOST.fixture;
+          return { type: 'list', raw: item };
         }
       }
     } else if (typeof fx === 'object') {
-      const matchId = m.id || m.matchId || m.uid || "";
-      if (matchId && fx[matchId]) return BOOST.fixture;
+      if (matchId && fx[matchId]) {
+        return { type: 'map', raw: fx[matchId] };
+      }
     }
   } catch {}
-  return 0;
+  return null;
+}
+
+function fixtureLabelFromRaw(raw) {
+  if (!raw) return null;
+  const s = String(raw).toLowerCase();
+  if (s.includes('safe')) return 'SAFE';
+  if (s.includes('risky')) return 'RISKY';
+  if (s.includes('avoid')) return 'AVOID';
+  if (s.includes('border')) return 'BORDER';
+  return null;
 }
 
 export default function analyzeMatch(m = {}) {
@@ -291,33 +297,36 @@ export default function analyzeMatch(m = {}) {
   const favProb = favIsA ? pa : pb;
   const favOdds = favIsA ? oA : oB;
 
+  const fixtureHit = matchFixtureHit(m, favName);
+  const fixtureLabel = fixtureHit ? fixtureLabelFromRaw(fixtureHit.raw) : null;
+
   if (!status.live) {
     return {
-      label: "UPCOMING",
-      conf: 0,
-      kellyLevel: "LOW",
-      tip: "",
-      features: { setNum: status.setNum || 0, live: 0 }
+      label: fixtureLabel ? fixtureLabel : "UPCOMING",
+      conf: fixtureLabel === 'SAFE' ? 0.7 : 0,
+      kellyLevel: fixtureLabel === 'SAFE' ? "MED" : "LOW",
+      tip: fixtureLabel === 'SAFE' ? favName + ' to win match' : "",
+      features: { setNum: status.setNum || 0, live: 0, fixture: fixtureHit ? fixtureHit.raw : null }
     };
   }
 
   if (status.setNum === 1) {
     return {
-      label: "SET 1",
-      conf: 0,
-      kellyLevel: "LOW",
-      tip: "",
-      features: { setNum: 1, live: 1 }
+      label: fixtureLabel ? fixtureLabel : "SET 1",
+      conf: fixtureLabel === 'SAFE' ? 0.7 : 0,
+      kellyLevel: fixtureLabel === 'SAFE' ? "MED" : "LOW",
+      tip: fixtureLabel === 'SAFE' ? favName + ' to win match' : "",
+      features: { setNum: 1, live: 1, fixture: fixtureHit ? fixtureHit.raw : null }
     };
   }
 
   if (status.setNum >= 3) {
     return {
-      label: "SET 3",
-      conf: 0,
-      kellyLevel: "LOW",
-      tip: "",
-      features: { setNum: status.setNum, live: 1 }
+      label: fixtureLabel ? fixtureLabel : "SET 3",
+      conf: fixtureLabel === 'SAFE' ? 0.7 : 0,
+      kellyLevel: fixtureLabel === 'SAFE' ? "MED" : "LOW",
+      tip: fixtureLabel === 'SAFE' ? favName + ' to win match' : "",
+      features: { setNum: status.setNum, live: 1, fixture: fixtureHit ? fixtureHit.raw : null }
     };
   }
 
@@ -325,11 +334,11 @@ export default function analyzeMatch(m = {}) {
   const win = set2WindowGuard(status, ga, gb);
   if (!win.pass) {
     return {
-      label: win.badge,
-      conf: 0,
-      kellyLevel: "LOW",
-      tip: "",
-      features: { setNum: status.setNum, live: 1 }
+      label: fixtureLabel ? fixtureLabel : win.badge,
+      conf: fixtureLabel === 'SAFE' ? 0.7 : 0,
+      kellyLevel: fixtureLabel === 'SAFE' ? "MED" : "LOW",
+      tip: fixtureLabel === 'SAFE' ? favName + ' to win match' : "",
+      features: { setNum: status.setNum, live: 1, fixture: fixtureHit ? fixtureHit.raw : null }
     };
   }
 
@@ -338,26 +347,24 @@ export default function analyzeMatch(m = {}) {
   const confBase = 0.50 + ((favProb - 0.5) * 1.20) + catBonus + liveBonus;
   let conf = confBase;
 
-  const momentumRawBase = computeMomentum(m, favIsA);
-  let momentumRaw = momentumRawBase;
-
   const isCleanSet2 = win.total >= 3 && win.total <= 5;
   const favLeadingNow = favIsA ? ((win.ga || 0) >= (win.gb || 0)) : ((win.gb || 0) >= (win.ga || 0));
+
+  const momentumRawBase = computeMomentum(m, favIsA);
+  let momentumRaw = momentumRawBase;
   if (momentumRaw > 0 && isCleanSet2 && favLeadingNow) {
-    momentumRaw = momentumRaw * BOOST.momentumMult;
+    const mult = fixtureLabel === 'SAFE' ? BOOST.momentumMultFixture : BOOST.momentumMult;
+    momentumRaw = momentumRaw * mult;
     if (momentumRaw > BOOST.momentumCap) momentumRaw = BOOST.momentumCap;
   }
 
   const momentumWeighted = momentumRaw * weights.momentum;
-
   const surf = detectSurface(m);
   const surfaceRaw = surfaceAdj(surf);
   const surfaceWeighted = surfaceRaw * weights.surface;
-
   const timeAdjRaw = timeToStartAdj(m, status);
   const timeWeighted = timeAdjRaw * weights.form;
-
-  const fixtureWeighted = fixtureBoost(m, favName);
+  const fixtureWeighted = fixtureLabel ? BOOST.fixtureHard : BOOST.fixture;
 
   conf += momentumWeighted;
   conf += surfaceWeighted;
@@ -369,7 +376,6 @@ export default function analyzeMatch(m = {}) {
   }
 
   const confFinal = Math.max(0.51, Math.min(0.95, volatilityClamp(confBase, conf)));
-
   const minOddsOk = Number.isFinite(favOdds) && favOdds >= T.MIN_ODDS;
 
   const safeProbOk = favProb >= T.MIN_PROB_SAFE;
@@ -396,13 +402,25 @@ export default function analyzeMatch(m = {}) {
 
   let label = 'AVOID';
   let tip = '';
-  if (safeAll) {
+
+  if (fixtureLabel === 'SAFE') {
     label = 'SAFE';
     tip = favName + ' to win match';
-  } else if (riskyAll) {
+  } else if (fixtureLabel === 'RISKY') {
     label = 'RISKY';
-  } else {
+  } else if (fixtureLabel === 'AVOID') {
     label = 'AVOID';
+  } else if (fixtureLabel === 'BORDER') {
+    label = safeAll ? 'SAFE' : 'RISKY';
+  } else {
+    if (safeAll) {
+      label = 'SAFE';
+      tip = favName + ' to win match';
+    } else if (riskyAll) {
+      label = 'RISKY';
+    } else {
+      label = 'AVOID';
+    }
   }
 
   const kellyLevel = confFinal >= 0.9 ? 'HIGH' : confFinal >= 0.8 ? 'MED' : 'LOW';
@@ -419,6 +437,8 @@ export default function analyzeMatch(m = {}) {
         favLeading: favLeadingNow ? 1 : 0,
         catBonus: +catBonus.toFixed(3),
         surface: surf || '-',
+        fixture: fixtureHit ? fixtureHit.raw : null,
+        fixtureLabel: fixtureLabel || null,
         fixtureBoost: +fixtureWeighted.toFixed(3),
         momentumBase: +momentumRawBase.toFixed(3),
         momentumUsed: +momentumRaw.toFixed(3),
@@ -443,6 +463,8 @@ export default function analyzeMatch(m = {}) {
       surface: surf,
       set2Total: win.total,
       set2Diff: win.diff,
+      fixture: fixtureHit ? fixtureHit.raw : null,
+      fixtureLabel: fixtureLabel || null,
       fixtureBoost: fixtureWeighted,
       momentumBase: momentumRawBase,
       momentumUsed: momentumRaw,
