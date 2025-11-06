@@ -2,5 +2,9 @@
   "version": 2,
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
-  "outputDirectory": "build"
+  "outputDirectory": "build",
+  "rewrites": [
+    { "source": "/api/lbq-config", "destination": "/api/lbqcc" },
+    { "source": "/api/lbq-config/", "destination": "/api/lbqcc" }
+  ]
 }
