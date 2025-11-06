@@ -1,47 +1,37 @@
-// api/lbq-cc.js — Vercel proxy to GAS WebApp (v5.1-lockdown)
-
+// api/lbqcc.js
 export default async function handler(req, res) {
-  // --- CORS (allow browser POST from app) ---
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-lbq-secret');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  if (req.method === 'OPTIONS') return res.status(204).end();
+  res.setHeader('Cache-Control', 'no-store');
+  const GAS_URL = process.env.LBQ_GAS_URL;     // πλήρες .../exec
+  const SECRET  = process.env.LBQ_SECRET || '';
 
-  const GAS_URL = process.env.LBQ_GAS_URL;
-  const LBQ_SECRET = process.env.LBQ_SECRET;
-
-  if (!GAS_URL || !LBQ_SECRET) {
-    return res.status(500).json({
-      ok: false,
-      error: 'Missing LBQ_GAS_URL or LBQ_SECRET in environment',
-    });
+  if (!GAS_URL) {
+    return res.status(500).json({ ok: false, error: 'LBQ_GAS_URL missing' });
   }
 
   try {
     if (req.method === 'GET') {
-      // pass-through to doGet (config ping)
-      const r = await fetch(`${GAS_URL}?t=${Date.now()}`, { method: 'GET' });
-      const data = await r.json();
-      return res.status(200).json({ ok: true, via: 'get', data });
+      // health/config echo από GAS (ή απλό ping)
+      const r = await fetch(GAS_URL, { method: 'GET' });
+      const text = await r.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = { raw: text }; }
+      return res.status(r.ok ? 200 : r.status).json({ ok: true, via: 'get', data });
     }
 
     if (req.method === 'POST') {
-      const payload = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-      // allow overriding via header, else use server secret
-      const headerSecret = req.headers['x-lbq-secret'];
-      const secret = headerSecret && String(headerSecret).trim().length > 0 ? headerSecret : LBQ_SECRET;
+      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      const payload = { ...body, secret: SECRET };
 
       const r = await fetch(GAS_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, secret }),
+        body: JSON.stringify(payload)
       });
 
       const text = await r.text();
       let data;
       try { data = JSON.parse(text); } catch { data = { raw: text }; }
-
-      return res.status(r.ok ? 200 : r.status).json({ ok: r.ok, via: 'post', data });
+      return res.status(r.ok ? 200 : r.status).json({ ok: true, via: 'post', data });
     }
 
     return res.status(405).json({ ok: false, error: 'Method not allowed' });
