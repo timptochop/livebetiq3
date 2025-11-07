@@ -1,7 +1,5 @@
 // src/utils/loadLbqConfig.js
-const PROXY_URL = '/api/lbq-config';
-const LBQ_CONFIG_URL =
-  'https://script.google.com/macros/s/AKfycbxWd_BhtjqE78k0pzgAOv1PAG0-F3QsuUy6sU-TChOgyKCCjM0nrebsAd068P3GFYI/exec';
+const MODEL_URL = process.env.REACT_APP_MODEL_URL || '/api/lbqcc';
 
 const DEFAULT_WEIGHTS = {
   ev: 0.3,
@@ -18,99 +16,85 @@ function parseDateSafe(v) {
   return Number.isFinite(t) ? t : 0;
 }
 
-async function fetchFromProxy() {
-  const res = await fetch(PROXY_URL, {
-    method: 'GET',
-    headers: {
-      'cache-control': 'no-cache',
-    },
-  });
-  if (!res.ok) {
-    throw new Error('proxy-failed-' + res.status);
-  }
-  const j = await res.json();
-  const payload =
-    j && j.ok && j.data && typeof j.data === 'object' ? j.data : j;
-  return payload;
+function normalizePayload(data, sourceHint) {
+  if (!data) return null;
+  const core =
+    data.ok === true && data.data && typeof data.data === 'object'
+      ? data.data
+      : data.ok === true
+      ? data
+      : data.ev !== undefined
+      ? data
+      : null;
+  if (!core) return null;
+
+  return {
+    ev: Number(core.ev ?? DEFAULT_WEIGHTS.ev),
+    confidence: Number(core.confidence ?? DEFAULT_WEIGHTS.confidence),
+    momentum: Number(core.momentum ?? DEFAULT_WEIGHTS.momentum),
+    drift: Number(core.drift ?? DEFAULT_WEIGHTS.drift),
+    surface: Number(core.surface ?? DEFAULT_WEIGHTS.surface),
+    form: Number(core.form ?? DEFAULT_WEIGHTS.form),
+    generatedAt: core._generatedAt || core.generatedAt || null,
+    source: core._source || sourceHint || 'lbqcc',
+    version: core._version || core.version || 'unknown',
+  };
 }
 
-async function fetchFromGas() {
-  const res = await fetch(LBQ_CONFIG_URL, {
+async function fetchFromUnified() {
+  const res = await fetch(`${MODEL_URL}?mode=config&ts=${Date.now()}`, {
     method: 'GET',
-    headers: {
-      'cache-control': 'no-cache',
-    },
+    headers: { 'cache-control': 'no-cache' },
   });
-  if (!res.ok) {
-    throw new Error('gas-failed-' + res.status);
-  }
+  if (!res.ok) throw new Error('lbqcc-' + res.status);
   const data = await res.json();
-  return data;
+  const norm = normalizePayload(data, 'lbqcc');
+  if (!norm) throw new Error('bad-payload');
+  return norm;
 }
 
 export async function loadLbqConfigOnce() {
-  let data = null;
-
+  let payload;
   try {
-    data = await fetchFromProxy();
-  } catch {
-    try {
-      data = await fetchFromGas();
-    } catch (err) {
-      return {
-        ok: false,
-        reason: 'fetch-failed',
-        error: String(err),
-      };
-    }
+    payload = await fetchFromUnified();
+  } catch (e) {
+    return { ok: false, reason: String(e) };
   }
+  if (!payload) return { ok: false, reason: 'no-payload' };
 
-  if (!data || data.ok !== true) {
-    return {
-      ok: false,
-      reason: 'bad-payload',
-    };
-  }
-
-  const incomingTs = parseDateSafe(data._generatedAt);
+  const incomingTs = parseDateSafe(payload.generatedAt);
   const currentTs =
     typeof window !== 'undefined' &&
     window.__LBQ_WEIGHTS_META__ &&
     parseDateSafe(window.__LBQ_WEIGHTS_META__.generatedAt);
 
   if (currentTs && incomingTs && incomingTs <= currentTs) {
-    return {
-      ok: true,
-      skipped: true,
-      reason: 'older-or-same-config',
-    };
+    return { ok: true, skipped: true, source: 'lbqcc', reason: 'older-or-same-config' };
   }
 
   const nextWeights = {
-    ev: Number(data.ev ?? DEFAULT_WEIGHTS.ev),
-    confidence: Number(data.confidence ?? DEFAULT_WEIGHTS.confidence),
-    momentum: Number(data.momentum ?? DEFAULT_WEIGHTS.momentum),
-    drift: Number(data.drift ?? DEFAULT_WEIGHTS.drift),
-    surface: Number(data.surface ?? DEFAULT_WEIGHTS.surface),
-    form: Number(data.form ?? DEFAULT_WEIGHTS.form),
+    ev: payload.ev,
+    confidence: payload.confidence,
+    momentum: payload.momentum,
+    drift: payload.drift,
+    surface: payload.surface,
+    form: payload.form,
   };
 
   if (typeof window !== 'undefined') {
     window.__LBQ_WEIGHTS__ = nextWeights;
     window.__LBQ_WEIGHTS_META__ = {
-      generatedAt: data._generatedAt || null,
-      source: data._source || 'lbq-config',
-      version: data._version || 'unknown',
+      generatedAt: payload.generatedAt,
+      source: payload.source || 'lbqcc',
+      version: payload.version,
     };
   }
 
   return {
     ok: true,
     updated: true,
+    source: 'lbqcc',
     weights: nextWeights,
-    meta: {
-      generatedAt: data._generatedAt || null,
-      version: data._version || 'unknown',
-    },
+    meta: { generatedAt: payload.generatedAt, version: payload.version },
   };
 }

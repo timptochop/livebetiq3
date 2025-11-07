@@ -1,41 +1,47 @@
 // api/lbqcc.js
 export default async function handler(req, res) {
-  res.setHeader('Cache-Control', 'no-store');
-  const GAS_URL = process.env.LBQ_GAS_URL;     // πλήρες .../exec
-  const SECRET  = process.env.LBQ_SECRET || '';
+  const GAS_URL = process.env.LOG_WEBHOOK_URL || '';
+  const SECRET = process.env.LBQ_SECRET || '';
 
   if (!GAS_URL) {
-    return res.status(500).json({ ok: false, error: 'LBQ_GAS_URL missing' });
+    return res.status(500).json({ ok: false, error: 'missing LOG_WEBHOOK_URL' });
   }
 
   try {
     if (req.method === 'GET') {
-      // health/config echo από GAS (ή απλό ping)
-      const r = await fetch(GAS_URL, { method: 'GET' });
-      const text = await r.text();
-      let data;
-      try { data = JSON.parse(text); } catch { data = { raw: text }; }
-      return res.status(r.ok ? 200 : r.status).json({ ok: true, via: 'get', data });
+      const mode = String(req.query.mode || 'config');
+      const url = `${GAS_URL}${GAS_URL.includes('?') ? '&' : '?'}mode=${encodeURIComponent(
+        mode
+      )}&ts=${Date.now()}`;
+
+      const r = await fetch(url, { method: 'GET', headers: { 'cache-control': 'no-cache' } });
+      if (!r.ok) {
+        return res.status(r.status).json({ ok: false, error: `gas http ${r.status}` });
+      }
+      const data = await r.json();
+      return res.status(200).json({ ok: true, via: 'get', data });
     }
 
     if (req.method === 'POST') {
-      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-      const payload = { ...body, secret: SECRET };
+      const payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
+      const url = `${GAS_URL}${GAS_URL.includes('?') ? '&' : '?'}ts=${Date.now()}${
+        SECRET ? `&secret=${encodeURIComponent(SECRET)}` : ''
+      }`;
 
-      const r = await fetch(GAS_URL, {
+      const r = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
-
-      const text = await r.text();
-      let data;
-      try { data = JSON.parse(text); } catch { data = { raw: text }; }
-      return res.status(r.ok ? 200 : r.status).json({ ok: true, via: 'post', data });
+      if (!r.ok) {
+        return res.status(r.status).json({ ok: false, error: `gas http ${r.status}` });
+      }
+      const data = await r.json();
+      return res.status(200).json({ ok: true, via: 'post', data });
     }
 
-    return res.status(405).json({ ok: false, error: 'Method not allowed' });
+    return res.status(405).json({ ok: false, error: 'method-not-allowed' });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: String(err) });
+    return res.status(500).json({ ok: false, error: String(err?.message || err) });
   }
 }

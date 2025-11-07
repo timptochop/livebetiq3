@@ -1,13 +1,7 @@
 // src/utils/loadLbqConfig.js
-// v5.0-phase1-react-pull + vercel-proxy-first
-// 1. προσπαθεί να διαβάσει από /api/lbq-config (ίδιο origin, χωρίς CORS)
-// 2. αν αποτύχει → fallback στο Apps Script URL
-// 3. γράφει σε window.__LBQ_WEIGHTS__ χωρίς να επηρεάζει άλλο κώδικα
+// v5.1-lockdown — unified via /api/lbqcc?mode=config
 
-const VERCEL_PROXY_URL = '/api/lbq-config';
-
-const GAS_URL =
-  'https://script.google.com/macros/s/AKfycbxWd_BhtjqE78k0pzgAOv1PAG0-F3QsuUy6sU-TChOgyKCCjM0nrebsAd068P3GFYI/exec';
+const PROXY_URL = '/api/lbqcc?mode=config';
 
 const DEFAULT_WEIGHTS = {
   ev: 0.3,
@@ -26,19 +20,11 @@ function parseDateSafe(v) {
 
 function normalizePayload(data, sourceHint) {
   if (!data) return null;
-  // περιπτώσεις:
-  // 1) { ok:true, data:{ev:...} }  ← vercel proxy
-  // 2) { ok:true, ev:..., _generatedAt:... } ← GAS
-  // 3) { ev:..., ... } ← raw
-  let core = null;
 
-  if (data.ok === true && data.data && typeof data.data === 'object') {
-    core = data.data;
-  } else if (data.ok === true) {
-    core = data;
-  } else if (data.ev !== undefined) {
-    core = data;
-  }
+  let core = null;
+  if (data.ok === true && data.data && typeof data.data === 'object') core = data.data;
+  else if (data.ok === true) core = data;
+  else if (data.ev !== undefined) core = data;
 
   if (!core) return null;
 
@@ -50,78 +36,33 @@ function normalizePayload(data, sourceHint) {
     surface: Number(core.surface ?? DEFAULT_WEIGHTS.surface),
     form: Number(core.form ?? DEFAULT_WEIGHTS.form),
     generatedAt: core._generatedAt || core.generatedAt || null,
-    source: core._source || sourceHint || 'lbq-config',
+    source: core._source || sourceHint || 'lbqcc',
     version: core._version || core.version || 'unknown',
   };
 }
 
 async function fetchFromProxy() {
-  const res = await fetch(VERCEL_PROXY_URL, {
+  const res = await fetch(PROXY_URL, {
     method: 'GET',
-    headers: {
-      'cache-control': 'no-cache',
-    },
+    headers: { 'cache-control': 'no-cache' },
   });
-  if (!res.ok) {
-    throw new Error('proxy-not-ok');
-  }
+  if (!res.ok) throw new Error('proxy-not-ok-' + res.status);
   const data = await res.json();
-  const norm = normalizePayload(data, 'vercel-edge-proxy');
-  if (!norm) {
-    throw new Error('proxy-bad-payload');
-  }
-  return norm;
-}
-
-async function fetchFromGas() {
-  const res = await fetch(GAS_URL, {
-    method: 'GET',
-    headers: {
-      'cache-control': 'no-cache',
-    },
-  });
-  if (!res.ok) {
-    throw new Error('gas-not-ok');
-  }
-  const data = await res.json();
-  const norm = normalizePayload(data, 'gas-direct');
-  if (!norm) {
-    throw new Error('gas-bad-payload');
-  }
+  const norm = normalizePayload(data, 'vercel-proxy');
+  if (!norm) throw new Error('proxy-bad-payload');
   return norm;
 }
 
 export async function loadLbqConfigOnce() {
-  // 1. πήγαινε πρώτα στο Vercel (ίδιο origin → δεν θα δεις CORS)
   let payload = null;
-  let used = null;
-
   try {
     payload = await fetchFromProxy();
-    used = 'proxy';
-  } catch (e1) {
-    // 2. fallback στο GAS – εδώ ΜΠΟΡΕΙ να δεις CORS αν τρέχεις local χωρίς proxy
-    try {
-      payload = await fetchFromGas();
-      used = 'gas';
-    } catch (e2) {
-      return {
-        ok: false,
-        reason: 'both-failed',
-        proxyErr: String(e1),
-        gasErr: String(e2),
-      };
-    }
+  } catch (e) {
+    return { ok: false, reason: String(e) };
   }
 
-  if (!payload) {
-    return {
-      ok: false,
-      reason: 'no-payload',
-    };
-  }
+  if (!payload) return { ok: false, reason: 'no-payload' };
 
-  // compare με ό,τι έχουμε ήδη στο window
   const incomingTs = parseDateSafe(payload.generatedAt);
   const currentTs =
     typeof window !== 'undefined' &&
@@ -129,12 +70,7 @@ export async function loadLbqConfigOnce() {
     parseDateSafe(window.__LBQ_WEIGHTS_META__.generatedAt);
 
   if (currentTs && incomingTs && incomingTs <= currentTs) {
-    return {
-      ok: true,
-      skipped: true,
-      source: used,
-      reason: 'older-or-same-config',
-    };
+    return { ok: true, skipped: true, source: 'proxy', reason: 'older-or-same-config' };
   }
 
   const nextWeights = {
@@ -150,7 +86,7 @@ export async function loadLbqConfigOnce() {
     window.__LBQ_WEIGHTS__ = nextWeights;
     window.__LBQ_WEIGHTS_META__ = {
       generatedAt: payload.generatedAt,
-      source: payload.source || used,
+      source: payload.source || 'proxy',
       version: payload.version,
     };
   }
@@ -158,11 +94,8 @@ export async function loadLbqConfigOnce() {
   return {
     ok: true,
     updated: true,
-    source: used,
+    source: 'proxy',
     weights: nextWeights,
-    meta: {
-      generatedAt: payload.generatedAt,
-      version: payload.version,
-    },
+    meta: { generatedAt: payload.generatedAt, version: payload.version },
   };
 }

@@ -1,6 +1,4 @@
 // src/ai/exposeDev.js
-// v6.0-phase3 – proxy-first + fixtures + adaptive loop + convenience globals
-
 import { calculateEV, estimateConfidence, generateLabel, generateNote } from './aiEngine';
 import {
   runFixtureSafe,
@@ -11,81 +9,31 @@ import {
   listFixtures,
   runFixtureByKey,
 } from './fixtures';
-import {
-  runAdaptiveCycle,
-  pushFeedback,
-  getAdaptiveSnapshot,
-} from './adaptiveLoop';
+import { runAdaptiveCycle, pushFeedback, getAdaptiveSnapshot } from './adaptiveLoop';
 
-const PROXY_URL = '/api/lbq-config';
-const GAS_URL =
-  'https://script.google.com/macros/s/AKfycbxWd_BhtjqE78k0pzgAOv1PAG0-F3QsuUy6sU-TChOgyKCCjM0nrebsAd068P3GFYI/exec';
+const MODEL_URL = process.env.REACT_APP_MODEL_URL || '/api/lbqcc';
 
-async function tryProxy(mode) {
-  const url = mode ? `${PROXY_URL}?mode=${encodeURIComponent(mode)}` : PROXY_URL;
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: { 'cache-control': 'no-cache' },
-  });
-  if (!res.ok) {
-    throw new Error('proxy-' + res.status);
-  }
-  return res.json();
+function url(mode) {
+  const qs = mode ? `?mode=${encodeURIComponent(mode)}&ts=${Date.now()}` : `?ts=${Date.now()}`;
+  return `${MODEL_URL}${qs}`;
 }
 
-async function tryGas(mode) {
-  const url = mode ? `${GAS_URL}?mode=${encodeURIComponent(mode)}` : GAS_URL;
-  const res = await fetch(url, { method: 'GET' });
-  if (!res.ok) {
-    throw new Error('gas-' + res.status);
-  }
-  return res.json();
+async function get(mode) {
+  const r = await fetch(url(mode), { method: 'GET', headers: { 'cache-control': 'no-cache' } });
+  if (!r.ok) throw new Error('http-' + r.status);
+  return r.json();
 }
 
-async function lbqPing() {
-  try {
-    const j = await tryProxy('ping');
-    console.log('[LBQ][dev] ping via proxy:', j);
-    return j;
-  } catch (e) {
-    const j2 = await tryGas('ping');
-    console.log('[LBQ][dev] ping via GAS:', j2);
-    return j2;
-  }
-}
-
-async function lbqRecalc() {
-  try {
-    const j = await tryProxy('recalc');
-    console.log('[LBQ][dev] recalc via proxy:', j);
-    return j;
-  } catch (e) {
-    const j2 = await tryGas('recalc');
-    console.log('[LBQ][dev] recalc via GAS:', j2);
-    return j2;
-  }
-}
-
-async function lbqFetchConfig() {
-  try {
-    const j = await tryProxy();
-    console.log('[LBQ][dev] config via proxy:', j);
-    return j;
-  } catch (e) {
-    const j2 = await tryGas();
-    console.log('[LBQ][dev] config via GAS:', j2);
-    return j2;
-  }
-}
+async function lbqPing() { return get('ping'); }
+async function lbqRecalc() { return get('recalc'); }
+async function lbqFetchConfig() { return get('config'); }
 
 if (typeof window !== 'undefined') {
   window.LBQ_ai = {
-    // core AI
     calculateEV,
     estimateConfidence,
     generateLabel,
     generateNote,
-    // fixtures
     runFixtureSafe,
     runFixtureRisky,
     runFixtureAvoid,
@@ -93,46 +41,21 @@ if (typeof window !== 'undefined') {
     runAllFixtures,
     listFixtures,
     runFixtureByKey,
-    // adaptive
     runAdaptiveCycle,
     pushFeedback,
     getAdaptiveSnapshot,
   };
 
-  // quick console helpers όπως τα θέλεις
   window.__LBQ_PING = lbqPing;
   window.__LBQ_RECALC = lbqRecalc;
   window.__LBQ_FETCH_CONFIG = lbqFetchConfig;
 
-  // fixtures short-hands (να μη γράφεις window.LBQ_ai.κάτι)
-  window.LBQ_listFixtures =
-    typeof listFixtures === 'function' ? listFixtures : () => [];
-  window.LBQ_testFixture =
-    typeof runFixtureByKey === 'function'
-      ? runFixtureByKey
-      : () => null;
+  window.LBQ_listFixtures = typeof listFixtures === 'function' ? listFixtures : () => [];
+  window.LBQ_testFixture = typeof runFixtureByKey === 'function' ? runFixtureByKey : () => null;
 
-  // adaptive short-hands
-  window.LBQ_adapt =
-    typeof runAdaptiveCycle === 'function'
-      ? runAdaptiveCycle
-      : () => ({ changed: false });
-  window.LBQ_feedback =
-    typeof pushFeedback === 'function'
-      ? pushFeedback
-      : () => null;
-  window.LBQ_adaptSnapshot =
-    typeof getAdaptiveSnapshot === 'function'
-      ? getAdaptiveSnapshot
-      : () => ({});
-
-  console.log(
-    '[LBQ][dev] helpers ready (proxy-first + fixtures + adaptive)',
-  );
+  window.LBQ_adapt = typeof runAdaptiveCycle === 'function' ? runAdaptiveCycle : () => ({ changed: false });
+  window.LBQ_feedback = typeof pushFeedback === 'function' ? pushFeedback : () => null;
+  window.LBQ_adaptSnapshot = typeof getAdaptiveSnapshot === 'function' ? getAdaptiveSnapshot : () => ({});
 }
 
-export {
-  lbqPing,
-  lbqRecalc,
-  lbqFetchConfig,
-};
+export { lbqPing, lbqRecalc, lbqFetchConfig };
