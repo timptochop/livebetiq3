@@ -4,7 +4,6 @@
   "buildCommand": "npm run build",
   "outputDirectory": "build",
   "rewrites": [
-    { "source": "/api/lbq-config", "destination": "/api/lbqcc" },
-    { "source": "/api/lbq-config/", "destination": "/api/lbqcc" }
+    { "source": "/api/lbq-config", "destination": "/api/lbqcc?mode=config" }
   ]
 }
