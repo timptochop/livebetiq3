@@ -1,12 +1,12 @@
 // src/ai/modelClient.js
-// Single source of truth: /api/lbqcc only. No direct GAS calls.
-
 import { setCutoffsRuntime } from './adaptTuner';
 
-const MODEL_URL = process.env.REACT_APP_MODEL_URL || '/api/lbqcc';
+// HARD-LOCK: ΠΑΝΤΑ μέσω Vercel proxy
+const MODEL_URL = '/api/lbqcc';
+
 const CACHE_KEY = 'LBQ_MODEL_CUTOFFS_CACHE';
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000;   // 24h
-const AUTO_REFRESH_MS = 10 * 60 * 1000;     // 10'
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const AUTO_REFRESH_MS = 10 * 60 * 1000;
 
 function normalizeCutoffs(src) {
   if (!src || typeof src !== 'object') return null;
@@ -60,12 +60,10 @@ async function loadFromUnifiedEndpoint() {
   if (!res.ok) throw new Error('lbqcc-not-ok-' + res.status);
 
   const json = await res.json();
-  const payload = (json && json.ok && typeof json.data === 'object') ? json.data : json;
-
+  const payload = json && json.ok && json.data && typeof json.data === 'object' ? json.data : json;
   const cut = normalizeCutoffs(payload);
-  if (cut) {
-    return { ok: true, cutoffs: cut, source: 'lbqcc-config', raw: json };
-  }
+
+  if (cut) return { ok: true, cutoffs: cut, source: 'lbqcc-config', raw: json };
   return { ok: true, cutoffs: null, source: 'lbqcc-weights-only', raw: json };
 }
 
@@ -76,12 +74,10 @@ export async function loadModelAndApply() {
     if (r.ok && r.cutoffs) {
       setCutoffsRuntime(r.cutoffs);
       writeCache(r.cutoffs);
-
       if (typeof window !== 'undefined') {
         window.__LBQ_CUTOFFS__ = r.cutoffs;
         window.__LBQ_CUTOFFS_META__ = { source: r.source, ts: Date.now() };
       }
-
       console.log('[LBQ] Model cutoffs loaded:', r.cutoffs, '(source:', r.source + ')');
       return { ok: true, cutoffs: r.cutoffs, source: r.source, raw: r.raw };
     }
@@ -119,7 +115,6 @@ export async function loadModelAndApply() {
   return { ok: false, reason: 'no-cutoffs' };
 }
 
-// background auto-refresh
 if (typeof window !== 'undefined') {
   setInterval(() => {
     loadModelAndApply()

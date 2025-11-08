@@ -1,7 +1,7 @@
 // src/utils/fetchAdaptiveWeights.js
-// Reads adaptive weights from /api/lbqcc?mode=config (never calls GAS directly)
 
-const MODEL_URL = process.env.REACT_APP_MODEL_URL || '/api/lbqcc';
+// HARD-LOCK: ΠΑΝΤΑ μέσω Vercel proxy
+const MODEL_URL = '/api/lbqcc';
 
 const DEFAULT_WEIGHTS = {
   ev: 0.3,
