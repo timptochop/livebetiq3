@@ -4,86 +4,93 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App';
 
+// App services & dev helpers
 import { exposeLiveCounter } from './utils/liveCounter';
 import { ensurePermissionIfEnabled } from './push/notifyControl';
 import { reportIfFinished } from './ai/feedHook';
 import './ai/exposeDev';
-import { loadModelAndApply } from './ai/modelClient';
-import { loadLbqConfigOnce } from './utils/loadLbqConfig';
 
-// ---- Bootstrap: URL/SECRET από query ή localStorage (χωρίς index.html) ----
+// Unified config loaders (Edge proxy /api/lbqcc)
+import { loadModelAndApply } from './ai/modelClient';      // loads thrSafe/thrRisky/minEV
+import { loadLbqConfigOnce } from './utils/loadLbqConfig'; // loads adaptive weights
+
+// Optional bootstrap for legacy query/localStorage knobs (safe no-ops if unused)
 (function bootstrapLBQGlobals() {
   try {
     const qp = new URLSearchParams(window.location.search);
-    const qpUrl    = qp.get('modelUrl');
+    const qpUrl = qp.get('modelUrl');
     const qpSecret = qp.get('secret');
 
-    const lsUrl    = localStorage.getItem('LBQ_WEBAPP_URL');
+    const lsUrl = localStorage.getItem('LBQ_WEBAPP_URL');
     const lsSecret = localStorage.getItem('LBQ_SECRET');
 
-    // τελικές τιμές: query > localStorage > κενό (θα χειριστεί το modelClient)
-    const finalUrl    = qpUrl    || lsUrl    || '';
+    const finalUrl = qpUrl || lsUrl || '';
     const finalSecret = qpSecret || lsSecret || '';
 
-    if (qpUrl)    localStorage.setItem('LBQ_WEBAPP_URL', qpUrl);
+    if (qpUrl) localStorage.setItem('LBQ_WEBAPP_URL', qpUrl);
     if (qpSecret) localStorage.setItem('LBQ_SECRET', qpSecret);
 
-    // κάν’ τα διαθέσιμα στο modelClient
     window.__LBQ_WEBAPP_URL = String(finalUrl);
-    window.__LBQ_SECRET     = String(finalSecret);
+    window.__LBQ_SECRET = String(finalSecret);
 
-    console.info('[LBQ] Globals set',
-      { url: !!finalUrl ? 'OK' : '(missing)', secret: finalSecret ? 'set' : '(empty)' });
+    console.info('[LBQ] Globals set', {
+      url: finalUrl ? 'OK' : '(missing)',
+      secret: finalSecret ? 'set' : '(empty)',
+    });
   } catch (err) {
     console.warn('[LBQ] bootstrap globals failed:', err);
   }
 })();
 
-// ---- Pull adaptive weights from GAS (fire-and-forget) ----
-loadLbqConfigOnce().then((res) => {
-  if (res && res.ok && res.updated) {
-    console.log('[LBQ] adaptive weights loaded from GAS:', res.weights, res.meta);
-  } else if (res && res.skipped) {
+// ---- Boot sequence: cutoffs → weights → render (all via /api/lbqcc) ----
+async function boot() {
+  // 1) Load model cutoffs (thrSafe / thrRisky / minEV) from unified endpoint
+  const cut = await loadModelAndApply();
+  if (cut?.ok && cut?.cutoffs) {
+    console.log('[LBQ] Model cutoffs loaded:', cut.cutoffs, `(source: ${cut.source})`);
+  } else {
+    console.warn('[LBQ] Model load failed:', cut?.reason || cut || '(unknown)');
+  }
+
+  // 2) Load adaptive weights (ev/confidence/momentum/drift/surface/form) from unified endpoint
+  const weights = await loadLbqConfigOnce();
+  if (weights?.ok && weights?.updated) {
+    console.log('[LBQ] adaptive weights loaded:', weights.weights, `(source: ${weights.source})`);
+  } else if (weights?.ok && weights?.skipped) {
     console.log('[LBQ] adaptive weights skipped (older-or-same)');
+  } else {
+    console.warn('[LBQ] adaptive weights load failed:', weights?.reason || '(unknown)');
   }
-}).catch(() => {
-  // fail silent
-});
 
-// ---- App boot ----
-exposeLiveCounter();
-ensurePermissionIfEnabled();
+  // 3) App services
+  exposeLiveCounter();
+  ensurePermissionIfEnabled();
 
-if (typeof window !== 'undefined') {
-  window.LBQ_reportIfFinished = reportIfFinished;
+  if (typeof window !== 'undefined') {
+    window.LBQ_reportIfFinished = reportIfFinished;
+  }
+
+  // 4) Render
+  const container = document.getElementById('root');
+  const root = createRoot(container);
+  root.render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
 }
 
-const container = document.getElementById('root');
-const root = createRoot(container);
-root.render(<App />);
+// Start
+boot().catch((err) => console.error('[LBQ] Boot error:', err));
 
-// ---- Model pull on startup + δυνατά logs (success/fail) ----
-async function bootModel() {
-  try {
-    const res = await loadModelAndApply();
-    if (res && res.ok && res.cutoffs) {
-      console.log('[LBQ] Model cutoffs loaded:', res.cutoffs);
-    } else {
-      console.warn('[LBQ] Model load failed:', res);
-    }
-  } catch (err) {
-    console.error('[LBQ] Model load exception:', err);
-  }
-}
-bootModel().catch(() => {});
-
-// ---- Dev helpers για έλεγχο μέσα από το console ----
+// Dev helper to force-reload model from console if needed
 if (typeof window !== 'undefined') {
   window.__LBQ_DEBUG_MODEL = async () => {
     const r = await loadModelAndApply();
     console.log('[LBQ] DEBUG reload model →', r);
     return r;
   };
-  // γρήγορο help
-  console.log('[LBQ] Tip: προσθέτεις ?modelUrl=<WEBAPP_URL>&secret=<SECRET> μία φορά → αποθηκεύεται στο localStorage.');
+  console.log(
+    '[LBQ] Tip: optional query knobs ?modelUrl=<URL>&secret=<SECRET> are persisted in localStorage.'
+  );
 }
