@@ -4,93 +4,132 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App';
 
-// App services & dev helpers
 import { exposeLiveCounter } from './utils/liveCounter';
 import { ensurePermissionIfEnabled } from './push/notifyControl';
 import { reportIfFinished } from './ai/feedHook';
 import './ai/exposeDev';
+import { loadModelAndApply } from './ai/modelClient';
+import { loadLbqConfigOnce } from './utils/loadLbqConfig';
 
-// Unified config loaders (Edge proxy /api/lbqcc)
-import { loadModelAndApply } from './ai/modelClient';      // loads thrSafe/thrRisky/minEV
-import { loadLbqConfigOnce } from './utils/loadLbqConfig'; // loads adaptive weights
+/**
+ * 0) Hard guard: block any direct fetch to Google Apps Script.
+ *    We only allow unified proxy via /api/lbqcc.
+ *    This eliminates accidental CORS regressions and guarantees single source of truth.
+ */
+(function armGasSentinel() {
+  try {
+    if (window.__GAS_SENTINEL_ARMED__) return;
+    const origFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : (input?.url || '');
+      if (url.includes('https://script.google.com/macros/')) {
+        console.warn('[CHECK] ALERT: DIRECT GAS CALL DETECTED →', url);
+        throw new TypeError('blocked-by-gas-sentinel');
+      }
+      return origFetch(input, init);
+    };
+    window.__GAS_SENTINEL_ARMED__ = true;
+    console.log('[CHECK] GAS sentinel armed');
+  } catch (err) {
+    console.warn('[CHECK] GAS sentinel failed to arm:', err);
+  }
+})();
 
-// Optional bootstrap for legacy query/localStorage knobs (safe no-ops if unused)
+/**
+ * 1) Bootstrap: read modelUrl/secret from query or localStorage.
+ *    We do NOT rely on index.html for globals.
+ */
 (function bootstrapLBQGlobals() {
   try {
     const qp = new URLSearchParams(window.location.search);
-    const qpUrl = qp.get('modelUrl');
+    const qpUrl    = qp.get('modelUrl');
     const qpSecret = qp.get('secret');
 
-    const lsUrl = localStorage.getItem('LBQ_WEBAPP_URL');
+    const lsUrl    = localStorage.getItem('LBQ_WEBAPP_URL');
     const lsSecret = localStorage.getItem('LBQ_SECRET');
 
-    const finalUrl = qpUrl || lsUrl || '';
+    // precedence: query > localStorage > empty
+    const finalUrl    = qpUrl    || lsUrl    || '';
     const finalSecret = qpSecret || lsSecret || '';
 
-    if (qpUrl) localStorage.setItem('LBQ_WEBAPP_URL', qpUrl);
+    if (qpUrl)    localStorage.setItem('LBQ_WEBAPP_URL', qpUrl);
     if (qpSecret) localStorage.setItem('LBQ_SECRET', qpSecret);
 
     window.__LBQ_WEBAPP_URL = String(finalUrl);
-    window.__LBQ_SECRET = String(finalSecret);
+    window.__LBQ_SECRET     = String(finalSecret);
 
-    console.info('[LBQ] Globals set', {
-      url: finalUrl ? 'OK' : '(missing)',
-      secret: finalSecret ? 'set' : '(empty)',
-    });
+    console.info('[LBQ] Globals set',
+      { url: finalUrl ? 'OK' : '(missing)', secret: finalSecret ? 'set' : '(empty)' });
   } catch (err) {
     console.warn('[LBQ] bootstrap globals failed:', err);
   }
 })();
 
-// ---- Boot sequence: cutoffs → weights → render (all via /api/lbqcc) ----
-async function boot() {
-  // 1) Load model cutoffs (thrSafe / thrRisky / minEV) from unified endpoint
-  const cut = await loadModelAndApply();
-  if (cut?.ok && cut?.cutoffs) {
-    console.log('[LBQ] Model cutoffs loaded:', cut.cutoffs, `(source: ${cut.source})`);
-  } else {
-    console.warn('[LBQ] Model load failed:', cut?.reason || cut || '(unknown)');
-  }
+/**
+ * 2) Fire-and-forget adaptive weights load via unified endpoint (proxied).
+ *    Silent on failure; console logs on success/skip.
+ */
+loadLbqConfigOnce()
+  .then((res) => {
+    if (res?.ok && res.updated) {
+      console.log('[LBQ] adaptive weights loaded:', res.weights, res.meta);
+    } else if (res?.skipped) {
+      console.log('[LBQ] adaptive weights skipped (older-or-same)');
+    }
+  })
+  .catch(() => { /* no-op */ });
 
-  // 2) Load adaptive weights (ev/confidence/momentum/drift/surface/form) from unified endpoint
-  const weights = await loadLbqConfigOnce();
-  if (weights?.ok && weights?.updated) {
-    console.log('[LBQ] adaptive weights loaded:', weights.weights, `(source: ${weights.source})`);
-  } else if (weights?.ok && weights?.skipped) {
-    console.log('[LBQ] adaptive weights skipped (older-or-same)');
-  } else {
-    console.warn('[LBQ] adaptive weights load failed:', weights?.reason || '(unknown)');
-  }
+/**
+ * 3) App boot
+ */
+exposeLiveCounter();
+ensurePermissionIfEnabled();
 
-  // 3) App services
-  exposeLiveCounter();
-  ensurePermissionIfEnabled();
-
-  if (typeof window !== 'undefined') {
-    window.LBQ_reportIfFinished = reportIfFinished;
-  }
-
-  // 4) Render
-  const container = document.getElementById('root');
-  const root = createRoot(container);
-  root.render(
-    <React.StrictMode>
-      <App />
-    </React.StrictMode>
-  );
+if (typeof window !== 'undefined') {
+  window.LBQ_reportIfFinished = reportIfFinished;
 }
 
-// Start
-boot().catch((err) => console.error('[LBQ] Boot error:', err));
+const container = document.getElementById('root');
+const root = createRoot(container);
+root.render(<App />);
 
-// Dev helper to force-reload model from console if needed
+/**
+ * 4) Pull model cutoffs on startup (unified endpoint) + robust logs.
+ */
+async function bootModel() {
+  try {
+    const res = await loadModelAndApply();
+    if (res?.ok && res.cutoffs) {
+      console.log('[LBQ] Model cutoffs loaded:', res.cutoffs, `(source: ${res.source})`);
+    } else {
+      console.warn('[LBQ] Model load failed:', res);
+    }
+  } catch (err) {
+    console.error('[LBQ] Model load exception:', err);
+  }
+}
+bootModel().catch(() => {});
+
+/**
+ * 5) Quick console helpers
+ */
 if (typeof window !== 'undefined') {
   window.__LBQ_DEBUG_MODEL = async () => {
     const r = await loadModelAndApply();
     console.log('[LBQ] DEBUG reload model →', r);
     return r;
   };
-  console.log(
-    '[LBQ] Tip: optional query knobs ?modelUrl=<URL>&secret=<SECRET> are persisted in localStorage.'
-  );
+
+  // One-line summary snapshot for screenshots
+  setTimeout(() => {
+    try {
+      const snapshot = {
+        cutoffs: window.__LBQ_CUTOFFS__ || null,
+        cutoffsMeta: window.__LBQ_CUTOFFS_META__ || null,
+        weights: window.__LBQ_WEIGHTS__ || null,
+        weightsMeta: window.__LBQ_WEIGHTS_META__ || null,
+      };
+      console.log('[SUMMARY]', { cutoffs: !!snapshot.cutoffs, cutoffsMeta: snapshot.cutoffsMeta, weights: !!snapshot.weights, weightsMeta: snapshot.weightsMeta });
+    } catch {}
+  }, 200);
 }
