@@ -21,6 +21,7 @@ export default async function fetchAdaptiveWeights() {
     headers: { 'cache-control': 'no-cache' },
   });
   if (!r.ok) throw new Error(`lbqcc-${r.status}`);
+
   const j = await r.json();
   const core = j && j.ok && j.data && typeof j.data === 'object' ? j.data : j;
 
