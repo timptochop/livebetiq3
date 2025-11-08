@@ -39,12 +39,22 @@ const CORS = {
   'Content-Type': 'application/json',
 };
 
+async function safeJson(resp) {
+  const txt = await resp.text();
+  try {
+    return JSON.parse(txt);
+  } catch {
+    return { ok: false, raw: txt };
+  }
+}
+
 export default async function handler(req) {
   if (req.method === 'OPTIONS') return new Response(null, { status: 200, headers: CORS });
 
   const urlIn = new URL(req.url);
   const mode = urlIn.searchParams.get('mode') || '';
   const ts = urlIn.searchParams.get('ts') || '';
+  const op = urlIn.searchParams.get('op') || '';
 
   try {
     if (req.method === 'GET') {
@@ -71,14 +81,7 @@ export default async function handler(req) {
         if (ts) u.searchParams.set('ts', ts);
 
         const resp = await fetch(u.toString(), { cache: 'no-store' });
-        const raw = await resp.text();
-        let parsed;
-        try {
-          parsed = JSON.parse(raw);
-        } catch {
-          parsed = { ok: false, raw };
-        }
-
+        const parsed = await safeJson(resp);
         const core = parsed?.data || parsed;
         const withCutoffs = ensureCutoffs(core);
 
@@ -93,17 +96,76 @@ export default async function handler(req) {
         );
       }
 
+      if (mode === 'learn' && (op === '' || op === 'preview')) {
+        const u = new URL(GAS_URL);
+        u.searchParams.set('mode', 'learn');
+        u.searchParams.set('op', 'preview');
+        if (ts) u.searchParams.set('ts', ts);
+
+        const resp = await fetch(u.toString(), { cache: 'no-store' });
+        const parsed = await safeJson(resp);
+
+        const proposal =
+          parsed?.proposal && typeof parsed.proposal === 'object'
+            ? parsed.proposal
+            : parsed?.data && typeof parsed.data === 'object'
+            ? parsed.data
+            : parsed;
+
+        const withCutoffs = ensureCutoffs(proposal);
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            via: 'get',
+            mode: 'learn',
+            op: 'preview',
+            fetchedAt: new Date().toISOString(),
+            proposal: withCutoffs,
+            meta: parsed?.meta || null,
+          }),
+          { status: 200, headers: CORS }
+        );
+      }
+
       return new Response(JSON.stringify({ ok: true, via: 'get' }), { status: 200, headers: CORS });
     }
 
     if (req.method === 'POST') {
-      const payload = await req.json();
-      const r = await fetch(LOG_URL, {
+      const body = await req.json().catch(() => ({}));
+
+      if (mode === 'learn' && (op === 'apply' || body?.op === 'apply')) {
+        const payload = {
+          mode: 'learn',
+          op: 'apply',
+          proposal: ensureCutoffs(body?.proposal || body),
+        };
+
+        const r = await fetch(GAS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const proxied = await safeJson(r);
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            via: 'post',
+            mode: 'learn',
+            op: 'apply',
+            result: proxied,
+          }),
+          { status: 200, headers: CORS }
+        );
+      }
+
+      const passthrough = await fetch(LOG_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(body),
       });
-      const text = await r.text();
+      const text = await passthrough.text();
       let proxied;
       try {
         proxied = JSON.parse(text);
