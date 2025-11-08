@@ -1,47 +1,130 @@
 // api/lbqcc.js
-export default async function handler(req, res) {
-  const GAS_URL = process.env.LOG_WEBHOOK_URL || '';
-  const SECRET = process.env.LBQ_SECRET || '';
+export const config = { runtime: 'edge' };
 
-  if (!GAS_URL) {
-    return res.status(500).json({ ok: false, error: 'missing LOG_WEBHOOK_URL' });
+const GAS_URL =
+  process.env.LBQ_CONFIG_URL ||
+  'https://script.google.com/macros/s/AKfycbxWd_BhtjqE78k0pzgAOv1PAG0-F3QsuUy6sU-TChOgyKCCjM0nrebsAd068P3GFYI/exec';
+
+const LOG_URL = process.env.LOG_WEBHOOK_URL || GAS_URL;
+
+const DEFAULT_CUTOFFS = { thrSafe: 0.61, thrRisky: 0.4, minEV: 0.02 };
+
+function ensureCutoffs(obj) {
+  if (!obj || typeof obj !== 'object') return { ...DEFAULT_CUTOFFS };
+  const out = { ...obj };
+  if (typeof out.thrSafe !== 'number') {
+    out.thrSafe =
+      typeof out.safeConf === 'number'
+        ? out.safeConf
+        : typeof out.minSAFE === 'number'
+        ? out.minSAFE
+        : DEFAULT_CUTOFFS.thrSafe;
   }
+  if (typeof out.thrRisky !== 'number') {
+    out.thrRisky =
+      typeof out.riskyConf === 'number'
+        ? out.riskyConf
+        : typeof out.minRISKY === 'number'
+        ? out.minRISKY
+        : DEFAULT_CUTOFFS.thrRisky;
+  }
+  if (typeof out.minEV !== 'number') out.minEV = DEFAULT_CUTOFFS.minEV;
+  return out;
+}
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Content-Type': 'application/json',
+};
+
+export default async function handler(req) {
+  if (req.method === 'OPTIONS') return new Response(null, { status: 200, headers: CORS });
+
+  const urlIn = new URL(req.url);
+  const mode = urlIn.searchParams.get('mode') || '';
+  const ts = urlIn.searchParams.get('ts') || '';
 
   try {
     if (req.method === 'GET') {
-      const mode = String(req.query.mode || 'config');
-      const url = `${GAS_URL}${GAS_URL.includes('?') ? '&' : '?'}mode=${encodeURIComponent(
-        mode
-      )}&ts=${Date.now()}`;
-
-      const r = await fetch(url, { method: 'GET', headers: { 'cache-control': 'no-cache' } });
-      if (!r.ok) {
-        return res.status(r.status).json({ ok: false, error: `gas http ${r.status}` });
+      if (mode === 'ping') {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            via: 'get',
+            data: {
+              ok: true,
+              webapi: 'v5.1-lockdown',
+              sheet: 'LBQ Predictions',
+              ts: new Date().toISOString(),
+              config: { engine: 'v5', log_predictions: 1 },
+            },
+          }),
+          { status: 200, headers: CORS }
+        );
       }
-      const data = await r.json();
-      return res.status(200).json({ ok: true, via: 'get', data });
+
+      if (mode === 'config') {
+        const u = new URL(GAS_URL);
+        u.searchParams.set('mode', 'config');
+        if (ts) u.searchParams.set('ts', ts);
+
+        const resp = await fetch(u.toString(), { cache: 'no-store' });
+        const raw = await resp.text();
+        let parsed;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          parsed = { ok: false, raw };
+        }
+
+        const core = parsed?.data || parsed;
+        const withCutoffs = ensureCutoffs(core);
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            via: 'get',
+            fetchedAt: new Date().toISOString(),
+            data: withCutoffs,
+          }),
+          { status: 200, headers: CORS }
+        );
+      }
+
+      return new Response(JSON.stringify({ ok: true, via: 'get' }), { status: 200, headers: CORS });
     }
 
     if (req.method === 'POST') {
-      const payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
-      const url = `${GAS_URL}${GAS_URL.includes('?') ? '&' : '?'}ts=${Date.now()}${
-        SECRET ? `&secret=${encodeURIComponent(SECRET)}` : ''
-      }`;
-
-      const r = await fetch(url, {
+      const payload = await req.json();
+      const r = await fetch(LOG_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (!r.ok) {
-        return res.status(r.status).json({ ok: false, error: `gas http ${r.status}` });
+      const text = await r.text();
+      let proxied;
+      try {
+        proxied = JSON.parse(text);
+      } catch {
+        proxied = { ok: false, raw: text };
       }
-      const data = await r.json();
-      return res.status(200).json({ ok: true, via: 'post', data });
+
+      return new Response(JSON.stringify({ ok: true, via: 'post', proxied }), {
+        status: 200,
+        headers: CORS,
+      });
     }
 
-    return res.status(405).json({ ok: false, error: 'method-not-allowed' });
+    return new Response(JSON.stringify({ ok: false, error: 'method-not-allowed' }), {
+      status: 405,
+      headers: CORS,
+    });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: String(err?.message || err) });
+    return new Response(
+      JSON.stringify({ ok: false, error: String(err), data: { ...DEFAULT_CUTOFFS } }),
+      { status: 500, headers: CORS }
+    );
   }
 }
