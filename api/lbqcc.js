@@ -1,10 +1,5 @@
 // api/lbqcc.js
-// v5.1.7-forward — proxy to Google Apps Script (GAS) for learn/apply + config
-// Requires ENV:
-//   LBQ_GAS_URL   -> your deployed GAS /exec URL
-//   LBQ_SECRET    -> "LBQ2025WebAPIProd!" (same as GAS SECRET)
-// Optional:
-//   LOG_WEBHOOK_URL -> if you want error webhook pings
+// v5.1.7-hotfix — local ping + proxy to GAS for GET/POST
 
 const CORS = {
   'access-control-allow-origin': '*',
@@ -12,7 +7,7 @@ const CORS = {
   'access-control-allow-headers': 'content-type,authorization'
 };
 
-const TIMEOUT_MS = 12000;
+const TIMEOUT_MS = 8000; // πιο κάτω από το Vercel limit στο free tier
 
 function json(status, obj, headers = {}) {
   return new Response(JSON.stringify(obj), {
@@ -28,7 +23,7 @@ function badConfig(msg) {
 function withTimeout(url, init, ms = TIMEOUT_MS) {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort('timeout'), ms);
-  const merged = { ...init, signal: ctrl.signal };
+  const merged = { ...init, signal: ctrl.signal, cache: 'no-store', redirect: 'follow' };
   return fetch(url, merged).finally(() => clearTimeout(id));
 }
 
@@ -36,17 +31,11 @@ async function forwardGET(req) {
   const gas = process.env.LBQ_GAS_URL;
   if (!gas) return badConfig('LBQ_GAS_URL missing');
 
-  // Preserve original querystring
   const u = new URL(req.url);
   const qs = u.search || '';
-
-  const url = gas + qs;
-  const r = await withTimeout(url, { method: 'GET' });
+  const r = await withTimeout(gas + qs, { method: 'GET' });
   const txt = await r.text();
-  let data;
-  try { data = JSON.parse(txt); } catch { data = { ok: false, raw: txt }; }
-
-  // Pass-through but annotated
+  let data; try { data = JSON.parse(txt); } catch { data = { ok: false, raw: txt }; }
   return json(r.status, { ok: true, via: 'get', proxied: true, data });
 }
 
@@ -57,10 +46,7 @@ async function forwardPOST(req) {
   let body = {};
   try { body = await req.json(); } catch { body = {}; }
 
-  // Ensure secret present; GAS will verify.
-  if (!body.secret && process.env.LBQ_SECRET) {
-    body.secret = process.env.LBQ_SECRET;
-  }
+  if (!body.secret && process.env.LBQ_SECRET) body.secret = process.env.LBQ_SECRET;
 
   const r = await withTimeout(gas, {
     method: 'POST',
@@ -69,35 +55,32 @@ async function forwardPOST(req) {
   });
 
   const txt = await r.text();
-  let data;
-  try { data = JSON.parse(txt); } catch { data = { ok: false, raw: txt }; }
-
+  let data; try { data = JSON.parse(txt); } catch { data = { ok: false, raw: txt }; }
   return json(r.status, { ok: true, via: 'post', proxied: true, ...data });
 }
 
 export default async function handler(req) {
-  // CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: CORS });
-  }
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
 
   try {
     const url = new URL(req.url);
     const mode = String(url.searchParams.get('mode') || '').toLowerCase();
 
-    if (req.method === 'GET') {
-      // ping/config/learn&preview → forward as-is
-      return await forwardGET(req);
+    // *** HOTFIX: local ping (χωρίς κλήση στο GAS) ***
+    if (mode === 'ping') {
+      return json(200, {
+        ok: true,
+        via: 'local',
+        webapi: 'v5.1.7-hotfix',
+        config: { engine: 'v5', log_predictions: 1 }
+      });
     }
 
-    if (req.method === 'POST') {
-      // learn/apply dryRun/commit → forward as-is
-      return await forwardPOST(req);
-    }
+    if (req.method === 'GET') return await forwardGET(req);
+    if (req.method === 'POST') return await forwardPOST(req);
 
     return json(405, { ok: false, error: 'method-not-allowed' });
   } catch (err) {
-    // Fallback (only if proxy fails)
     return json(500, {
       ok: false,
       error: 'proxy-failed',
