@@ -1,9 +1,7 @@
+// api/lbqcc.js
 export const config = { runtime: 'edge' };
 
-const GAS_URL =
-  process.env.LBQ_CONFIG_URL ||
-  'https://script.google.com/macros/s/AKfycbz17GyM26w3U1YlejC1Ukq-yiBrN-UD5P1MN1tVHhrCv6IMBgfzE2-3y2E7v_96axs/exec';
-
+const GAS_URL = process.env.LBQ_CONFIG_URL || 'https://script.google.com/macros/s/AKfycbz17GyM26w3U1YlejC1Ukq-yiBrN-UD5P1MN1tVHhrCv6IMBgfzE2-3y2E7v_96axs/exec';
 const LOG_URL = process.env.LOG_WEBHOOK_URL || GAS_URL;
 
 const DEFAULT_CUTOFFS = { thrSafe: 0.61, thrRisky: 0.4, minEV: 0.02 };
@@ -40,11 +38,7 @@ const CORS = {
 
 async function safeJson(resp) {
   const txt = await resp.text();
-  try {
-    return JSON.parse(txt);
-  } catch {
-    return { ok: false, raw: txt };
-  }
+  try { return JSON.parse(txt); } catch { return { ok: false, raw: txt }; }
 }
 
 export default async function handler(req) {
@@ -64,7 +58,7 @@ export default async function handler(req) {
             via: 'get',
             data: {
               ok: true,
-              webapi: 'v5.1.6',
+              webapi: 'v5.1.5-lockdown',
               sheet: 'LBQ Predictions',
               ts: new Date().toISOString(),
               config: { engine: 'v5', log_predictions: 1 },
@@ -127,46 +121,6 @@ export default async function handler(req) {
         );
       }
 
-      if (mode === 'learn' && op === 'apply') {
-        const dryRun = urlIn.searchParams.get('dryRun') || '';
-        const secret = urlIn.searchParams.get('secret') || '';
-        const payload = {
-          mode: 'learn',
-          op: 'apply',
-          dryRun: dryRun || '1',
-          secret,
-          proposal: ensureCutoffs({
-            ev: urlIn.searchParams.get('ev'),
-            confidence: urlIn.searchParams.get('confidence'),
-            momentum: urlIn.searchParams.get('momentum'),
-            drift: urlIn.searchParams.get('drift'),
-            surface: urlIn.searchParams.get('surface'),
-            form: urlIn.searchParams.get('form'),
-            thrSafe: urlIn.searchParams.get('thrSafe'),
-            thrRisky: urlIn.searchParams.get('thrRisky'),
-            minEV: urlIn.searchParams.get('minEV'),
-          }),
-        };
-
-        const r = await fetch(GAS_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const proxied = await safeJson(r);
-
-        return new Response(
-          JSON.stringify({
-            ok: true,
-            via: 'get',
-            mode: 'learn',
-            op: 'apply',
-            result: proxied,
-          }),
-          { status: 200, headers: CORS }
-        );
-      }
-
       return new Response(JSON.stringify({ ok: true, via: 'get' }), { status: 200, headers: CORS });
     }
 
@@ -177,9 +131,9 @@ export default async function handler(req) {
         const payload = {
           mode: 'learn',
           op: 'apply',
-          dryRun: body?.dryRun ?? '',
-          secret: body?.secret ?? '',
-          proposal: ensureCutoffs(body?.proposal || {}),
+          dryRun: body?.dryRun ? 1 : 0,
+          secret: body?.secret || '',
+          proposal: ensureCutoffs(body?.proposal || body),
         };
 
         const r = await fetch(GAS_URL, {
@@ -187,7 +141,7 @@ export default async function handler(req) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        const proxied = await safeJson(r);
+        const fromGas = await safeJson(r);
 
         return new Response(
           JSON.stringify({
@@ -195,7 +149,7 @@ export default async function handler(req) {
             via: 'post',
             mode: 'learn',
             op: 'apply',
-            result: proxied,
+            result: fromGas,
           }),
           { status: 200, headers: CORS }
         );
@@ -208,11 +162,7 @@ export default async function handler(req) {
       });
       const text = await passthrough.text();
       let proxied;
-      try {
-        proxied = JSON.parse(text);
-      } catch {
-        proxied = { ok: false, raw: text };
-      }
+      try { proxied = JSON.parse(text); } catch { proxied = { ok: false, raw: text }; }
 
       return new Response(JSON.stringify({ ok: true, via: 'post', proxied }), {
         status: 200,
