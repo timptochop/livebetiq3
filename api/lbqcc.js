@@ -1,106 +1,80 @@
-// api/lbqcc.js — v5.1.9-passbody
+// api/lbqcc.js — v5.1.10-debug-passthrough
 // Node 20 (Vercel). ESM source, compiled to CJS by Vercel.
-// Purpose: fast local ping + strict GET/POST proxy to GAS with raw JSON passthrough.
-
-const WEBAPI_VERSION = 'v5.1.9-passbody';
+// Purpose: fast local ping + strict JSON passthrough proxy to GAS, with POST body debug logs.
 
 export default async function handler(req, res) {
   const ts = new Date().toISOString();
   const { method, query } = req;
 
-  // --- CORS (safe defaults) ---
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, *');
-  if (method === 'OPTIONS') {
-    res.status(204).end();
-    return;
-  }
-
   try {
     // 0) Fast local ping (no proxy)
     if (String(query.mode || '').toLowerCase() === 'ping') {
-      return res.status(200).json({ ok: true, via: 'local', webapi: WEBAPI_VERSION, ts });
+      return res.status(200).json({ ok: true, via: 'local', webapi: 'v5.1.10-debug-passthrough', ts });
     }
 
-    // 1) Resolve GAS endpoint
+    // 1) Resolve GAS endpoint from env
     const GAS = process.env.LBQ_GAS_URL;
     if (!GAS) {
       return res.status(500).json({ ok: false, error: 'missing_env_LBQ_GAS_URL' });
     }
 
-    // 2) Compose target URL (preserve all query params)
+    // 2) Build target URL (keep all query params)
     const url = new URL(GAS);
-    Object.entries(query || {}).forEach(([k, v]) => {
-      if (v != null) url.searchParams.set(k, String(v));
-    });
+    for (const [k, v] of Object.entries(query || {})) {
+      url.searchParams.set(k, String(v));
+    }
 
-    // 3) Prepare fetch options (timeout 8.5s)
-    const ac = new AbortController();
-    const tmo = setTimeout(() => ac.abort(), 8500);
+    // 3) Proxy options
+    const controller = new AbortController();
+    const timeoutMs = 4500; // keep short to avoid 504 from Vercel edge
+    const to = setTimeout(() => controller.abort(), timeoutMs);
 
-    let fetchOpts = {
-      method,
-      headers: { 'Accept': 'application/json' },
-      signal: ac.signal
-    };
+    let fetchOpts = { method, signal: controller.signal, headers: {} };
 
     if (method === 'POST') {
-      // Read raw body exactly as received and forward 1:1
       const raw = await readRawBody(req);
-      // If caller didn’t send content-type, set JSON
+      // Debug log (safe snippet only)
+      console.log(
+        JSON.stringify({
+          route: '/api/lbqcc',
+          ts,
+          method,
+          url: url.toString(),
+          rawLen: raw?.length || 0,
+          rawHead: (raw || '').slice(0, 200)
+        })
+      );
+
+      // Preserve incoming content-type if present
       const ct = req.headers['content-type'] || 'application/json';
-      fetchOpts.headers['Content-Type'] = ct;
-      fetchOpts.body = raw && raw.length ? raw : '{}';
+      fetchOpts.headers['content-type'] = ct;
+      fetchOpts.body = raw || '{}';
     }
 
-    // 4) Proxy to GAS
+    // 4) Forward to GAS
     const upstream = await fetch(url.toString(), fetchOpts);
-    clearTimeout(tmo);
 
-    // 5) Try to return JSON response as-is
+    // 5) Passthrough response as-is (text)
     const text = await upstream.text();
+    clearTimeout(to);
 
-    // Content-type sniff (some GAS deployments return text/plain with JSON payload)
-    const isJsonLike =
-      upstream.headers.get('content-type')?.includes('application/json') ||
-      looksLikeJson(text);
-
-    if (isJsonLike) {
-      try {
-        const json = JSON.parse(text);
-        // pass-through plus small annotation
-        return res
-          .status(upstream.status)
-          .json({ ...json, _via: 'vercel-proxy', _at: ts, _webapi: WEBAPI_VERSION });
-      } catch (_) {
-        // fallthrough to text payload
-      }
-    }
-
-    // Non-JSON payload from GAS: wrap it
-    return res.status(upstream.status).json({
-      ok: upstream.ok,
-      status: upstream.status,
-      statusText: upstream.statusText,
-      body: text,
-      _via: 'vercel-proxy',
-      _at: ts,
-      _webapi: WEBAPI_VERSION
-    });
+    // Mirror upstream status and content-type
+    res.status(upstream.status || 200);
+    res.setHeader('content-type', upstream.headers.get('content-type') || 'application/json; charset=utf-8');
+    return res.send(text);
   } catch (e) {
-    const aborted = e?.name === 'AbortError';
-    const msg = String(e && e.message ? e.message : e);
-    return res.status(504).json({
+    const aborted = e && (e.name === 'AbortError' || e.code === 'ABORT_ERR');
+    const msg = e?.message || String(e);
+    console.error(JSON.stringify({ route: '/api/lbqcc', ts, error: aborted ? 'timeout' : 'exception', message: msg }));
+    return res.status(aborted ? 504 : 500).json({
       ok: false,
       error: aborted ? 'timeout' : 'exception',
-      message: msg,
-      _webapi: WEBAPI_VERSION
+      message: msg
     });
   }
 }
 
-// -------- helpers --------
+// --- helpers ---
 async function readRawBody(req) {
   return new Promise((resolve, reject) => {
     try {
@@ -113,10 +87,4 @@ async function readRawBody(req) {
       reject(e);
     }
   });
-}
-
-function looksLikeJson(s) {
-  if (!s) return false;
-  const t = s.trim();
-  return (t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'));
 }
