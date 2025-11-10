@@ -1,120 +1,95 @@
-// api/lbqcc.js
-// v5.1.8-fastping — local ping + safe proxy to GAS (GET/POST) with timeout & raw body passthrough.
-
-const VERSION = 'v5.1.8-fastping';
-
-const GAS_URL = process.env.LBQ_GAS_URL;           // e.g. https://script.google.com/macros/s/XXXX/exec
-const LBQ_SECRET = process.env.LBQ_SECRET || '';
-
-/** Build a JSON response */
-function sendJSON(res, code, obj) {
-  res.status(code).setHeader('Content-Type', 'application/json');
-  res.send(JSON.stringify(obj));
-}
-
-/** Basic CORS (for tools/CLI; same-origin app δεν το χρειάζεται αλλά δεν βλάπτει) */
-function setCORS(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
-}
-
-/** Abortable fetch with timeout (ms) */
-async function timedFetch(url, init = {}, ms = 4500) {
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(new Error('timeout')), ms);
-  try {
-    const r = await fetch(url, { ...init, signal: ac.signal });
-    return r;
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-/** Compose GAS GET url with original QS */
-function gasGetUrl(req) {
-  const qs = req.url.includes('?') ? req.url.split('?')[1] : '';
-  return qs ? `${GAS_URL}?${qs}` : GAS_URL;
-}
+// /api/lbqcc.js  — v5.1.8-fastping-proxy
+// Node 20 (Vercel). ESM source, compiled to CJS από Vercel.
+// Purpose: fast local ping + strict JSON passthrough proxy προς GAS.
 
 export default async function handler(req, res) {
-  setCORS(res);
-
-  // Fast path for preflight
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
-
-  // Safety checks
-  if (!GAS_URL) {
-    return sendJSON(res, 500, { ok: false, error: 'missing_GAS_URL', note: 'Set LBQ_GAS_URL in Vercel env.' });
-  }
-
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const mode = (url.searchParams.get('mode') || '').toLowerCase();
-
-  // --- 1) Local fast ping (no network) ---
-  if (req.method === 'GET' && mode === 'ping') {
-    return sendJSON(res, 200, {
-      ok: true,
-      via: 'local',
-      webapi: VERSION,
-      ts: new Date().toISOString(),
-    });
-  }
-
   try {
-    // --- 2) Proxy GET to GAS (config/learn preview etc.) ---
-    if (req.method === 'GET') {
-      const target = gasGetUrl(req);
-      const gr = await timedFetch(target, { method: 'GET' }, 4500);
-      const txt = await gr.text();
-      // Try parse; if fails, wrap it
-      try {
-        const json = JSON.parse(txt);
-        return sendJSON(res, gr.ok ? 200 : gr.status, json);
-      } catch {
-        return sendJSON(res, gr.ok ? 200 : gr.status, { ok: gr.ok, via: 'proxy:get', raw: txt });
-      }
+    const ts = new Date().toISOString();
+    const { method, query } = req;
+
+    // 0) Fast local ping (χωρίς proxy)
+    if (String(query.mode || '').toLowerCase() === 'ping') {
+      return res.status(200).json({ ok: true, via: 'local', webapi: 'v5.1.8-fastping', ts });
     }
 
-    // --- 3) Proxy POST to GAS (raw-body passthrough) ---
-    if (req.method === 'POST') {
-      // Keep raw body exactly as received
-      const raw = await new Promise((resolve, reject) => {
-        let data = '';
-        req.setEncoding('utf8');
-        req.on('data', (chunk) => (data += chunk));
-        req.on('end', () => resolve(data || '{}'));
-        req.on('error', reject);
-      });
-
-      // Forward with application/json; Apps Script expects JSON string
-      const target = gasGetUrl(req);
-      const pr = await timedFetch(target, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: raw,
-      }, 4500);
-
-      const txt = await pr.text();
-      try {
-        const json = JSON.parse(txt);
-        return sendJSON(res, pr.ok ? 200 : pr.status, json);
-      } catch {
-        return sendJSON(res, pr.ok ? 200 : pr.status, { ok: pr.ok, via: 'proxy:post', raw: txt });
-      }
+    // 1) Resolve GAS endpoint
+    const GAS = process.env.LBQ_GAS_URL;
+    if (!GAS) {
+      return res.status(500).json({ ok: false, error: 'missing_env_LBQ_GAS_URL' });
     }
 
-    // --- 4) Fallback ---
-    return sendJSON(res, 405, { ok: false, error: 'method_not_allowed' });
+    // 2) Build target URL (κρατάμε όλα τα query params)
+    const url = new URL(GAS);
+    for (const [k, v] of Object.entries(query || {})) {
+      url.searchParams.set(k, v);
+    }
+
+    // 3) Prepare fetch options
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000); // 15s hard cap
+
+    const headers = { 'accept': 'application/json' };
+
+    let bodyText = undefined;
+    if (method === 'POST') {
+      // Περνάμε ΩΜΟ JSON όπως ήρθε.
+      if (typeof req.body === 'string') {
+        bodyText = req.body;
+      } else if (req.body && Object.keys(req.body).length) {
+        bodyText = JSON.stringify(req.body);
+      } else {
+        // Αν για κάποιο λόγο δεν έγινε body parsing, διαβάζουμε το raw stream.
+        bodyText = await readRawBody(req);
+      }
+      headers['content-type'] = 'application/json';
+    }
+
+    // 4) Proxy to GAS
+    const resp = await fetch(url.toString(), {
+      method,
+      headers,
+      body: method === 'POST' ? bodyText : undefined,
+      signal: controller.signal,
+    }).catch(err => {
+      // fetch-level error
+      throw new Error(`fetch_failed:${err.name}:${err.message}`);
+    });
+    clearTimeout(timeout);
+
+    // 5) Passthrough JSON (ή text fallback)
+    const text = await resp.text();
+    const status = resp.status;
+
+    // Προσπαθούμε JSON, αλλιώς επιστρέφουμε text με wrapper
+    try {
+      const json = JSON.parse(text);
+      return res.status(status).json(json);
+    } catch {
+      return res.status(status).json({ ok: false, via: 'proxy', note: 'non_json_from_gas', status, text });
+    }
   } catch (err) {
-    const isTimeout = String(err && err.message || '').includes('timeout') || err?.name === 'AbortError';
-    return sendJSON(res, isTimeout ? 504 : 502, {
+    const msg = (err && err.message) || String(err);
+    const aborted = msg.includes('AbortError') || msg.includes('aborted');
+    return res.status(504).json({
       ok: false,
-      code: isTimeout ? 'FUNCTION_INVOCATION_TIMEOUT' : 'FUNCTION_UPSTREAM_ERROR',
-      message: String(err && err.message || err),
-      webapi: VERSION,
+      via: 'proxy',
+      error: aborted ? 'timeout' : 'exception',
+      message: msg,
     });
   }
+}
+
+// --- helpers ---
+async function readRawBody(req) {
+  return new Promise((resolve, reject) => {
+    try {
+      let data = '';
+      req.setEncoding('utf8');
+      req.on('data', (chunk) => (data += chunk));
+      req.on('end', () => resolve(data || '{}'));
+      req.on('error', reject);
+    } catch (e) {
+      reject(e);
+    }
+  });
 }
