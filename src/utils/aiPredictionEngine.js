@@ -1,58 +1,61 @@
 // src/utils/aiPredictionEngine.js
+// Stable adapter around aiEngineV2 with safe, non-recursive runtime markers.
+// Wires in volatilityScore as a fallback when the engine does not provide volatility.
+
 import aiEngineV2 from "./aiEngineV2";
-import { getNudges, recordDecision } from "./telemetryTuner";
+import volatilityScore from "../aiPredictionEngineModules/volatilityScore";
+import { getNudges, recordDecision } from "../telemetryTuner"; // safe no-op if not present
 
-/**
- * Volatility adjustment:
- * - High vol penalizes confidence gently (up to -0.05).
- * - Very low vol adds a tiny boost (up to +0.02).
- * This is deliberately mild to avoid UI churn.
- */
-function applyVolatilityAdjustment(baseConf, volatility) {
-  let conf = Number(baseConf ?? 0);
-  const vol = typeof volatility === "number" ? volatility : null;
-
-  if (vol == null || Number.isNaN(vol)) return conf;
-
-  // Penalty when vol > 0.25 (linear to max -0.05 @ vol >= 0.50)
-  const penalty =
-    vol > 0.25 ? -Math.min(0.05, (vol - 0.25) * 0.2) : 0;
-
-  // Tiny boost when vol < 0.10 (up to +0.02 @ vol <= 0.00)
-  const boost =
-    vol < 0.10 ? Math.min(0.02, (0.10 - vol) * 0.2) : 0;
-
-  const adjusted = Math.max(0, Math.min(1, conf + penalty + boost));
-  return adjusted;
-}
-
-function downgradeLabelIfNeeded(label, conf) {
-  // If engine returned SAFE but confidence after penalty < 0.56, downgrade to RISKY.
-  if (label === "SAFE" && (conf ?? 0) < 0.56) return "RISKY";
-  return label;
+function isFiniteNum(x) {
+  return Number.isFinite ? Number.isFinite(x) : (typeof x === "number" && isFinite(x));
 }
 
 export default function classifyMatch(match = {}) {
-  const out = aiEngineV2(match) || {};
+  // 1) Run engine with hard guard
+  let out = {};
+  try {
+    out = aiEngineV2(match) || {};
+  } catch (err) {
+    try { console.warn("[AI] aiEngineV2 threw:", err); } catch (_) {}
+    out = {};
+  }
 
-  // expose runtime markers for verification (LOCKDOWN+ checks)
+  // 2) Ensure `out.raw` container exists
+  if (!out.raw || typeof out.raw !== "object") {
+    out.raw = {};
+  }
+
+  // 3) Volatility: prefer engine value; otherwise compute via module
+  let volatility = null;
+  try {
+    if (isFiniteNum(out?.raw?.volatility)) {
+      volatility = Number(out.raw.volatility);
+    } else if (typeof volatilityScore === "function") {
+      // Minimal, defensive context (the module tolerates sparse input)
+      const computed = volatilityScore(match);
+      if (isFiniteNum(computed)) volatility = computed;
+    }
+  } catch (_) {
+    // never break the adapter
+  }
+  if (isFiniteNum(volatility)) {
+    out.raw.volatility = volatility;
+  } else {
+    out.raw.volatility = null;
+  }
+
+  // 4) Attach simple runtime markers (plain assignments only; no getters)
   try {
     if (typeof window !== "undefined") {
-      window.__AI_VERSION__ = "v2.1";
-      window.__AI_VOL__ = out?.raw?.volatility ?? window.__AI_VOL__ ?? null;
-      // one-time boot marker
-      if (!window.__AI_BOOT_LOGGED__) {
-        console.info(
-          "[AI Boot] Markers initialized (__AI_VERSION__, __AI_VOL__)",
-          "(version:", window.__AI_VERSION__ + ", volatility:", window.__AI_VOL__, ")"
-        );
-        window.__AI_BOOT_LOGGED__ = true;
-      }
+      if (!window.__AI_VERSION__) window.__AI_VERSION__ = "v2.1";
+      window.__AI_VOL__ = out.raw.volatility ?? null;
     }
-  } catch (_) {}
+  } catch (_) {
+    // ignore marker issues
+  }
 
-  // fallback tip from odds if engine did not provide one
-  let tip = out?.tip || null;
+  // 5) Fallback tip if engine didn’t produce one (keeps UI consistent)
+  let tip = out.tip || null;
   if (!tip) {
     try {
       const p1Name =
@@ -60,53 +63,32 @@ export default function classifyMatch(match = {}) {
         match?.player?.[0]?.["@name"] ||
         "";
       if (p1Name) tip = `TIP: ${p1Name}`;
-    } catch (_) {}
+    } catch (_) {
+      // ignore
+    }
   }
 
-  // === Volatility-aware confidence ===
-  const runtimeVol =
-    out?.raw?.volatility ??
-    (typeof window !== "undefined" ? window.__AI_VOL__ : null) ??
-    null;
-
-  const baseConf = out?.conf ?? null;
-  const conf = applyVolatilityAdjustment(baseConf, runtimeVol);
-  const finalLabel = downgradeLabelIfNeeded(out?.label || null, conf);
-
-  // telemetry / debug (silent in production unless console opened)
+  // 6) Optional: telemetry hooks (safe no-ops if not wired)
   try {
-    const ctx = {
-      ev: out?.raw?.ev ?? null,
-      conf_before: baseConf,
-      conf_after: conf,
-      volatility: runtimeVol,
-      label_before: out?.label ?? null,
-      label_after: finalLabel,
-    };
-    if (process.env.NODE_ENV !== "production" || window?.LOG_PREDICTIONS) {
-      console.debug("[AI Adapt] vol-adjust", ctx);
+    const nudges = typeof getNudges === "function" ? getNudges() : null;
+    if (typeof recordDecision === "function") {
+      recordDecision({
+        matchId: match?.id || match?.matchId || null,
+        label: out?.label || null,
+        ev: out?.ev ?? null,
+        confidence: out?.confidence ?? null,
+        kelly: out?.kelly ?? null,
+        volatility: out?.raw?.volatility ?? null,
+        nudges
+      });
     }
-    recordDecision?.(ctx);
-  } catch (_) {}
+  } catch (_) {
+    // ignore telemetry errors
+  }
 
-  // features snapshot for UI/inspection
-  const features = {
-    drift: out?.raw?.drift ?? null,
-    setNum: Number(out?.raw?.setNum || 0),
-    live: !!(out?.raw?.live),
-    clutch: null,
-    ctx: out?.raw ?? null,
-    nudges: getNudges?.() ?? null,
-    volatility: runtimeVol,
-    confBefore: baseConf,
-    confAfter: conf,
-  };
-
+  // 7) Return normalized object the UI expects
   return {
-    label: finalLabel || null,
-    conf: conf ?? null,
-    kellylevel: out?.kellyLevel || null,
-    tip: tip || null,
-    features,
+    ...out,
+    tip
   };
 }
