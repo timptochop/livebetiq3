@@ -1,17 +1,26 @@
 // src/utils/aiBoot.js
 // Boot-time attachment of runtime markers for quick verification in Console.
-// Exposes __AI_VERSION__ and __AI_VOL__ πάνω στο window και στο globalThis (όπου υπάρχει).
+// Exposes __AI_VERSION__ and __AI_VOL__ πάνω στο window, χωρίς recursion.
 
 (function attachAiMarkers() {
   try {
     if (typeof window === "undefined") return;
 
-    // Ορισμός/getters ώστε να είναι πάντα συγχρονισμένα με τα runtime writes του adapter.
-    if (!Object.getOwnPropertyDescriptor(window, "__AI_VERSION__")) {
+    // Internal caches (write-once defaults, runtime θα τα ενημερώνει ο adapter)
+    if (typeof window.__AI_VERSION_CACHE__ === "undefined") {
+      window.__AI_VERSION_CACHE__ = "v2.1";
+    }
+    if (typeof window.__AI_VOL_CACHE__ === "undefined") {
+      window.__AI_VOL_CACHE__ = null;
+    }
+
+    // Define safe getters/setters ONLY on window (avoid globalThis mirroring)
+    const hasVer =
+      !!Object.getOwnPropertyDescriptor(window, "__AI_VERSION__");
+    if (!hasVer) {
       Object.defineProperty(window, "__AI_VERSION__", {
         get() {
-          // default μέχρι να το ενημερώσει ο adapter
-          return window.__AI_VERSION_CACHE__ ?? "v2.1";
+          return window.__AI_VERSION_CACHE__;
         },
         set(v) {
           window.__AI_VERSION_CACHE__ = v;
@@ -21,11 +30,12 @@
       });
     }
 
-    if (!Object.getOwnPropertyDescriptor(window, "__AI_VOL__")) {
+    const hasVol =
+      !!Object.getOwnPropertyDescriptor(window, "__AI_VOL__");
+    if (!hasVol) {
       Object.defineProperty(window, "__AI_VOL__", {
         get() {
-          // default μέχρι να το ενημερώσει ο adapter (raw.volatility)
-          return window.__AI_VOL_CACHE__ ?? null;
+          return window.__AI_VOL_CACHE__;
         },
         set(v) {
           window.__AI_VOL_CACHE__ = v;
@@ -33,28 +43,6 @@
         configurable: true,
         enumerable: false,
       });
-    }
-
-    // Προσπάθησε να “καθρεφτίσεις” και σε globalThis αν υπάρχει, χωρίς να προκαλείς eslint no-undef.
-    try {
-      // eslint-disable-next-line no-new-func
-      const g = Function("return (typeof globalThis!=='undefined'?globalThis:undefined)")();
-      if (g) {
-        Object.defineProperty(g, "__AI_VERSION__", {
-          get: () => window.__AI_VERSION__,
-          set: (v) => { window.__AI_VERSION__ = v; },
-          configurable: true,
-          enumerable: false,
-        });
-        Object.defineProperty(g, "__AI_VOL__", {
-          get: () => window.__AI_VOL__,
-          set: (v) => { window.__AI_VOL__ = v; },
-          configurable: true,
-          enumerable: false,
-        });
-      }
-    } catch {
-      // προαιρετικό, δεν είναι κρίσιμο για λειτουργία
     }
 
     console.log("[AI Boot] Markers attached (__AI_VERSION__, __AI_VOL__)");
