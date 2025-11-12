@@ -8,7 +8,7 @@ import { logPrediction, addPending, trySettleFinished } from '../utils/predictio
 import { maybeLogResult } from '../ai/autoLogger';
 import { ingestBatch } from '../ai/adaptTuner';
 
-const FINISHED = new Set(['finished','cancelled','retired','abandoned','postponed','walk over']);
+const FINISHED = new Set(['finished', 'cancelled', 'retired', 'abandoned', 'postponed', 'walk over']);
 const isFinishedLike = (s) => FINISHED.has(String(s || '').toLowerCase());
 const isUpcoming = (s) => String(s || '').toLowerCase() === 'not started';
 
@@ -209,20 +209,53 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
     else if (label && label.startsWith('SET')) { bg = '#6e42c1'; }
     else if (label === 'UPCOMING') { bg = '#3a4452'; text = 'STARTS SOON'; }
     return (
-      <span style={{ padding: '10px 14px', borderRadius: 14, fontWeight: 800, background: bg, color: fg, letterSpacing: .5, boxShadow: '0 6px 18px rgba(0,0,0,0.25)', display: 'inline-block', minWidth: 96, textAlign: 'center' }}>{text}</span>
+      <span style={{
+        padding: '10px 14px',
+        borderRadius: 14,
+        fontWeight: 800,
+        background: bg,
+        color: fg,
+        letterSpacing: 0.5,
+        boxShadow: '0 6px 18px rgba(0,0,0,0.25)',
+        display: 'inline-block',
+        minWidth: 96,
+        textAlign: 'center'
+      }}>
+        {text}
+      </span>
     );
   };
 
   const Dot = ({ on }) => (
-    <span style={{ width: 10, height: 10, borderRadius: 999, display: 'inline-block', background: on ? '#1fdd73' : '#e53935', boxShadow: on ? '0 0 0 2px rgba(31,221,115,0.25)' : 'none' }} />
+    <span
+      style={{
+        width: 10, height: 10, borderRadius: 999, display: 'inline-block',
+        background: on ? '#1fdd73' : '#e53935',
+        boxShadow: on ? '0 0 0 2px rgba(31,221,115,0.25)' : 'none'
+      }}
+    />
   );
 
   return (
     <div style={{ color: '#fff' }}>
-      {loading && list.length === 0 ? (<div style={{ color: '#cfd3d7', padding: '8px 2px' }}>Loading...</div>) : null}
+      {loading && list.length === 0 ? (
+        <div style={{ color: '#cfd3d7', padding: '8px 2px' }}>Loading...</div>
+      ) : null}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {list.map((m) => (
-          <div key={m.id} style={{ borderRadius: 18, background: '#1b1e22', border: '1px solid #22272c', boxShadow: '0 10px 30px rgba(0,0,0,0.35)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div
+            key={m.id}
+            style={{
+              borderRadius: 18,
+              background: '#1b1e22',
+              border: '1px solid #22272c',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+              padding: '14px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12
+            }}
+          >
             <Dot on={m.live} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.25, color: '#fff' }}>
@@ -232,17 +265,32 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
               </div>
               <div style={{ marginTop: 6, color: '#c2c7cc', fontSize: 14 }}>
                 {m.date} {m.time} · {m.categoryName}
-                {m.uiLabel === 'UPCOMING' && (<span style={{ marginLeft: 8, color: '#9fb0c3' }}>— starts in {m.startInText || 'n/a'}</span>)}
+                {m.uiLabel === 'UPCOMING' && (
+                  <span style={{ marginLeft: 8, color: '#9fb0c3' }}>— starts in {m.startInText || 'n/a'}</span>
+                )}
               </div>
               {(m.ai?.label === 'SAFE' || m.ai?.label === 'RISKY') && m.ai?.tip && (
-                <div style={{ marginTop: 6, fontSize: 13, fontWeight: 800, color: '#1fdd73' }}>TIP: {m.ai.tip}</div>
+                <div style={{ marginTop: 6, fontSize: 13, fontWeight: 800, color: '#1fdd73' }}>
+                  TIP: {m.ai.tip}
+                </div>
               )}
             </div>
             <Pill label={m.uiLabel} />
           </div>
         ))}
+
         {list.length === 0 && !loading && (
-          <div style={{ marginTop: 12, padding: '14px 16px', borderRadius: 12, background: '#121416', border: '1px solid #22272c', color: '#c7d1dc', fontSize: 13 }}>
+          <div
+            style={{
+              marginTop: 12,
+              padding: '14px 16px',
+              borderRadius: 12,
+              background: '#121416',
+              border: '1px solid #22272c',
+              color: '#c7d1dc',
+              fontSize: 13
+            }}
+          >
             No live/upcoming matches found.
           </div>
         )}

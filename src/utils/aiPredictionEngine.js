@@ -1,132 +1,121 @@
 // src/utils/aiPredictionEngine.js
-// v3.3b-wire — Stable adapter + volatility fallback with diagnostics & safe baseline.
+// Adapter γύρω από το aiEngineV2 με ασφαλείς markers και
+// "wire-fallback" κανόνες όταν δεν υπάρχουν cutoffs από το μοντέλο.
 
-import aiEngineV2 from "./aiEngineV2";
-import volatilityScore from "../aiPredictionEngineModules/volatilityScore";
-import { getNudges, recordDecision } from "../telemetryTuner"; // safe no-op if not present
+import aiEngineV2 from './aiEngineV2';
+import volatilityScore from '../aiPredictionEngineModules/volatilityScore';
+import { getNudges, recordDecision } from '../telemetryTuner'; // safe no-op αν λείπει
 
-// ----------------- helpers -----------------
 function isFiniteNum(x) {
-  return typeof x === "number" && Number.isFinite(x);
-}
-function clamp(n, min, max) {
-  if (!isFiniteNum(n)) return min;
-  if (n < min) return min;
-  if (n > max) return max;
-  return n;
-}
-function buildVolatilityCtx(match = {}) {
-  let setIdx = 0;
-
-  const m = match || {};
-  const live = m.live || m.status || m.score || {};
-
-  if (isFiniteNum(m.currentSet)) {
-    setIdx = clamp(Number(m.currentSet) - 1, 0, 2);
-  } else if (isFiniteNum(live.currentSet)) {
-    setIdx = clamp(Number(live.currentSet) - 1, 0, 2);
-  } else if (Array.isArray(m.sets)) {
-    setIdx = clamp(m.sets.length - 1, 0, 2);
-  }
-
-  let games = [];
-  if (Array.isArray(m.games)) games = m.games;
-  else if (Array.isArray(live.games)) games = live.games;
-  else if (Array.isArray(m.sets) && m.sets[setIdx] && Array.isArray(m.sets[setIdx].games)) {
-    games = m.sets[setIdx].games;
-  }
-
-  return { setIndex: setIdx, games };
+  return Number.isFinite ? Number.isFinite(x) : (typeof x === 'number' && isFinite(x));
 }
 
-// ----------------- main -----------------
 export default function classifyMatch(match = {}) {
-  // 1) Run engine with hard guard
+  // 1) Τρέξε τον κινητήρα με σκληρό guard
   let out = {};
   try {
     out = aiEngineV2(match) || {};
   } catch (err) {
-    try { console.warn("[AI] aiEngineV2 threw:", err); } catch (_) {}
+    try { console.warn('[AI] aiEngineV2 threw:', err); } catch (_) {}
     out = {};
   }
-  if (!out.raw || typeof out.raw !== "object") out.raw = {};
 
-  // 2) Volatility fallback (module -> baseline)
+  // 2) Ασφαλή runtime markers (χωρίς getters/defineProperty)
   try {
-    const hasEngineVol = isFiniteNum(out.raw.volatility);
-    if (!hasEngineVol) {
-      const ctx = buildVolatilityCtx(match);
-      let vol = NaN;
-
-      // try module first
-      try {
-        vol = volatilityScore(ctx);
-      } catch (e) {
-        try { console.warn("[VOL] module error:", e); } catch (_) {}
-      }
-
-      // diag
-      try { console.log("[VOL] ctx=", ctx, "moduleVol=", vol); } catch (_) {}
-
-      // safe baseline if module didn’t return finite
-      if (!isFiniteNum(vol)) {
-        // very conservative defaults:
-        // • if δεν έχουμε games => 0.28 (ήρεμη αγορά)
-        // • αν είμαστε σε set >= 2 => +0.05
-        const base =
-          Array.isArray(ctx.games) && ctx.games.length > 0
-            ? 0.30
-            : 0.28;
-        const adj = ctx.setIndex >= 1 ? 0.05 : 0;
-        vol = clamp(base + adj, 0.15, 0.75);
-        try { console.log("[VOL] baseline applied ->", vol); } catch (_) {}
-      }
-
-      out.raw.volatility = vol;
-      out.volatility = vol;
-    } else {
-      out.volatility = out.raw.volatility;
+    if (typeof window !== 'undefined') {
+      if (!window.__AI_VERSION__) window.__AI_VERSION__ = 'v2.1';
+      const volFromEngine =
+        (out && out.raw && typeof out.raw.volatility !== 'undefined')
+          ? out.raw.volatility
+          : null;
+      window.__AI_VOL__ = volFromEngine;
     }
-  } catch (err) {
-    try { console.warn("[AI] volatility fallback failed:", err); } catch (_) {}
+  } catch (_) {
+    /* ignore marker issues */
   }
 
-  // 3) Runtime markers (plain values)
+  // 3) Δοκίμασε να συμπληρώσεις volatility αν λείπει (wire fallback)
   try {
-    if (typeof window !== "undefined") {
-      if (!window.__AI_VERSION__) window.__AI_VERSION__ = "v2.1";
-      const volMarker = isFiniteNum(out.raw.volatility) ? out.raw.volatility : null;
-      window.__AI_VOL__ = volMarker;
+    const hasVol = out && out.raw && typeof out.raw.volatility !== 'undefined';
+    if (!hasVol) {
+      const v = volatilityScore(match); // 0..1
+      if (!out.raw) out.raw = {};
+      out.raw.volatility = isFiniteNum(v) ? v : null;
+      // ανανέωσε και το marker αν υπάρχει browser
+      if (typeof window !== 'undefined') window.__AI_VOL__ = out.raw.volatility;
     }
-  } catch (_) {}
+  } catch (_) {
+    // ignore
+  }
 
-  // 4) TIP fallback
+  // 4) Wire-fallback για label όταν δεν υπάρχουν cutoffs (ή βγαίνει πάντα AVOID)
+  //    Χρησιμοποιεί σταθερά thresholds πάνω σε ev & confidence.
+  try {
+    const ev =
+      isFiniteNum(out?.ev) ? Number(out.ev)
+        : isFiniteNum(out?.raw?.ev) ? Number(out.raw.ev)
+        : null;
+
+    // δέξου είτε confidence είτε conf
+    const conf =
+      isFiniteNum(out?.confidence) ? Number(out.confidence)
+        : isFiniteNum(out?.conf) ? Number(out.conf)
+        : null;
+
+    let label = out?.label || null;
+
+    // Fallback κανόνες μόνο όταν λείπει/είναι PENDING/είναι AVOID
+    if ((!label || label === 'PENDING' || label === 'AVOID') && isFiniteNum(ev) && isFiniteNum(conf)) {
+      // Συντηρητικά thresholds ώστε να παραμένει σταθερό το UI
+      const SAFE_EV = 0.03, SAFE_CONF = 0.58;
+      const RISKY_EV = 0.00, RISKY_CONF = 0.53;
+
+      if (ev >= SAFE_EV && conf >= SAFE_CONF) label = 'SAFE';
+      else if (ev >= RISKY_EV && conf >= RISKY_CONF) label = 'RISKY';
+      else label = 'AVOID';
+
+      out.label = label;
+      out.ev = ev;
+      // ομογενοποίησε το όνομα για το UI
+      if (!isFiniteNum(out.confidence)) out.confidence = conf;
+    }
+  } catch (_) {
+    // ignore fallback errors
+  }
+
+  // 5) TIP fallback για συνέπεια στο UI
   let tip = out.tip || null;
   if (!tip) {
     try {
       const p1Name =
         match?.players?.[0]?.name ||
-        match?.player?.[0]?.["@name"] || "";
+        match?.player?.[0]?.['@name'] ||
+        '';
       if (p1Name) tip = `TIP: ${p1Name}`;
-    } catch (_) {}
+    } catch (_) { /* ignore */ }
   }
 
-  // 5) Telemetry (no-op if tuner missing)
+  // 6) Προαιρετικά telemetry (no-op αν λείπουν)
   try {
-    const nudges = typeof getNudges === "function" ? getNudges() : null;
-    if (typeof recordDecision === "function") {
+    const nudges = typeof getNudges === 'function' ? getNudges() : null;
+    if (typeof recordDecision === 'function') {
       recordDecision({
         matchId: match?.id || match?.matchId || null,
         label: out?.label ?? null,
-        ev: out?.ev ?? null,
-        confidence: out?.confidence ?? null,
-        kelly: out?.kelly ?? null,
-        volatility: isFiniteNum(out?.raw?.volatility) ? out.raw.volatility : null,
+        ev: isFiniteNum(out?.ev) ? Number(out.ev) : null,
+        confidence: isFiniteNum(out?.confidence) ? Number(out.confidence) : (isFiniteNum(out?.conf) ? Number(out.conf) : null),
+        kelly: isFiniteNum(out?.kelly) ? Number(out.kelly) : null,
+        volatility: (out?.raw && 'volatility' in out.raw) ? out.raw.volatility : null,
         nudges
       });
     }
-  } catch (_) {}
+  } catch (_) {
+    /* ignore telemetry errors */
+  }
 
-  // 6) Return normalized
-  return { ...out, tip };
+  // 7) Επιστροφή normalized αντικειμένου που περιμένει το UI
+  return {
+    ...out,
+    tip
+  };
 }
