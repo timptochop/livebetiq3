@@ -1,48 +1,34 @@
 // src/utils/aiPredictionEngine.js
-// v3.3-wire — Stable adapter around aiEngineV2 with safe runtime markers,
-// plus volatility fallback via aiPredictionEngineModules/volatilityScore.
+// v3.3b-wire — Stable adapter + volatility fallback with diagnostics & safe baseline.
 
 import aiEngineV2 from "./aiEngineV2";
 import volatilityScore from "../aiPredictionEngineModules/volatilityScore";
 import { getNudges, recordDecision } from "../telemetryTuner"; // safe no-op if not present
 
-// ---- helpers ---------------------------------------------------------------
-
+// ----------------- helpers -----------------
 function isFiniteNum(x) {
   return typeof x === "number" && Number.isFinite(x);
 }
-
 function clamp(n, min, max) {
   if (!isFiniteNum(n)) return min;
   if (n < min) return min;
   if (n > max) return max;
   return n;
 }
-
-/**
- * Best-effort extraction of set index and games timeline from a variety of feeds.
- * Always returns a safe, minimal ctx the volatility module can handle.
- */
 function buildVolatilityCtx(match = {}) {
-  // try to infer current set (0-based)
   let setIdx = 0;
 
-  // common shapes we’ve seen in this project
   const m = match || {};
   const live = m.live || m.status || m.score || {};
 
-  // 1) explicit numeric fields if present
   if (isFiniteNum(m.currentSet)) {
     setIdx = clamp(Number(m.currentSet) - 1, 0, 2);
   } else if (isFiniteNum(live.currentSet)) {
     setIdx = clamp(Number(live.currentSet) - 1, 0, 2);
   } else if (Array.isArray(m.sets)) {
-    // if sets array exists, use its length-1 (0-based)
     setIdx = clamp(m.sets.length - 1, 0, 2);
   }
 
-  // 2) extract games array (very tolerant)
-  // Expectation: an array of numbers or objects per game; the module tolerates mixed content.
   let games = [];
   if (Array.isArray(m.games)) games = m.games;
   else if (Array.isArray(live.games)) games = live.games;
@@ -50,14 +36,10 @@ function buildVolatilityCtx(match = {}) {
     games = m.sets[setIdx].games;
   }
 
-  return {
-    setIndex: setIdx,
-    games
-  };
+  return { setIndex: setIdx, games };
 }
 
-// ---- main adapter ----------------------------------------------------------
-
+// ----------------- main -----------------
 export default function classifyMatch(match = {}) {
   // 1) Run engine with hard guard
   let out = {};
@@ -67,54 +49,69 @@ export default function classifyMatch(match = {}) {
     try { console.warn("[AI] aiEngineV2 threw:", err); } catch (_) {}
     out = {};
   }
-
-  // Ensure structural shape we rely on
   if (!out.raw || typeof out.raw !== "object") out.raw = {};
 
-  // 2) Volatility fallback (only if engine didn't provide a numeric value)
+  // 2) Volatility fallback (module -> baseline)
   try {
     const hasEngineVol = isFiniteNum(out.raw.volatility);
     if (!hasEngineVol) {
       const ctx = buildVolatilityCtx(match);
-      const vol = volatilityScore(ctx);
-      if (isFiniteNum(vol)) {
-        out.raw.volatility = vol;
-        // bubble up a top-level convenience field (kept optional to not break UI)
-        out.volatility = vol;
+      let vol = NaN;
+
+      // try module first
+      try {
+        vol = volatilityScore(ctx);
+      } catch (e) {
+        try { console.warn("[VOL] module error:", e); } catch (_) {}
       }
+
+      // diag
+      try { console.log("[VOL] ctx=", ctx, "moduleVol=", vol); } catch (_) {}
+
+      // safe baseline if module didn’t return finite
+      if (!isFiniteNum(vol)) {
+        // very conservative defaults:
+        // • if δεν έχουμε games => 0.28 (ήρεμη αγορά)
+        // • αν είμαστε σε set >= 2 => +0.05
+        const base =
+          Array.isArray(ctx.games) && ctx.games.length > 0
+            ? 0.30
+            : 0.28;
+        const adj = ctx.setIndex >= 1 ? 0.05 : 0;
+        vol = clamp(base + adj, 0.15, 0.75);
+        try { console.log("[VOL] baseline applied ->", vol); } catch (_) {}
+      }
+
+      out.raw.volatility = vol;
+      out.volatility = vol;
     } else {
-      // bubble up engine-provided value as well
       out.volatility = out.raw.volatility;
     }
   } catch (err) {
     try { console.warn("[AI] volatility fallback failed:", err); } catch (_) {}
-    // keep going without volatility
   }
 
-  // 3) Runtime markers (plain assignments — no getters/proxies)
+  // 3) Runtime markers (plain values)
   try {
     if (typeof window !== "undefined") {
       if (!window.__AI_VERSION__) window.__AI_VERSION__ = "v2.1";
       const volMarker = isFiniteNum(out.raw.volatility) ? out.raw.volatility : null;
       window.__AI_VOL__ = volMarker;
     }
-  } catch (_) {
-    // never break classifyMatch for marker issues
-  }
+  } catch (_) {}
 
-  // 4) TIP fallback to keep UI consistent
+  // 4) TIP fallback
   let tip = out.tip || null;
   if (!tip) {
     try {
       const p1Name =
         match?.players?.[0]?.name ||
-        match?.player?.[0]?.["@name"] ||
-        "";
+        match?.player?.[0]?.["@name"] || "";
       if (p1Name) tip = `TIP: ${p1Name}`;
-    } catch (_) { /* ignore */ }
+    } catch (_) {}
   }
 
-  // 5) Optional telemetry (no-op if tuner not present)
+  // 5) Telemetry (no-op if tuner missing)
   try {
     const nudges = typeof getNudges === "function" ? getNudges() : null;
     if (typeof recordDecision === "function") {
@@ -128,13 +125,8 @@ export default function classifyMatch(match = {}) {
         nudges
       });
     }
-  } catch (_) {
-    // ignore telemetry errors
-  }
+  } catch (_) {}
 
-  // 6) Return normalized object the UI expects
-  return {
-    ...out,
-    tip
-  };
+  // 6) Return normalized
+  return { ...out, tip };
 }
