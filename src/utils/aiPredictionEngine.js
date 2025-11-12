@@ -1,8 +1,14 @@
 // src/utils/aiPredictionEngine.js
 // Stable adapter around aiEngineV2 with safe, non-recursive runtime markers.
+// Wires in volatilityScore as a fallback when the engine does not provide volatility.
 
 import aiEngineV2 from "./aiEngineV2";
-import { getNudges, recordDecision } from "../telemetryTuner"; // keep if exists; otherwise it's harmless
+import volatilityScore from "../aiPredictionEngineModules/volatilityScore";
+import { getNudges, recordDecision } from "../telemetryTuner"; // safe no-op if not present
+
+function isFiniteNum(x) {
+  return Number.isFinite ? Number.isFinite(x) : (typeof x === "number" && isFinite(x));
+}
 
 export default function classifyMatch(match = {}) {
   // 1) Run engine with hard guard
@@ -10,33 +16,45 @@ export default function classifyMatch(match = {}) {
   try {
     out = aiEngineV2(match) || {};
   } catch (err) {
-    // engine failed; keep adapter resilient
-    try {
-      console.warn("[AI] aiEngineV2 threw:", err);
-    } catch (_) {}
+    try { console.warn("[AI] aiEngineV2 threw:", err); } catch (_) {}
     out = {};
   }
 
-  // 2) Attach simple runtime markers (NO getters, NO defineProperty -> avoid recursion)
-  //    We only ever assign plain values. This avoids the "Maximum call stack size exceeded".
-  try {
-    if (typeof window !== "undefined") {
-      // Version marker (static if engine didn't supply one)
-      if (!window.__AI_VERSION__) {
-        window.__AI_VERSION__ = "v2.1";
-      }
-      // Volatility marker (nullable)
-      const vol =
-        (out && out.raw && typeof out.raw.volatility !== "undefined")
-          ? out.raw.volatility
-          : null;
-      window.__AI_VOL__ = vol;
-    }
-  } catch (_) {
-    // never break classifyMatch for marker issues
+  // 2) Ensure `out.raw` container exists
+  if (!out.raw || typeof out.raw !== "object") {
+    out.raw = {};
   }
 
-  // 3) Fallback tip if engine didn’t produce one (keeps UI consistent)
+  // 3) Volatility: prefer engine value; otherwise compute via module
+  let volatility = null;
+  try {
+    if (isFiniteNum(out?.raw?.volatility)) {
+      volatility = Number(out.raw.volatility);
+    } else if (typeof volatilityScore === "function") {
+      // Minimal, defensive context (the module tolerates sparse input)
+      const computed = volatilityScore(match);
+      if (isFiniteNum(computed)) volatility = computed;
+    }
+  } catch (_) {
+    // never break the adapter
+  }
+  if (isFiniteNum(volatility)) {
+    out.raw.volatility = volatility;
+  } else {
+    out.raw.volatility = null;
+  }
+
+  // 4) Attach simple runtime markers (plain assignments only; no getters)
+  try {
+    if (typeof window !== "undefined") {
+      if (!window.__AI_VERSION__) window.__AI_VERSION__ = "v2.1";
+      window.__AI_VOL__ = out.raw.volatility ?? null;
+    }
+  } catch (_) {
+    // ignore marker issues
+  }
+
+  // 5) Fallback tip if engine didn’t produce one (keeps UI consistent)
   let tip = out.tip || null;
   if (!tip) {
     try {
@@ -50,7 +68,7 @@ export default function classifyMatch(match = {}) {
     }
   }
 
-  // 4) Optional: telemetry hooks (safe no-ops if not wired)
+  // 6) Optional: telemetry hooks (safe no-ops if not wired)
   try {
     const nudges = typeof getNudges === "function" ? getNudges() : null;
     if (typeof recordDecision === "function") {
@@ -60,7 +78,7 @@ export default function classifyMatch(match = {}) {
         ev: out?.ev ?? null,
         confidence: out?.confidence ?? null,
         kelly: out?.kelly ?? null,
-        volatility: (out?.raw?.volatility ?? null),
+        volatility: out?.raw?.volatility ?? null,
         nudges
       });
     }
@@ -68,7 +86,7 @@ export default function classifyMatch(match = {}) {
     // ignore telemetry errors
   }
 
-  // 5) Return normalized object the UI expects
+  // 7) Return normalized object the UI expects
   return {
     ...out,
     tip
