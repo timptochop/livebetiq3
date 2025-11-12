@@ -1,6 +1,6 @@
 // src/utils/aiPredictionEngine.js
-// Stable adapter around aiEngineV2 with safe runtime markers and wire fallback rules.
-// Adds write-back volatility fallback so that both engine and UI can see the same value.
+// Stable adapter around aiEngineV2 with safe runtime markers and robust wire fallback.
+// Guarantees out.raw.volatility is always present (finite number), else uses a safe default.
 
 import aiEngineV2 from './aiEngineV2';
 import volatilityScore from '../aiPredictionEngineModules/volatilityScore';
@@ -19,54 +19,42 @@ export default function classifyMatch(match = {}) {
     try { console.warn('[AI] aiEngineV2 threw:', err); } catch (_) {}
     out = {};
   }
+  if (!out || typeof out !== 'object') out = {};
+  if (!out.raw || typeof out.raw !== 'object') out.raw = {};
 
   // 2) Runtime markers (no getters/defineProperty)
   try {
     if (typeof window !== 'undefined') {
       if (!window.__AI_VERSION__) window.__AI_VERSION__ = 'v2.1';
-      const volFromEngine =
-        out && out.raw && typeof out.raw.volatility !== 'undefined'
-          ? out.raw.volatility
-          : null;
+      const volFromEngine = (typeof out.raw.volatility !== 'undefined') ? out.raw.volatility : null;
       window.__AI_VOL__ = volFromEngine;
     }
-  } catch (_) {
-    /* ignore marker issues */
-  }
+  } catch (_) { /* ignore marker issues */ }
 
-  // 3) Ensure volatility exists (wire fallback)
+  // 3) Ensure volatility exists (wire fallback + hard default)
   try {
-    const hasVol = out && out.raw && typeof out.raw.volatility !== 'undefined';
-    if (!hasVol) {
-      const v = volatilityScore(match); // 0..1
-      if (!out.raw) out.raw = {};
-      if (isFiniteNum(v)) out.raw.volatility = v;
-      else out.raw.volatility = null;
-      if (typeof window !== 'undefined') window.__AI_VOL__ = out.raw.volatility;
+    let haveVol = (typeof out.raw.volatility !== 'undefined') && out.raw.volatility !== null;
+    if (!haveVol || !isFiniteNum(out.raw.volatility)) {
+      let v = undefined;
+      try { v = volatilityScore(match); } catch (_) { v = undefined; }
+      if (!isFiniteNum(v)) v = 0.25; // safe default so UI & logs always see a number
+      out.raw.volatility = v;
+      if (typeof window !== 'undefined') window.__AI_VOL__ = v;
     }
-  } catch (_) {
-    /* ignore */
-  }
+  } catch (_) { /* ignore */ }
 
-  // 4) Wire fallback for label when cutoffs are missing (e.g. all AVOID)
+  // 4) Wire fallback for label when cutoffs are missing (e.g., always AVOID)
   try {
-    const ev =
-      isFiniteNum(out?.ev)
-        ? Number(out.ev)
-        : isFiniteNum(out?.raw?.ev)
-        ? Number(out.raw.ev)
-        : null;
+    const ev = isFiniteNum(out?.ev) ? Number(out.ev)
+            : isFiniteNum(out?.raw?.ev) ? Number(out.raw.ev)
+            : null;
 
-    const conf =
-      isFiniteNum(out?.confidence)
-        ? Number(out.confidence)
-        : isFiniteNum(out?.conf)
-        ? Number(out.conf)
-        : null;
+    const conf = isFiniteNum(out?.confidence) ? Number(out.confidence)
+              : isFiniteNum(out?.conf) ? Number(out.conf)
+              : null;
 
     let label = out?.label || null;
 
-    // Only fallback when missing, PENDING, or AVOID
     if ((!label || label === 'PENDING' || label === 'AVOID') && isFiniteNum(ev) && isFiniteNum(conf)) {
       const SAFE_EV = 0.03, SAFE_CONF = 0.58;
       const RISKY_EV = 0.00, RISKY_CONF = 0.53;
@@ -79,9 +67,7 @@ export default function classifyMatch(match = {}) {
       out.ev = ev;
       if (!isFiniteNum(out.confidence)) out.confidence = conf;
     }
-  } catch (_) {
-    /* ignore fallback errors */
-  }
+  } catch (_) { /* ignore */ }
 
   // 5) TIP fallback for UI consistency
   let tip = out.tip || null;
@@ -92,9 +78,7 @@ export default function classifyMatch(match = {}) {
         match?.player?.[0]?.['@name'] ||
         '';
       if (p1Name) tip = `TIP: ${p1Name}`;
-    } catch (_) {
-      /* ignore */
-    }
+    } catch (_) { /* ignore */ }
   }
 
   // 6) Telemetry (safe no-op)
@@ -111,18 +95,12 @@ export default function classifyMatch(match = {}) {
           ? Number(out.conf)
           : null,
         kelly: isFiniteNum(out?.kelly) ? Number(out.kelly) : null,
-        volatility:
-          out?.raw && 'volatility' in out.raw ? out.raw.volatility : null,
+        volatility: (typeof out.raw.volatility !== 'undefined') ? out.raw.volatility : null,
         nudges
       });
     }
-  } catch (_) {
-    /* ignore telemetry errors */
-  }
+  } catch (_) { /* ignore */ }
 
   // 7) Return normalized output for UI
-  return {
-    ...out,
-    tip
-  };
+  return { ...out, tip };
 }
