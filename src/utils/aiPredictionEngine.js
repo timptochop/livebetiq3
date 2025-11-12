@@ -1,17 +1,17 @@
 // src/utils/aiPredictionEngine.js
-// Adapter γύρω από το aiEngineV2 με ασφαλείς markers και
-// "wire-fallback" κανόνες όταν δεν υπάρχουν cutoffs από το μοντέλο.
+// Stable adapter around aiEngineV2 with safe runtime markers and wire fallback rules.
+// Adds write-back volatility fallback so that both engine and UI can see the same value.
 
 import aiEngineV2 from './aiEngineV2';
 import volatilityScore from '../aiPredictionEngineModules/volatilityScore';
-import { getNudges, recordDecision } from '../telemetryTuner'; // safe no-op αν λείπει
+import { getNudges, recordDecision } from '../telemetryTuner'; // safe no-op if missing
 
 function isFiniteNum(x) {
-  return Number.isFinite ? Number.isFinite(x) : (typeof x === 'number' && isFinite(x));
+  return typeof x === 'number' && Number.isFinite(x);
 }
 
 export default function classifyMatch(match = {}) {
-  // 1) Τρέξε τον κινητήρα με σκληρό guard
+  // 1) Run engine with guard
   let out = {};
   try {
     out = aiEngineV2(match) || {};
@@ -20,12 +20,12 @@ export default function classifyMatch(match = {}) {
     out = {};
   }
 
-  // 2) Ασφαλή runtime markers (χωρίς getters/defineProperty)
+  // 2) Runtime markers (no getters/defineProperty)
   try {
     if (typeof window !== 'undefined') {
       if (!window.__AI_VERSION__) window.__AI_VERSION__ = 'v2.1';
       const volFromEngine =
-        (out && out.raw && typeof out.raw.volatility !== 'undefined')
+        out && out.raw && typeof out.raw.volatility !== 'undefined'
           ? out.raw.volatility
           : null;
       window.__AI_VOL__ = volFromEngine;
@@ -34,39 +34,40 @@ export default function classifyMatch(match = {}) {
     /* ignore marker issues */
   }
 
-  // 3) Δοκίμασε να συμπληρώσεις volatility αν λείπει (wire fallback)
+  // 3) Ensure volatility exists (wire fallback)
   try {
     const hasVol = out && out.raw && typeof out.raw.volatility !== 'undefined';
     if (!hasVol) {
       const v = volatilityScore(match); // 0..1
       if (!out.raw) out.raw = {};
-      out.raw.volatility = isFiniteNum(v) ? v : null;
-      // ανανέωσε και το marker αν υπάρχει browser
+      if (isFiniteNum(v)) out.raw.volatility = v;
+      else out.raw.volatility = null;
       if (typeof window !== 'undefined') window.__AI_VOL__ = out.raw.volatility;
     }
   } catch (_) {
-    // ignore
+    /* ignore */
   }
 
-  // 4) Wire-fallback για label όταν δεν υπάρχουν cutoffs (ή βγαίνει πάντα AVOID)
-  //    Χρησιμοποιεί σταθερά thresholds πάνω σε ev & confidence.
+  // 4) Wire fallback for label when cutoffs are missing (e.g. all AVOID)
   try {
     const ev =
-      isFiniteNum(out?.ev) ? Number(out.ev)
-        : isFiniteNum(out?.raw?.ev) ? Number(out.raw.ev)
+      isFiniteNum(out?.ev)
+        ? Number(out.ev)
+        : isFiniteNum(out?.raw?.ev)
+        ? Number(out.raw.ev)
         : null;
 
-    // δέξου είτε confidence είτε conf
     const conf =
-      isFiniteNum(out?.confidence) ? Number(out.confidence)
-        : isFiniteNum(out?.conf) ? Number(out.conf)
+      isFiniteNum(out?.confidence)
+        ? Number(out.confidence)
+        : isFiniteNum(out?.conf)
+        ? Number(out.conf)
         : null;
 
     let label = out?.label || null;
 
-    // Fallback κανόνες μόνο όταν λείπει/είναι PENDING/είναι AVOID
+    // Only fallback when missing, PENDING, or AVOID
     if ((!label || label === 'PENDING' || label === 'AVOID') && isFiniteNum(ev) && isFiniteNum(conf)) {
-      // Συντηρητικά thresholds ώστε να παραμένει σταθερό το UI
       const SAFE_EV = 0.03, SAFE_CONF = 0.58;
       const RISKY_EV = 0.00, RISKY_CONF = 0.53;
 
@@ -76,14 +77,13 @@ export default function classifyMatch(match = {}) {
 
       out.label = label;
       out.ev = ev;
-      // ομογενοποίησε το όνομα για το UI
       if (!isFiniteNum(out.confidence)) out.confidence = conf;
     }
   } catch (_) {
-    // ignore fallback errors
+    /* ignore fallback errors */
   }
 
-  // 5) TIP fallback για συνέπεια στο UI
+  // 5) TIP fallback for UI consistency
   let tip = out.tip || null;
   if (!tip) {
     try {
@@ -92,10 +92,12 @@ export default function classifyMatch(match = {}) {
         match?.player?.[0]?.['@name'] ||
         '';
       if (p1Name) tip = `TIP: ${p1Name}`;
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      /* ignore */
+    }
   }
 
-  // 6) Προαιρετικά telemetry (no-op αν λείπουν)
+  // 6) Telemetry (safe no-op)
   try {
     const nudges = typeof getNudges === 'function' ? getNudges() : null;
     if (typeof recordDecision === 'function') {
@@ -103,9 +105,14 @@ export default function classifyMatch(match = {}) {
         matchId: match?.id || match?.matchId || null,
         label: out?.label ?? null,
         ev: isFiniteNum(out?.ev) ? Number(out.ev) : null,
-        confidence: isFiniteNum(out?.confidence) ? Number(out.confidence) : (isFiniteNum(out?.conf) ? Number(out.conf) : null),
+        confidence: isFiniteNum(out?.confidence)
+          ? Number(out.confidence)
+          : isFiniteNum(out?.conf)
+          ? Number(out.conf)
+          : null,
         kelly: isFiniteNum(out?.kelly) ? Number(out.kelly) : null,
-        volatility: (out?.raw && 'volatility' in out.raw) ? out.raw.volatility : null,
+        volatility:
+          out?.raw && 'volatility' in out.raw ? out.raw.volatility : null,
         nudges
       });
     }
@@ -113,7 +120,7 @@ export default function classifyMatch(match = {}) {
     /* ignore telemetry errors */
   }
 
-  // 7) Επιστροφή normalized αντικειμένου που περιμένει το UI
+  // 7) Return normalized output for UI
   return {
     ...out,
     tip
