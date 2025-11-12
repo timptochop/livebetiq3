@@ -1,60 +1,61 @@
 // src/utils/aiPredictionEngine.js
-// Stable adapter around aiEngineV2 with safe runtime markers and robust wire fallback.
-// Guarantees out.raw.volatility is always present (finite number), else uses a safe default.
+// AI Engine Adapter (v3.2f) — Guarantees volatility fallback + stable window markers.
 
 import aiEngineV2 from './aiEngineV2';
 import volatilityScore from '../aiPredictionEngineModules/volatilityScore';
-import { getNudges, recordDecision } from '../telemetryTuner'; // safe no-op if missing
+import { getNudges, recordDecision } from '../telemetryTuner';
 
 function isFiniteNum(x) {
   return typeof x === 'number' && Number.isFinite(x);
 }
 
 export default function classifyMatch(match = {}) {
-  // 1) Run engine with guard
   let out = {};
   try {
     out = aiEngineV2(match) || {};
   } catch (err) {
-    try { console.warn('[AI] aiEngineV2 threw:', err); } catch (_) {}
+    console.warn('[AI] aiEngineV2 threw:', err);
     out = {};
   }
-  if (!out || typeof out !== 'object') out = {};
-  if (!out.raw || typeof out.raw !== 'object') out.raw = {};
+  if (!out.raw) out.raw = {};
 
-  // 2) Runtime markers (no getters/defineProperty)
+  // (1) Calculate volatility first (wire fallback)
+  let vol = null;
+  try {
+    if (isFiniteNum(out.raw.volatility)) {
+      vol = out.raw.volatility;
+    } else {
+      vol = volatilityScore(match);
+      if (!isFiniteNum(vol)) vol = 0.25; // hard fallback default
+      out.raw.volatility = vol;
+    }
+  } catch (_) {
+    vol = 0.25;
+    out.raw.volatility = vol;
+  }
+
+  // (2) Safe version markers (set after computation)
   try {
     if (typeof window !== 'undefined') {
-      if (!window.__AI_VERSION__) window.__AI_VERSION__ = 'v2.1';
-      const volFromEngine = (typeof out.raw.volatility !== 'undefined') ? out.raw.volatility : null;
-      window.__AI_VOL__ = volFromEngine;
+      window.__AI_VERSION__ = 'v2.1';
+      window.__AI_VOL__ = vol;
     }
-  } catch (_) { /* ignore marker issues */ }
+  } catch (_) {}
 
-  // 3) Ensure volatility exists (wire fallback + hard default)
+  // (3) Label fallback logic (SAFE / RISKY / AVOID)
   try {
-    let haveVol = (typeof out.raw.volatility !== 'undefined') && out.raw.volatility !== null;
-    if (!haveVol || !isFiniteNum(out.raw.volatility)) {
-      let v = undefined;
-      try { v = volatilityScore(match); } catch (_) { v = undefined; }
-      if (!isFiniteNum(v)) v = 0.25; // safe default so UI & logs always see a number
-      out.raw.volatility = v;
-      if (typeof window !== 'undefined') window.__AI_VOL__ = v;
-    }
-  } catch (_) { /* ignore */ }
-
-  // 4) Wire fallback for label when cutoffs are missing (e.g., always AVOID)
-  try {
-    const ev = isFiniteNum(out?.ev) ? Number(out.ev)
-            : isFiniteNum(out?.raw?.ev) ? Number(out.raw.ev)
-            : null;
-
-    const conf = isFiniteNum(out?.confidence) ? Number(out.confidence)
-              : isFiniteNum(out?.conf) ? Number(out.conf)
-              : null;
+    const ev = isFiniteNum(out?.ev)
+      ? Number(out.ev)
+      : isFiniteNum(out?.raw?.ev)
+      ? Number(out.raw.ev)
+      : null;
+    const conf = isFiniteNum(out?.confidence)
+      ? Number(out.confidence)
+      : isFiniteNum(out?.conf)
+      ? Number(out.conf)
+      : null;
 
     let label = out?.label || null;
-
     if ((!label || label === 'PENDING' || label === 'AVOID') && isFiniteNum(ev) && isFiniteNum(conf)) {
       const SAFE_EV = 0.03, SAFE_CONF = 0.58;
       const RISKY_EV = 0.00, RISKY_CONF = 0.53;
@@ -67,21 +68,21 @@ export default function classifyMatch(match = {}) {
       out.ev = ev;
       if (!isFiniteNum(out.confidence)) out.confidence = conf;
     }
-  } catch (_) { /* ignore */ }
+  } catch (_) {}
 
-  // 5) TIP fallback for UI consistency
+  // (4) Generate tip fallback
   let tip = out.tip || null;
   if (!tip) {
     try {
-      const p1Name =
+      const p1 =
         match?.players?.[0]?.name ||
         match?.player?.[0]?.['@name'] ||
         '';
-      if (p1Name) tip = `TIP: ${p1Name}`;
-    } catch (_) { /* ignore */ }
+      if (p1) tip = `TIP: ${p1}`;
+    } catch (_) {}
   }
 
-  // 6) Telemetry (safe no-op)
+  // (5) Telemetry (safe no-op)
   try {
     const nudges = typeof getNudges === 'function' ? getNudges() : null;
     if (typeof recordDecision === 'function') {
@@ -95,12 +96,11 @@ export default function classifyMatch(match = {}) {
           ? Number(out.conf)
           : null,
         kelly: isFiniteNum(out?.kelly) ? Number(out.kelly) : null,
-        volatility: (typeof out.raw.volatility !== 'undefined') ? out.raw.volatility : null,
-        nudges
+        volatility: vol,
+        nudges,
       });
     }
-  } catch (_) { /* ignore */ }
+  } catch (_) {}
 
-  // 7) Return normalized output for UI
   return { ...out, tip };
 }
