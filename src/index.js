@@ -1,4 +1,5 @@
 // src/index.js
+import "./utils/aiBoot";                    // ← boot-time markers (__AI_VERSION__, __AI_VOL__)
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
@@ -129,7 +130,12 @@ if (typeof window !== 'undefined') {
         weights: window.__LBQ_WEIGHTS__ || null,
         weightsMeta: window.__LBQ_WEIGHTS_META__ || null,
       };
-      console.log('[SUMMARY]', { cutoffs: !!snapshot.cutoffs, cutoffsMeta: snapshot.cutoffsMeta, weights: !!snapshot.weights, weightsMeta: snapshot.weightsMeta });
+      console.log('[SUMMARY]', {
+        cutoffs: !!snapshot.cutoffs,
+        cutoffsMeta: snapshot.cutoffsMeta,
+        weights: !!snapshot.weights,
+        weightsMeta: snapshot.weightsMeta
+      });
     } catch {}
   }, 200);
 }
