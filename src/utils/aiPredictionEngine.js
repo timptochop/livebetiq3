@@ -5,8 +5,16 @@ import { getNudges, recordDecision } from "./telemetryTuner";
 export default function classifyMatch(match = {}) {
   const out = aiEngineV2(match) || {};
 
-  // Fallback tip if engine didn't provide one
-  let tip = out.tip;
+  // expose runtime markers for verification
+  try {
+    if (typeof window !== "undefined") {
+      window.__AI_VERSION__ = "v2.1";
+      window.__AI_VOL__ = out?.raw?.volatility ?? null;
+    }
+  } catch (_) {}
+
+  // fallback tip from odds if engine did not provide one
+  let tip = out?.tip || null;
   if (!tip) {
     try {
       const p1Name =
@@ -30,68 +38,43 @@ export default function classifyMatch(match = {}) {
       if (Number.isFinite(p1d) && Number.isFinite(p2d)) {
         tip = p1d < p2d ? p1Name : p2Name;
       }
-    } catch {
-      /* noop */
-    }
+    } catch (_) {}
   }
 
-  // Basic context for nudges/telemetry
-  const ctx = {
-    id: match?.id || match?.matchId || match?.["@id"] || null,
-    category:
-      match?.categoryName ||
-      match?.["@category"] ||
-      match?.category ||
-      null,
-    status:
-      (match?.status || match?.["@status"] || "").toString(),
-  };
+  // telemetry nudges (safe if tuner missing)
+  let ctx = null;
   let nudges = null;
   try {
-    nudges = getNudges(ctx);
-  } catch {
+    ctx = out?.raw?.ctx || null;
+    nudges = getNudges ? getNudges(ctx) : null;
+  } catch (_) {
+    ctx = null;
     nudges = null;
   }
-
   try {
-    if (out?.label) recordDecision(ctx, out.label);
-  } catch {
-    /* noop */
-  }
+    if (recordDecision && out?.label) {
+      recordDecision(ctx, out.label);
+    }
+  } catch (_) {}
 
-  // Features snapshot for UI/debug
   const features = {
-    pOdds: out?.raw?.A?.oddsEdge ?? null,
-    momentum: out?.raw?.A?.setsLead ?? null,
-    micro: out?.raw?.A?.gamesLead ?? null,
-    serve: null,
-    drift:
-      typeof out?.raw?.A?.oddsEdge === "number" &&
-      typeof out?.raw?.B?.oddsEdge === "number"
-        ? out.raw.A.oddsEdge - out.raw.B.oddsEdge
-        : null,
+    pOdds: out?.raw?.pOdds ?? null,
+    momentum: out?.raw?.momentum ?? null,
+    micro: out?.raw?.micro ?? null,
+    serve: out?.raw?.serve ?? null,
+    drift: out?.raw?.drift ?? null,
     setNum: Number(out?.raw?.setNum || 0),
     live: !!(out?.raw?.live),
-    clutch: null,
+    clutch: out?.raw?.clutch ?? null,
     ctx,
-    nudges,
+    nudges
   };
 
-  // Expose minimal runtime debug signals to window (for manual checks)
-  try {
-    if (typeof window !== "undefined") {
-      window.__AI_VERSION__ = "v2.1";
-      window.__AI_VOL__ = out?.raw?.volatility ?? null;
-    }
-  } catch {
-    /* noop */
-  }
-
   return {
-    label: out.label || null,
-    conf: out.conf ?? null,
-    kellyLevel: out.kellyLevel || null,
+    label: out?.label || null,
+    conf: out?.conf ?? null,
+    kellyLevel: out?.kellyLevel || null,
     tip: tip || null,
-    features,
+    features
   };
 }
