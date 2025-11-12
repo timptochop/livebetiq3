@@ -5,16 +5,18 @@ import { getNudges, recordDecision } from "./telemetryTuner";
 export default function classifyMatch(match = {}) {
   const out = aiEngineV2(match) || {};
 
-  // expose runtime markers for verification
-  try {
-    if (typeof window !== "undefined") {
+  // expose runtime markers globally
+  if (typeof window !== "undefined") {
+    try {
       window.__AI_VERSION__ = "v2.1";
       window.__AI_VOL__ = out?.raw?.volatility ?? null;
+    } catch (err) {
+      console.warn("[AI Adapter] Marker set failed:", err);
     }
-  } catch (_) {}
+  }
 
-  // fallback tip from odds if engine did not provide one
-  let tip = out?.tip || null;
+  // fallback tip from odds if missing
+  let tip = out.tip || null;
   if (!tip) {
     try {
       const p1Name =
@@ -25,56 +27,32 @@ export default function classifyMatch(match = {}) {
         match?.players?.[1]?.name ||
         match?.player?.[1]?.["@name"] ||
         "";
-      const p1d = Number(
-        match?.odds?.p1 ??
-          match?.odds?.player1 ??
-          match?.odds?.home
-      );
-      const p2d = Number(
-        match?.odds?.p2 ??
-          match?.odds?.player2 ??
-          match?.odds?.away
-      );
+      const p1d = Number(match?.odds?.p1 ?? match?.odds?.player1 ?? match?.odds?.home);
+      const p2d = Number(match?.odds?.p2 ?? match?.odds?.player2 ?? match?.odds?.away);
       if (Number.isFinite(p1d) && Number.isFinite(p2d)) {
         tip = p1d < p2d ? p1Name : p2Name;
       }
-    } catch (_) {}
+    } catch (e) {}
   }
 
-  // telemetry nudges (safe if tuner missing)
-  let ctx = null;
-  let nudges = null;
   try {
-    ctx = out?.raw?.ctx || null;
-    nudges = getNudges ? getNudges(ctx) : null;
-  } catch (_) {
-    ctx = null;
-    nudges = null;
-  }
-  try {
-    if (recordDecision && out?.label) {
-      recordDecision(ctx, out.label);
-    }
-  } catch (_) {}
-
-  const features = {
-    pOdds: out?.raw?.pOdds ?? null,
-    momentum: out?.raw?.momentum ?? null,
-    micro: out?.raw?.micro ?? null,
-    serve: out?.raw?.serve ?? null,
-    drift: out?.raw?.drift ?? null,
-    setNum: Number(out?.raw?.setNum || 0),
-    live: !!(out?.raw?.live),
-    clutch: out?.raw?.clutch ?? null,
-    ctx,
-    nudges
-  };
+    recordDecision(out.ctx, out.label);
+  } catch {}
 
   return {
-    label: out?.label || null,
-    conf: out?.conf ?? null,
-    kellyLevel: out?.kellyLevel || null,
+    label: out.label || null,
+    conf: out.conf ?? null,
+    kellyLevel: out.kellyLevel || null,
     tip: tip || null,
-    features
+    features: {
+      volatility: out?.raw?.volatility ?? null,
+      drift: out?.raw?.drift ?? null,
+      setNum: out?.raw?.setNum ?? null,
+      live: out?.raw?.live ?? null,
+      momentum: out?.raw?.momentum ?? null,
+      surface: out?.raw?.surface ?? null,
+      ctx: out?.ctx ?? null,
+      nudges: out?.nudges ?? null,
+    },
   };
 }
