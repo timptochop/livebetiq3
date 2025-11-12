@@ -2,30 +2,32 @@
 import aiEngineV2 from "./aiEngineV2";
 import { getNudges, recordDecision } from "./telemetryTuner";
 
-// --- GLOBAL INITIALIZATION (runs at import time) ---
+// --- GLOBAL BOOT MARKERS ---
 (() => {
-  if (typeof window !== "undefined") {
-    window.__AI_VERSION__ = "v2.1";
-    window.__AI_VOL__ = null;
-    console.info("[AI Adapter] Boot markers initialized", {
-      version: window.__AI_VERSION__,
-      vol: window.__AI_VOL__,
+  try {
+    const g = globalThis || window;
+    if (!g.__AI_VERSION__) g.__AI_VERSION__ = "v2.1";
+    if (typeof g.__AI_VOL__ === "undefined") g.__AI_VOL__ = null;
+    console.info("[AI Boot] Markers initialized", {
+      version: g.__AI_VERSION__,
+      vol: g.__AI_VOL__,
     });
+  } catch (err) {
+    console.warn("[AI Boot] Init failed:", err);
   }
 })();
-// ---------------------------------------------------
+// ----------------------------
 
 export default function classifyMatch(match = {}) {
   const out = aiEngineV2(match) || {};
 
   // Update runtime markers dynamically
-  if (typeof window !== "undefined") {
-    try {
-      window.__AI_VERSION__ = "v2.1";
-      window.__AI_VOL__ = out?.raw?.volatility ?? null;
-    } catch (err) {
-      console.warn("[AI Adapter] Marker set failed:", err);
-    }
+  try {
+    const g = globalThis || window;
+    g.__AI_VERSION__ = "v2.1";
+    g.__AI_VOL__ = out?.raw?.volatility ?? null;
+  } catch (err) {
+    console.warn("[AI Adapter] Marker update failed:", err);
   }
 
   // fallback tip from odds
