@@ -2,10 +2,18 @@
 import aiEngineV2 from "./aiEngineV2";
 import { getNudges, recordDecision } from "./telemetryTuner";
 
+// Boot-time markers (so they exist immediately on page load)
+if (typeof window !== "undefined") {
+  try {
+    window.__AI_VERSION__ = "v2.1";
+    if (typeof window.__AI_VOL__ === "undefined") window.__AI_VOL__ = null; // initialize
+  } catch {}
+}
+
 export default function classifyMatch(match = {}) {
   const out = aiEngineV2(match) || {};
 
-  // expose runtime markers globally
+  // Update runtime markers after each classification (volatility comes from engine output)
   if (typeof window !== "undefined") {
     try {
       window.__AI_VERSION__ = "v2.1";
@@ -15,7 +23,7 @@ export default function classifyMatch(match = {}) {
     }
   }
 
-  // fallback tip from odds if missing
+  // Fallback tip from odds if engine did not provide one
   let tip = out.tip || null;
   if (!tip) {
     try {
@@ -32,12 +40,10 @@ export default function classifyMatch(match = {}) {
       if (Number.isFinite(p1d) && Number.isFinite(p2d)) {
         tip = p1d < p2d ? p1Name : p2Name;
       }
-    } catch (e) {}
+    } catch {}
   }
 
-  try {
-    recordDecision(out.ctx, out.label);
-  } catch {}
+  try { recordDecision(out.ctx, out.label); } catch {}
 
   return {
     label: out.label || null,
