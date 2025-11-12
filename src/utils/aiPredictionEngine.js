@@ -2,18 +2,23 @@
 import aiEngineV2 from "./aiEngineV2";
 import { getNudges, recordDecision } from "./telemetryTuner";
 
-// Boot-time markers (so they exist immediately on page load)
-if (typeof window !== "undefined") {
-  try {
+// --- GLOBAL INITIALIZATION (runs at import time) ---
+(() => {
+  if (typeof window !== "undefined") {
     window.__AI_VERSION__ = "v2.1";
-    if (typeof window.__AI_VOL__ === "undefined") window.__AI_VOL__ = null; // initialize
-  } catch {}
-}
+    window.__AI_VOL__ = null;
+    console.info("[AI Adapter] Boot markers initialized", {
+      version: window.__AI_VERSION__,
+      vol: window.__AI_VOL__,
+    });
+  }
+})();
+// ---------------------------------------------------
 
 export default function classifyMatch(match = {}) {
   const out = aiEngineV2(match) || {};
 
-  // Update runtime markers after each classification (volatility comes from engine output)
+  // Update runtime markers dynamically
   if (typeof window !== "undefined") {
     try {
       window.__AI_VERSION__ = "v2.1";
@@ -23,27 +28,29 @@ export default function classifyMatch(match = {}) {
     }
   }
 
-  // Fallback tip from odds if engine did not provide one
+  // fallback tip from odds
   let tip = out.tip || null;
   if (!tip) {
     try {
-      const p1Name =
+      const p1 =
         match?.players?.[0]?.name ||
         match?.player?.[0]?.["@name"] ||
         "";
-      const p2Name =
+      const p2 =
         match?.players?.[1]?.name ||
         match?.player?.[1]?.["@name"] ||
         "";
-      const p1d = Number(match?.odds?.p1 ?? match?.odds?.player1 ?? match?.odds?.home);
-      const p2d = Number(match?.odds?.p2 ?? match?.odds?.player2 ?? match?.odds?.away);
-      if (Number.isFinite(p1d) && Number.isFinite(p2d)) {
-        tip = p1d < p2d ? p1Name : p2Name;
+      const o1 = Number(match?.odds?.p1 ?? match?.odds?.home);
+      const o2 = Number(match?.odds?.p2 ?? match?.odds?.away);
+      if (Number.isFinite(o1) && Number.isFinite(o2)) {
+        tip = o1 < o2 ? p1 : p2;
       }
     } catch {}
   }
 
-  try { recordDecision(out.ctx, out.label); } catch {}
+  try {
+    recordDecision(out.ctx, out.label);
+  } catch {}
 
   return {
     label: out.label || null,
