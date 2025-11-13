@@ -1,5 +1,5 @@
 // src/utils/aiPredictionEngine.js
-// AI Engine Adapter (v3.2g) — Stable volatility fallback with delayed marker write.
+// AI Engine Adapter (v3.2h) — stable volatility fallback + delayed marker write + debug logging.
 
 import aiEngineV2 from "./aiEngineV2";
 import volatilityScore from "../aiPredictionEngineModules/volatilityScore";
@@ -23,11 +23,11 @@ export default function classifyMatch(match = {}) {
 
   if (!out.raw) out.raw = {};
 
-  // 2) Compute volatility (fallback-safe)
+  // 2) Compute volatility (engine → fallback → safe default)
   let vol = null;
   try {
     if (isFiniteNum(out.raw.volatility)) {
-      vol = Number(out.raw.volatility);
+      vol = out.raw.volatility;
     } else {
       vol = volatilityScore(match);
       if (!isFiniteNum(vol)) vol = 0.25; // safe default
@@ -43,6 +43,7 @@ export default function classifyMatch(match = {}) {
     if (typeof window !== "undefined") {
       window.__AI_VERSION__ = "v2.1";
       window.__AI_VOL__ = vol;
+
       setTimeout(() => {
         try {
           if (typeof window !== "undefined") {
@@ -52,24 +53,26 @@ export default function classifyMatch(match = {}) {
       }, 500);
     }
   } catch (_) {
-    // never break classifyMatch because of markers
+    // ignore marker errors
   }
 
-  // 4) Wire-fallback label rules (SAFE / RISKY / AVOID)
+  // 4) Label fallback rules (wire-fallback when cutoffs are missing)
+  let ev = null;
+  let conf = null;
+  let label = out?.label ?? null;
+
   try {
-    const ev = isFiniteNum(out?.ev)
+    ev = isFiniteNum(out?.ev)
       ? Number(out.ev)
       : isFiniteNum(out?.raw?.ev)
       ? Number(out.raw.ev)
       : null;
 
-    const conf = isFiniteNum(out?.confidence)
+    conf = isFiniteNum(out?.confidence)
       ? Number(out.confidence)
       : isFiniteNum(out?.conf)
       ? Number(out.conf)
       : null;
-
-    let label = out?.label || null;
 
     if (
       (!label || label === "PENDING" || label === "AVOID") &&
@@ -94,32 +97,63 @@ export default function classifyMatch(match = {}) {
       if (!isFiniteNum(out.confidence)) {
         out.confidence = conf;
       }
+    } else {
+      // keep whatever the engine gave us
+      label = out?.label ?? label;
     }
   } catch (_) {
-    // ignore fallback errors
+    // keep best-effort ev/conf/label
   }
 
-  // 5) TIP fallback for UI consistency
+  // 5) Fallback TIP for UI consistency
   let tip = out.tip || null;
   if (!tip) {
     try {
       const p1 =
-        match?.players?.[0]?.name ||
-        match?.player?.[0]?.["@name"] ||
+        (match?.players && match.players[0] && match.players[0].name) ||
+        (match?.player && match.player[0] && match.player[0]["@name"]) ||
         "";
       if (p1) tip = `TIP: ${p1}`;
     } catch (_) {
-      // ignore
+      // ignore tip errors
     }
   }
 
-  // 6) Telemetry (safe no-op if hooks are missing)
+  // 6) Debug logging (adapter-level, safe in all environments)
+  try {
+    const matchId = match?.id || match?.matchId || null;
+    const p1Name =
+      (match?.players && match.players[0] && match.players[0].name) ||
+      (match?.player && match.player[0] && match.player[0]["@name"]) ||
+      null;
+    const p2Name =
+      (match?.players && match.players[1] && match.players[1].name) ||
+      (match?.player && match.player[1] && match.player[1]["@name"]) ||
+      null;
+
+    if (typeof console !== "undefined" && console.log) {
+      console.log("[AI Adapter v3.2h]", {
+        id: matchId,
+        players:
+          p1Name && p2Name ? `${p1Name} vs ${p2Name}` : p1Name || p2Name || null,
+        label: out?.label ?? label ?? null,
+        ev: isFiniteNum(ev) ? ev : null,
+        confidence: isFiniteNum(conf) ? conf : null,
+        volatility: isFiniteNum(vol) ? vol : null,
+        source: "adapter-wire-fallback",
+      });
+    }
+  } catch (_) {
+    // never break the app for logging
+  }
+
+  // 7) Telemetry (no-op if telemetryTuner is missing)
   try {
     const nudges = typeof getNudges === "function" ? getNudges() : null;
     if (typeof recordDecision === "function") {
       recordDecision({
         matchId: match?.id || match?.matchId || null,
-        label: out?.label ?? null,
+        label: out?.label ?? label ?? null,
         ev: isFiniteNum(out?.ev) ? Number(out.ev) : null,
         confidence: isFiniteNum(out?.confidence)
           ? Number(out.confidence)
@@ -127,7 +161,7 @@ export default function classifyMatch(match = {}) {
           ? Number(out.conf)
           : null,
         kelly: isFiniteNum(out?.kelly) ? Number(out.kelly) : null,
-        volatility: vol,
+        volatility: isFiniteNum(vol) ? vol : null,
         nudges,
       });
     }
@@ -135,7 +169,7 @@ export default function classifyMatch(match = {}) {
     // ignore telemetry errors
   }
 
-  // 7) Return normalized object for UI
+  // 8) Return normalized object for the UI
   return {
     ...out,
     tip,
