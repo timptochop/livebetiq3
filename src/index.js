@@ -1,5 +1,6 @@
 // src/index.js
-import "./utils/aiBoot";                    // ← boot-time markers (__AI_VERSION__, __AI_VOL__)
+import "./utils/aiBoot";                     // ← boot-time markers (__AI_VERSION__, __AI_VOL__)
+import './utils/telemetry';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
@@ -49,7 +50,6 @@ import { loadLbqConfigOnce } from './utils/loadLbqConfig';
     const lsUrl    = localStorage.getItem('LBQ_WEBAPP_URL');
     const lsSecret = localStorage.getItem('LBQ_SECRET');
 
-    // precedence: query > localStorage > empty
     const finalUrl    = qpUrl    || lsUrl    || '';
     const finalSecret = qpSecret || lsSecret || '';
 
@@ -78,7 +78,7 @@ loadLbqConfigOnce()
       console.log('[LBQ] adaptive weights skipped (older-or-same)');
     }
   })
-  .catch(() => { /* no-op */ });
+  .catch(() => {});
 
 /**
  * 3) App boot
@@ -121,7 +121,6 @@ if (typeof window !== 'undefined') {
     return r;
   };
 
-  // One-line summary snapshot for screenshots
   setTimeout(() => {
     try {
       const snapshot = {
