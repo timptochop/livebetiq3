@@ -6,6 +6,7 @@
 // Guarantees: favName always real (no "Player A"); predicted uses pending.favName
 
 import reportResult from './reportResult';
+import { recordPrediction } from './telemetry';
 
 const ENABLED = String(process.env.REACT_APP_LOG_PREDICTIONS || '0') === '1';
 const MODEL   = process.env.REACT_APP_AI_ENGINE || 'v3.10';
@@ -76,13 +77,10 @@ export function addPending(p) {
  * }
  */
 export async function logPrediction(payload = {}) {
-  if (!ENABLED) return { ok: true, skipped: 'logging disabled' };
-
   const matchId = payload.matchId || payload.id;
   const label   = payload.label;
   if (!matchId || !label) return { ok: false, error: 'missing matchId/label' };
 
-  // Enforce real favName in features & human tip
   const favName = (payload.features?.favName && String(payload.features.favName).trim())
     ? payload.features.favName
     : null;
@@ -90,8 +88,56 @@ export async function logPrediction(payload = {}) {
   const needsTip = !aiTip || /player\s*[ab]/i.test(aiTip);
   const tip = needsTip && favName ? `${favName} to win` : aiTip;
 
+  const confVal  = Number(payload.conf) || 0;
+  const favProb  = Number(payload.features?.favProb ?? payload.prob ?? 0) || 0;
+  const kellyVal = Number(
+    payload.kelly ??
+    payload.features?.kelly ??
+    0
+  ) || 0;
+
+  const p1 =
+    payload.features?.player1 ??
+    payload.features?.p1 ??
+    payload.p1 ??
+    '';
+  const p2 =
+    payload.features?.player2 ??
+    payload.features?.p2 ??
+    payload.p2 ??
+    '';
+  const setNum =
+    payload.features?.setNum ??
+    payload.setNum ??
+    null;
+  const status =
+    payload.features?.status ??
+    payload.status ??
+    (payload.features?.live ? 'live' : 'upcoming');
+
+  const ts = new Date().toISOString();
+
+  try {
+    recordPrediction({
+      ts,
+      matchId,
+      p1,
+      p2,
+      label,
+      prob: favProb,
+      kelly: kellyVal,
+      status,
+      setNum,
+      tip,
+    });
+  } catch {
+    // ignore local telemetry errors
+  }
+
+  if (!ENABLED) return { ok: true, skipped: 'logging disabled' };
+
   const body = {
-    ts: new Date().toISOString(),
+    ts,
     sid: getSid(),
     app: 'livebetiq3',
     model: MODEL,
@@ -99,16 +145,15 @@ export async function logPrediction(payload = {}) {
     data: {
       matchId,
       label,
-      conf: Number(payload.conf) || 0,
+      conf: confVal,
       tip,
       features: {
         ...(payload.features || {}),
-        favName, // may be null; frontend already tries to force real name
+        favName,
       },
     },
   };
 
-  // Small dedupe guard
   const key = [matchId, label, Math.round((body.data.conf || 0) * 100)].join('|');
   if (dedupe(key)) return { ok: true, deduped: true };
 
@@ -139,10 +184,8 @@ export async function trySettleFinished(feed) {
 
   const byIdPending = new Map(pending.map(x => [x.id, x]));
 
-  // Helper: normalize names for comparison
   const norm = (s) => String(s || '').trim().toLowerCase();
 
-  // Extract winner from a match object
   const winnerFromMatch = (m) => {
     const direct = m?.winner || m?.['@winner'];
     if (direct) return String(direct);
@@ -187,22 +230,19 @@ export async function trySettleFinished(feed) {
     if (!id) continue;
 
     const pend = byIdPending.get(id);
-    if (!pend) continue; // we didn't predict this one (or already settled)
+    if (!pend) continue;
 
     const predicted = pend.favName || null;
     const winner    = winnerFromMatch(m);
 
     if (!predicted || !winner) {
-      // not enough info; keep it for next cycle
       stillPending.push(pend);
       continue;
     }
 
     const result = norm(predicted) === norm(winner) ? 'win' : 'loss';
 
-    // Send result to unified endpoint
     await reportResult({ matchId: id, result, winner, predicted });
-    // Do not re-add to stillPending (settled)
   }
 
   savePending(stillPending);
@@ -213,6 +253,5 @@ export async function trySettleFinished(feed) {
 // Some old code might call: log('prediction', payload)
 export default function log(event, data = {}) {
   if (event === 'prediction') return logPrediction(data);
-  // No other events supported in new contract
   return { ok: true, ignored: true };
 }
