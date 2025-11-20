@@ -1,18 +1,14 @@
 // api/predictions.js
-// LiveBet IQ - unified prediction logger endpoint
-// Receives POSTs from the frontend (predictionLogger.js)
-// and forwards them to the Google Apps Script webhook (LOG_WEBHOOK_URL)
+// LiveBet IQ - unified prediction logger endpoint (server → GAS)
 
 export default async function handler(req, res) {
-  // Allow only POST
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
-    return res
-      .status(405)
-      .json({ ok: false, error: 'method_not_allowed' });
+    return res.status(405).json({ ok: false, error: 'method_not_allowed' });
   }
 
   const url = process.env.LOG_WEBHOOK_URL;
+  const secret = process.env.LBQ_SECRET;
 
   if (!url) {
     return res.status(500).json({
@@ -21,28 +17,38 @@ export default async function handler(req, res) {
     });
   }
 
+  if (!secret) {
+    return res.status(500).json({
+      ok: false,
+      error: 'LBQ_SECRET is not configured',
+    });
+  }
+
   try {
-    // In some environments req.body may already be an object or a raw string
     let payload = req.body || {};
 
     if (typeof payload === 'string') {
       try {
         payload = JSON.parse(payload);
       } catch {
-        // If parsing fails, keep the raw string; Apps Script will see it as text
+        payload = { raw: payload };
       }
     }
+
+    const finalBody =
+      payload && typeof payload === 'object'
+        ? { ...payload, secret }
+        : { data: payload, secret };
 
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(finalBody),
     });
 
     const text = await resp.text();
     let data;
 
-    // Try to decode JSON from Apps Script; fall back to raw text
     try {
       data = JSON.parse(text);
     } catch {
