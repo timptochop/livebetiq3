@@ -250,12 +250,13 @@ export default function LiveTennis({
 
         if (notificationsOn) {
           const t = `${cur}: ${m.name1} vs ${m.name2}${
-            m.categoryName ? ` · ${m.categoryName}` : ""
+            m.categoryName ? ` Â· ${m.categoryName}` : ""
           }`;
           showToast(t, 3500);
         }
 
-        if (cur === "SAFE" || cur === "RISKY") {
+        // === TRAINING LOOP: SAFE/RISKY/AVOID ===
+        if (cur === "SAFE" || cur === "RISKY" || cur === "AVOID") {
           const fav =
             m.ai?.features?.favName &&
             String(m.ai.features.favName).trim()
@@ -284,7 +285,7 @@ export default function LiveTennis({
 
         if (cur === "SAFE") {
           const t = `SAFE: ${m.name1} vs ${m.name2}${
-            m.categoryName ? ` · ${m.categoryName}` : ""
+            m.categoryName ? ` Â· ${m.categoryName}` : ""
           }`;
           tryTg(t);
         }
@@ -394,7 +395,7 @@ export default function LiveTennis({
                   fontSize: 14,
                 }}
               >
-                {m.date} {m.time} · {m.categoryName}
+                {m.date} {m.time} Â· {m.categoryName}
                 {m.uiLabel === "UPCOMING" && (
                   <span
                     style={{
@@ -402,7 +403,7 @@ export default function LiveTennis({
                       color: "#9fb0c3",
                     }}
                   >
-                    — starts in {m.startInText || "n/a"}
+                    â€” starts in {m.startInText || "n/a"}
                   </span>
                 )}
               </div>

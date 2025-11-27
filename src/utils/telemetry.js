@@ -1,124 +1,93 @@
-const KEY = "__lbq_telemetry_v1__";
+// src/utils/telemetry.js
 
-const WEBAPI_URL = process.env.LBQ_WEBAPI_URL;
-const WEBAPI_SECRET = process.env.LBQ_WEBAPI_SECRET || "LBQ2025WebAPIProd!";
+const LOG_REMOTE =
+  String(process.env.REACT_APP_LOG_PREDICTIONS || '0') === '1';
 
-function readAll() {
-  try {
-    return JSON.parse(localStorage.getItem(KEY) || "[]");
-  } catch {
-    return [];
-  }
-}
+function buildBodyFromPayload(p = {}) {
+  const ts = p.ts || new Date().toISOString();
 
-function writeAll(arr) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(arr));
-  } catch {}
-}
+  const matchId = p.matchId || '';
+  const label = p.label || '';
+  const tip = p.tip || '';
+  const prob = Number(p.prob || 0) || 0;
+  const kelly = Number(p.kelly || 0) || 0;
+  const status = p.status || '';
+  const setNum =
+    typeof p.setNum === 'number' ? p.setNum : p.setNum || null;
 
-async function sendToWebApi(evt) {
-  try {
-    if (typeof fetch === "undefined") return;
-    if (!WEBAPI_URL) return;
+  const p1 = p.p1 || '';
+  const p2 = p.p2 || '';
 
-    const timestamp = evt.ts || new Date().toISOString();
-    const matchId = evt.matchId || evt.id || "unknown";
-    const players = [evt.p1, evt.p2].filter(Boolean).join(" vs ");
+  const favName = p.favName || (p1 || '').toString();
+  const favProb = prob;
 
-    const ev =
-      typeof evt.ev === "number"
-        ? evt.ev
-        : undefined;
-
-    const confidence =
-      typeof evt.conf === "number"
-        ? evt.conf
-        : typeof evt.prob === "number"
-        ? evt.prob
-        : undefined;
-
-    const kelly =
-      typeof evt.kelly === "number"
-        ? evt.kelly
-        : undefined;
-
-    const label = evt.label || evt.status || "NA";
-    const note = evt.tip || "";
-
-    const payload = {
-      secret: WEBAPI_SECRET,
-      timestamp,
-      matchId,
-      players,
-      ev,
-      confidence,
-      kelly,
-      label,
-      note,
-      engine: evt.engine || "v5",
-      raw: evt
-    };
-
-    const url = WEBAPI_URL + "?secret=" + encodeURIComponent(WEBAPI_SECRET);
-
-    await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      keepalive: true
-    });
-  } catch {
-  }
-}
-
-export function recordPrediction(evt) {
-  const rows = readAll();
-  rows.push(evt);
-  writeAll(rows);
-  try {
-    sendToWebApi(evt);
-  } catch {}
-}
-
-export function exportCSV(filename = "lbq-telemetry.csv") {
-  const rows = readAll();
-  if (!rows.length) return;
-
-  const heads = Object.keys(rows[0]);
-  const csv = [
-    heads.join(","),
-    ...rows.map((r) =>
-      heads
-        .map((h) => {
-          const v = r[h] ?? "";
-          const s = String(v).replaceAll('"', '""');
-          return /[",\n]/.test(s) ? `"${s}"` : s;
-        })
-        .join(",")
-    )
-  ].join("\n");
-
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-export function telemetrySummary() {
-  const rows = readAll();
-  const by = (k) => rows.filter((r) => r.label === k).length;
   return {
-    total: rows.length,
-    SAFE: by("SAFE"),
-    RISKY: by("RISKY"),
-    AVOID: by("AVOID")
+    ts,
+    sid: 'lbq-web-v3',
+    model: 'ai-v3.10',
+    event: 'prediction',
+    data: {
+      matchId,
+      label,
+      conf: prob,
+      tip,
+      features: {
+        favName,
+        favProb,
+        kelly,
+        status,
+        setNum,
+        p1,
+        p2
+      }
+    }
   };
 }
 
-if (typeof window !== "undefined") {
-  window.__LBQ = { exportCSV, telemetrySummary };
+export function recordPrediction(payload = {}) {
+  try {
+    const body = buildBodyFromPayload(payload);
+
+    console.log('[LBQ][Telemetry] prediction', body);
+
+    if (!LOG_REMOTE) {
+      return;
+    }
+
+    if (typeof fetch !== 'function') {
+      return;
+    }
+
+    fetch('/api/predictions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      keepalive: true
+    })
+      .then((r) => r.json().catch(() => ({})))
+      .then((data) => {
+        console.log('[LBQ][Telemetry] result', data);
+      })
+      .catch((err) => {
+        console.error('[LBQ][Telemetry] failed', err);
+      });
+  } catch (err) {
+    console.error('[LBQ][Telemetry] error', err);
+  }
 }
+
+window.lbqLogTestPrediction = function () {
+  const now = new Date().toISOString();
+
+  recordPrediction({
+    ts: now,
+    matchId: 'test-match-001',
+    label: 'SAFE',
+    prob: 0.88,
+    tip: 'Player A wins',
+    p1: 'Player A',
+    p2: 'Player B',
+    status: 'test',
+    setNum: 2
+  });
+};

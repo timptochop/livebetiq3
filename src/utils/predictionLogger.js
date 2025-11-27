@@ -1,18 +1,16 @@
 // src/utils/predictionLogger.js
 // Unified logger for LiveBet IQ v3.10
-// - logPrediction(payload) -> POST /api/predictions (event:'prediction')
+// - logPrediction(payload) -> POST /api/log-prediction (event:'prediction')
 // - addPending({id, favName, label})
 // - trySettleFinished(rawFeed) -> auto result reporting via reportResult()
-// Guarantees: favName always real (no "Player A"); predicted uses pending.favName
 
 import reportResult from './reportResult';
 import { recordPrediction } from './telemetry';
 
 const ENABLED = String(process.env.REACT_APP_LOG_PREDICTIONS || '0') === '1';
-const MODEL   = process.env.REACT_APP_AI_ENGINE || 'v3.10';
-const LS_KEY  = 'lbq_pending_v1';
+const MODEL = process.env.REACT_APP_AI_ENGINE || 'v3.10';
+const LS_KEY = 'lbq_pending_v1';
 
-// -------- SID helpers --------
 function getSid() {
   try {
     const k = 'lbq.sid';
@@ -27,18 +25,18 @@ function getSid() {
   }
 }
 
-// -------- Dedupe predictor chatter (optional) --------
 const recent = new Map();
 function dedupe(key, ttlMs = 10_000) {
   const now = Date.now();
   const hit = recent.get(key);
   if (hit && now - hit < ttlMs) return true;
   recent.set(key, now);
-  for (const [k, t] of recent) if (now - t > ttlMs) recent.delete(k);
+  for (const [k, t] of recent) {
+    if (now - t > ttlMs) recent.delete(k);
+  }
   return false;
 }
 
-// -------- Local storage for pendings --------
 function loadPending() {
   try {
     const raw = localStorage.getItem(LS_KEY) || '[]';
@@ -48,23 +46,22 @@ function loadPending() {
     return [];
   }
 }
+
 function savePending(list) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(list)); } catch {}
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(list));
+  } catch {}
 }
 
-// =====================================================
-// =============== PUBLIC API FUNCTIONS ================
-// =====================================================
-
 /**
- * Persist a pending pick so we can settle with the correct predicted later.
- * @param {{id:string, favName:string, label:'SAFE'|'RISKY'}} p
+ * Persist a pending pick so we can settle it later with the correct predicted.
+ * @param {{id:string, favName:string, label:'SAFE'|'RISKY'|'AVOID'}} p
  */
 export function addPending(p) {
   if (!p || !p.id) return;
   const favName = (p.favName && String(p.favName).trim()) || null;
-  const label   = p.label || null;
-  const list = loadPending().filter(x => x.id !== p.id);
+  const label = p.label || null;
+  const list = loadPending().filter((x) => x.id !== p.id);
   list.push({ id: p.id, favName, label, ts: Date.now() });
   savePending(list);
 }
@@ -73,28 +70,30 @@ export function addPending(p) {
  * Send a prediction to the unified endpoint.
  * payload shape:
  * {
- *   matchId, label, conf, tip, features:{ favName, favProb, favOdds, setNum, live, ... }
+ *   matchId, label, conf, tip,
+ *   features:{ favName, favProb, favOdds, setNum, live, player1, player2, ... }
  * }
  */
 export async function logPrediction(payload = {}) {
   const matchId = payload.matchId || payload.id;
-  const label   = payload.label;
+  const label = payload.label;
   if (!matchId || !label) return { ok: false, error: 'missing matchId/label' };
 
-  const favName = (payload.features?.favName && String(payload.features.favName).trim())
-    ? payload.features.favName
-    : null;
+  const favName =
+    (payload.features?.favName && String(payload.features.favName).trim())
+      ? payload.features.favName
+      : null;
+
   const aiTip = (payload.tip && String(payload.tip).trim()) || '';
   const needsTip = !aiTip || /player\s*[ab]/i.test(aiTip);
   const tip = needsTip && favName ? `${favName} to win` : aiTip;
 
-  const confVal  = Number(payload.conf) || 0;
-  const favProb  = Number(payload.features?.favProb ?? payload.prob ?? 0) || 0;
-  const kellyVal = Number(
-    payload.kelly ??
-    payload.features?.kelly ??
-    0
-  ) || 0;
+  const confVal = Number(payload.conf) || 0;
+  const favProb =
+    Number(payload.features?.favProb ?? payload.prob ?? 0) || 0;
+
+  const kellyVal =
+    Number(payload.kelly ?? payload.features?.kelly ?? 0) || 0;
 
   const p1 =
     payload.features?.player1 ??
@@ -106,10 +105,12 @@ export async function logPrediction(payload = {}) {
     payload.features?.p2 ??
     payload.p2 ??
     '';
+
   const setNum =
     payload.features?.setNum ??
     payload.setNum ??
     null;
+
   const status =
     payload.features?.status ??
     payload.status ??
@@ -130,11 +131,11 @@ export async function logPrediction(payload = {}) {
       setNum,
       tip,
     });
-  } catch {
-    // ignore local telemetry errors
-  }
+  } catch {}
 
-  if (!ENABLED) return { ok: true, skipped: 'logging disabled' };
+  if (!ENABLED) {
+    return { ok: true, skipped: 'logging disabled' };
+  }
 
   const body = {
     ts,
@@ -154,11 +155,13 @@ export async function logPrediction(payload = {}) {
     },
   };
 
-  const key = [matchId, label, Math.round((body.data.conf || 0) * 100)].join('|');
+  const key = [matchId, label, Math.round((body.data.conf || 0) * 100)].join(
+    '|',
+  );
   if (dedupe(key)) return { ok: true, deduped: true };
 
   try {
-    const resp = await fetch('/api/predictions', {
+    const resp = await fetch('/api/log-prediction', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -182,17 +185,20 @@ export async function trySettleFinished(feed) {
   const arr = Array.isArray(feed) ? feed : [];
   if (!arr.length) return;
 
-  const byIdPending = new Map(pending.map(x => [x.id, x]));
-
+  const byIdPending = new Map(pending.map((x) => [x.id, x]));
   const norm = (s) => String(s || '').trim().toLowerCase();
 
   const winnerFromMatch = (m) => {
     const direct = m?.winner || m?.['@winner'];
     if (direct) return String(direct);
 
-    const players = Array.isArray(m.players) ? m.players
-                 : Array.isArray(m.player)  ? m.player : [];
-    const p1 = players[0] || {}, p2 = players[1] || {};
+    const players = Array.isArray(m.players)
+      ? m.players
+      : Array.isArray(m.player)
+      ? m.player
+      : [];
+    const p1 = players[0] || {};
+    const p2 = players[1] || {};
     const name1 = p1.name || p1['@name'] || '';
     const name2 = p2.name || p2['@name'] || '';
 
@@ -203,13 +209,30 @@ export async function trySettleFinished(feed) {
       const x = parseInt(s.split(/[.:]/)[0], 10);
       return Number.isFinite(x) ? x : null;
     };
-    const sA = [toInt(p1.s1), toInt(p1.s2), toInt(p1.s3), toInt(p1.s4), toInt(p1.s5)];
-    const sB = [toInt(p2.s1), toInt(p2.s2), toInt(p2.s3), toInt(p2.s4), toInt(p2.s5)];
-    let a = 0, b = 0;
+
+    const sA = [
+      toInt(p1.s1),
+      toInt(p1.s2),
+      toInt(p1.s3),
+      toInt(p1.s4),
+      toInt(p1.s5),
+    ];
+    const sB = [
+      toInt(p2.s1),
+      toInt(p2.s2),
+      toInt(p2.s3),
+      toInt(p2.s4),
+      toInt(p2.s5),
+    ];
+
+    let a = 0,
+      b = 0;
     for (let i = 0; i < 5; i++) {
-      const A = sA[i], B = sB[i];
+      const A = sA[i],
+        B = sB[i];
       if (A === null || B === null) continue;
-      if (A > B) a++; else if (B > A) b++;
+      if (A > B) a++;
+      else if (B > A) b++;
     }
     if (a > b) return name1 || null;
     if (b > a) return name2 || null;
@@ -218,7 +241,12 @@ export async function trySettleFinished(feed) {
 
   const finished = arr.filter((m) => {
     const s = String(m?.status || m?.['@status'] || '').toLowerCase();
-    return s === 'finished' || s === 'retired' || s === 'walk over' || s === 'walkover';
+    return (
+      s === 'finished' ||
+      s === 'retired' ||
+      s === 'walk over' ||
+      s === 'walkover'
+    );
   });
 
   if (!finished.length) return;
@@ -233,7 +261,7 @@ export async function trySettleFinished(feed) {
     if (!pend) continue;
 
     const predicted = pend.favName || null;
-    const winner    = winnerFromMatch(m);
+    const winner = winnerFromMatch(m);
 
     if (!predicted || !winner) {
       stillPending.push(pend);
@@ -248,9 +276,6 @@ export async function trySettleFinished(feed) {
   savePending(stillPending);
 }
 
-// -----------------------------------------------------
-// Backwards compatibility default export
-// Some old code might call: log('prediction', payload)
 export default function log(event, data = {}) {
   if (event === 'prediction') return logPrediction(data);
   return { ok: true, ignored: true };
