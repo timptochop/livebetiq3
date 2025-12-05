@@ -89,8 +89,17 @@ export async function logPrediction(payload = {}) {
   const tip = needsTip && favName ? `${favName} to win` : aiTip;
 
   const confVal = Number(payload.conf) || 0;
+
   const favProb =
     Number(payload.features?.favProb ?? payload.prob ?? 0) || 0;
+
+  const favOdds =
+    Number(
+      payload.features?.favOdds ??
+        payload.odds ??
+        payload.favOdds ??
+        0
+    ) || 0;
 
   const kellyVal =
     Number(payload.kelly ?? payload.features?.kelly ?? 0) || 0;
@@ -100,6 +109,7 @@ export async function logPrediction(payload = {}) {
     payload.features?.p1 ??
     payload.p1 ??
     '';
+
   const p2 =
     payload.features?.player2 ??
     payload.features?.p2 ??
@@ -126,6 +136,7 @@ export async function logPrediction(payload = {}) {
       p2,
       label,
       prob: favProb,
+      odds: favOdds,
       kelly: kellyVal,
       status,
       setNum,
@@ -136,6 +147,15 @@ export async function logPrediction(payload = {}) {
   if (!ENABLED) {
     return { ok: true, skipped: 'logging disabled' };
   }
+
+  const features = {
+    ...(payload.features || {}),
+    favName,
+    favProb,
+    favOdds,
+    player1: p1 ?? payload.features?.player1,
+    player2: p2 ?? payload.features?.player2,
+  };
 
   const body = {
     ts,
@@ -148,10 +168,7 @@ export async function logPrediction(payload = {}) {
       label,
       conf: confVal,
       tip,
-      features: {
-        ...(payload.features || {}),
-        favName,
-      },
+      features,
     },
   };
 
