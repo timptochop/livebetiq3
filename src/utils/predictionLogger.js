@@ -67,6 +67,90 @@ export function addPending(p) {
 }
 
 /**
+ * Derive favourite probability and odds from payload/features.
+ */
+function deriveFavProbAndOdds(payload, favName, p1, p2) {
+  const f = payload.features || {};
+
+  let favProb = Number(
+    f.favProb ??
+      f.favProbability ??
+      payload.prob ??
+      payload.probability ??
+      0,
+  );
+  let favOdds = Number(
+    f.favOdds ??
+      f.favPrice ??
+      f.fairOddsFav ??
+      payload.odds ??
+      payload.price ??
+      0,
+  );
+
+  const prob1 = Number(
+    f.prob1 ??
+      f.probHome ??
+      f.fairProb1 ??
+      f.impliedProb1 ??
+      f.probA ??
+      0,
+  );
+  const prob2 = Number(
+    f.prob2 ??
+      f.probAway ??
+      f.fairProb2 ??
+      f.impliedProb2 ??
+      f.probB ??
+      0,
+  );
+  const odds1 = Number(
+    f.fairOdds1 ??
+      f.odds1 ??
+      f.price1 ??
+      f.homeOdds ??
+      f.oddsA ??
+      0,
+  );
+  const odds2 = Number(
+    f.fairOdds2 ??
+      f.odds2 ??
+      f.price2 ??
+      f.awayOdds ??
+      f.oddsB ??
+      0,
+  );
+
+  const favNameNorm = String(favName || '').trim().toLowerCase();
+  const p1Norm = String(p1 || '').trim().toLowerCase();
+  const p2Norm = String(p2 || '').trim().toLowerCase();
+
+  const isValidProb = (x) => Number.isFinite(x) && x > 0 && x < 1;
+  const isValidOdds = (x) => Number.isFinite(x) && x > 1;
+
+  if (!isValidProb(favProb) && favNameNorm) {
+    if (p1Norm && favNameNorm === p1Norm && isValidProb(prob1)) {
+      favProb = prob1;
+    } else if (p2Norm && favNameNorm === p2Norm && isValidProb(prob2)) {
+      favProb = prob2;
+    }
+  }
+
+  if (!isValidOdds(favOdds) && favNameNorm) {
+    if (p1Norm && favNameNorm === p1Norm && isValidOdds(odds1)) {
+      favOdds = odds1;
+    } else if (p2Norm && favNameNorm === p2Norm && isValidOdds(odds2)) {
+      favOdds = odds2;
+    }
+  }
+
+  const probClean = isValidProb(favProb) ? favProb : 0;
+  const oddsClean = isValidOdds(favOdds) ? favOdds : 0;
+
+  return { favProb: probClean, favOdds: oddsClean };
+}
+
+/**
  * Send a prediction to the unified endpoint.
  * payload shape:
  * {
@@ -79,27 +163,20 @@ export async function logPrediction(payload = {}) {
   const label = payload.label;
   if (!matchId || !label) return { ok: false, error: 'missing matchId/label' };
 
-  const favName =
-    (payload.features?.favName && String(payload.features.favName).trim())
+  const rawFavName =
+    payload.features?.favName !== undefined &&
+    payload.features?.favName !== null
       ? payload.features.favName
       : null;
+
+  const favName =
+    (rawFavName && String(rawFavName).trim()) || null;
 
   const aiTip = (payload.tip && String(payload.tip).trim()) || '';
   const needsTip = !aiTip || /player\s*[ab]/i.test(aiTip);
   const tip = needsTip && favName ? `${favName} to win` : aiTip;
 
   const confVal = Number(payload.conf) || 0;
-
-  const favProb =
-    Number(payload.features?.favProb ?? payload.prob ?? 0) || 0;
-
-  const favOdds =
-    Number(
-      payload.features?.favOdds ??
-        payload.odds ??
-        payload.favOdds ??
-        0
-    ) || 0;
 
   const kellyVal =
     Number(payload.kelly ?? payload.features?.kelly ?? 0) || 0;
@@ -109,7 +186,6 @@ export async function logPrediction(payload = {}) {
     payload.features?.p1 ??
     payload.p1 ??
     '';
-
   const p2 =
     payload.features?.player2 ??
     payload.features?.p2 ??
@@ -126,6 +202,13 @@ export async function logPrediction(payload = {}) {
     payload.status ??
     (payload.features?.live ? 'live' : 'upcoming');
 
+  const { favProb, favOdds } = deriveFavProbAndOdds(
+    payload,
+    favName,
+    p1,
+    p2,
+  );
+
   const ts = new Date().toISOString();
 
   try {
@@ -136,7 +219,6 @@ export async function logPrediction(payload = {}) {
       p2,
       label,
       prob: favProb,
-      odds: favOdds,
       kelly: kellyVal,
       status,
       setNum,
@@ -147,15 +229,6 @@ export async function logPrediction(payload = {}) {
   if (!ENABLED) {
     return { ok: true, skipped: 'logging disabled' };
   }
-
-  const features = {
-    ...(payload.features || {}),
-    favName,
-    favProb,
-    favOdds,
-    player1: p1 ?? payload.features?.player1,
-    player2: p2 ?? payload.features?.player2,
-  };
 
   const body = {
     ts,
@@ -168,7 +241,17 @@ export async function logPrediction(payload = {}) {
       label,
       conf: confVal,
       tip,
-      features,
+      features: {
+        ...(payload.features || {}),
+        favName,
+        favProb,
+        favOdds,
+        p1,
+        p2,
+        status,
+        setNum,
+        kelly: kellyVal,
+      },
     },
   };
 
@@ -242,11 +325,11 @@ export async function trySettleFinished(feed) {
       toInt(p2.s5),
     ];
 
-    let a = 0,
-      b = 0;
+    let a = 0;
+    let b = 0;
     for (let i = 0; i < 5; i++) {
-      const A = sA[i],
-        B = sB[i];
+      const A = sA[i];
+      const B = sB[i];
       if (A === null || B === null) continue;
       if (A > B) a++;
       else if (B > A) b++;
