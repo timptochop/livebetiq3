@@ -157,6 +157,12 @@ export function predictMatch(m = {}, featuresIn = {}) {
   if (conf >= 0.80) label = "SAFE";
   else if (conf < 0.65) label = "AVOID";
 
+  const favProb = conf;
+  const favOdds = Number.isFinite(f.pOdds) && f.pOdds > 1 ? round2(f.pOdds) : 0;
+
+  f.favProb = favProb;
+  f.favOdds = favOdds;
+
   const rawKelly = kellyFraction(conf, f.pOdds);
   const kMult = 1 - 0.50 * vol;
   const kScaled = round2(Math.max(0, rawKelly * kMult));
@@ -174,6 +180,8 @@ export function predictMatch(m = {}, featuresIn = {}) {
       conf,
       tip,
       kelly: kScaled,
+      prob: favProb,
+      odds: favOdds,
       features: out.features,
       p1,
       p2
