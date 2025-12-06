@@ -113,36 +113,31 @@ export function predictMatch(m = {}, featuresIn = {}) {
     ...featuresIn,
   };
 
-  // Not live → label by set / soon, no logging
+  // Not live → fallback labels only
   if (!f.live) {
     const badge =
-      f.setNum === 1 ? 'SET 1' :
-      f.setNum === 2 ? 'SET 2' :
-      f.setNum >= 3 ? 'SET 3' : 'START SOON';
+      f.setNum === 1
+        ? 'SET 1'
+        : f.setNum === 2
+        ? 'SET 2'
+        : f.setNum >= 3
+        ? 'SET 3'
+        : 'START SOON';
     return decorate({ label: badge, conf: 0.0, tip: '', kellyFraction: 0 }, f, m);
   }
 
-  // Live but wrong set → no bet logic
-  if (f.setNum === 1) {
+  // Live but outside main window
+  if (f.setNum === 1)
     return decorate({ label: 'SET 1', conf: 0.0, tip: '', kellyFraction: 0 }, f, m);
-  }
-  if (f.setNum >= 3) {
+  if (f.setNum >= 3)
     return decorate({ label: 'SET 3', conf: 0.0, tip: '', kellyFraction: 0 }, f, m);
-  }
 
   const { gA, gB, total, diff } = currentGameFromScores(m.players || []);
-
-  // Too early in set 2 → just tag as SET 2
-  if (total < 3) {
+  if (total < 3)
     return decorate({ label: 'SET 2', conf: 0.0, tip: '', kellyFraction: 0 }, f, m);
-  }
-
-  // Too late / tie-break chaos → avoid
-  if (total > 6 || (gA >= 6 && gB >= 6)) {
+  if (total > 6 || (gA >= 6 && gB >= 6))
     return decorate({ label: 'AVOID', conf: 0.0, tip: '', kellyFraction: 0 }, f, m);
-  }
 
-  // Logistic model over odds / momentum / drift
   const w = [1.6, 0.9, 1.1, 0.3];
   const b0 = -1.0;
 
@@ -151,46 +146,33 @@ export function predictMatch(m = {}, featuresIn = {}) {
   const x2 = Number.isFinite(f.drift) ? f.drift : 0;
   let conf = sigmoid(w[0] * x0 + w[1] * x1 + w[2] * x2 + w[3] + b0);
 
-  // Previous set winner momentum
   const winner = previousSetWinner(m.players || []);
   if (winner === 1) conf += 0.05;
   else if (winner === 2) conf -= 0.05;
 
-  // Line movement awareness
   if (f.drift > 0.1) conf -= 0.05;
   if (f.drift < -0.1) conf += 0.05;
 
-  // Surface / indoor tweaks
   conf += surfaceAdjust(f.surface, f.indoor);
 
-  // Point-score edge
   const [pA, pB] = parsePointScore(f.pointScore);
   if (pA - pB >= 2) conf += 0.05;
   if (pB - pA >= 2) conf -= 0.05;
 
-  // Volatility damping
   const vol = volatilityScore({ gA, gB, total, diff, pointScore: f.pointScore });
   conf = conf * (1 - 0.25 * vol);
 
-  // Normalise + clamp
   conf = normalizeConf(conf);
   conf = round2(Math.min(1, Math.max(0, conf)));
 
-  // Labeling
   let label = 'RISKY';
   if (conf >= 0.8) label = 'SAFE';
   else if (conf < 0.65) label = 'AVOID';
 
-  // Fav prob / odds for logging
-  const favProb = conf;
-  const favOdds =
-    Number.isFinite(f.pOdds) && f.pOdds > 1 ? round2(f.pOdds) : 0;
-
-  // Store them in features so they travel through the pipeline
-  f.favProb = favProb;
+  // Only odds are hard-coded here.
+  const favOdds = Number.isFinite(f.pOdds) && f.pOdds > 1 ? round2(f.pOdds) : 0;
   f.favOdds = favOdds;
 
-  // Kelly with volatility scaling
   const rawKelly = kellyFraction(conf, f.pOdds);
   const kMult = 1 - 0.5 * vol;
   const kScaled = round2(Math.max(0, rawKelly * kMult));
@@ -198,36 +180,30 @@ export function predictMatch(m = {}, featuresIn = {}) {
   const tip = makeTip(m, f);
   const out = decorate({ label, conf, tip, kellyFraction: kScaled }, f, m);
 
-  // ---- Central logging hook ----
   try {
     const p1 = m?.players?.[0]?.name || '';
     const p2 = m?.players?.[1]?.name || '';
 
-    // IMPORTANT: send favProb / favOdds at top-level as well
+    // IMPORTANT: we do NOT send favProb explicitly.
+    // predictionLogger will derive favProb from conf and/or odds.
     logPrediction({
       matchId: m.id || m.matchId || '-',
       label,
       conf,
       tip,
       kelly: kScaled,
-      favProb,
-      favOdds,
+      odds: favOdds,
       features: out.features,
       p1,
       p2,
     });
-  } catch (e) {
-    // swallow logging errors
-  }
+  } catch (e) {}
 
-  // Debug console trace
   try {
     console.table([
       {
         matchId: m.id || '-',
-        players: `${m?.players?.[0]?.name || '?'} vs ${
-          m?.players?.[1]?.name || '?'
-        }`,
+        players: `${m?.players?.[0]?.name || '?'} vs ${m?.players?.[1]?.name || '?'}`,
         setNum: f.setNum,
         gA,
         gB,
@@ -285,13 +261,11 @@ function makeTip(m = {}, f = {}) {
     m?.away?.name ||
     firstFromName(m?.name, 1) ||
     'Player B';
-
   if (Number.isFinite(f.pOdds)) {
     return f.pOdds <= 1.75
       ? `TIP: ${pA} to win match`
       : `TIP: ${pB} to win match`;
   }
-
   if ((f.momentum ?? 0) >= 0) return `TIP: ${pA} to win match`;
   return `TIP: ${pB} to win match`;
 }
