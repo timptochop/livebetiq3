@@ -66,6 +66,7 @@ export function addPending(p) {
  * payload:
  * {
  *   matchId, label, conf, tip, kelly,
+ *   prob, odds,
  *   features:{ favName, pOdds, favProb, favOdds, setNum, live, player1, player2, ... }
  * }
  */
@@ -88,16 +89,18 @@ export async function logPrediction(payload = {}) {
   const oddsRaw =
     payload.features?.pOdds ??
     payload.features?.favOdds ??
+    payload.odds ??
     payload.pOdds ??
     payload.favOdds ??
     0;
 
-  let favOdds = Number(oddsRaw) || 0;
+  const favOdds = Number(oddsRaw) || 0;
 
-  let favProb =
+  const favProb =
     Number(
       payload.features?.favProb ??
         payload.favProb ??
+        payload.prob ??
         (confVal || (favOdds > 1 ? 1 / favOdds : 0)) ??
         0,
     ) || 0;
@@ -128,16 +131,18 @@ export async function logPrediction(payload = {}) {
 
   const ts = new Date().toISOString();
 
-  // ---------- AI-implied fallbacks (no more zeros) ----------
-  // If favProb came out 0 but we have confidence, use confidence.
-  if (favProb <= 0 && confVal > 0) {
-    favProb = confVal;
-  }
-
-  // If odds are missing/invalid, derive fair odds from favProb.
-  if ((!Number.isFinite(favOdds) || favOdds <= 1) && favProb > 0) {
-    favOdds = Number((1 / favProb).toFixed(3));
-  }
+  try {
+    console.log('[LBQ] logPrediction debug', {
+      matchId,
+      label,
+      confVal,
+      favProb,
+      favOdds,
+      kellyVal,
+      features: payload.features,
+      raw: payload,
+    });
+  } catch {}
 
   try {
     recordPrediction({
