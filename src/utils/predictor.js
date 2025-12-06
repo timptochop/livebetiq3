@@ -10,10 +10,10 @@ import { logPrediction } from './predictionLogger';
 // Helpers (robust, no-crash)
 // -------------------------
 export function currentSetFromScores(m = {}) {
-  const s = (m.status || m.set || "").toString().toLowerCase();
-  if (s.includes("set 3")) return 3;
-  if (s.includes("set 2")) return 2;
-  if (s.includes("set 1")) return 1;
+  const s = (m.status || m.set || '').toString().toLowerCase();
+  if (s.includes('set 3')) return 3;
+  if (s.includes('set 2')) return 2;
+  if (s.includes('set 1')) return 1;
   if (Number.isFinite(m.setNum)) return m.setNum;
   return 0;
 }
@@ -26,9 +26,9 @@ function currentGameFromScores(players = []) {
   return { gA, gB, total: gA + gB, diff: Math.abs(gA - gB) };
 }
 
-function parsePointScore(raw = "") {
-  const mapping = { "0": 0, "15": 1, "30": 2, "40": 3, "Ad": 4, "AD": 4, "ad": 4 };
-  const parts = String(raw || "").split("-");
+function parsePointScore(raw = '') {
+  const mapping = { '0': 0, '15': 1, '30': 2, '40': 3, Ad: 4, AD: 4, ad: 4 };
+  const parts = String(raw || '').split('-');
   if (parts.length !== 2) return [0, 0];
   const pA = mapping[parts[0].trim()] ?? 0;
   const pB = mapping[parts[1].trim()] ?? 0;
@@ -49,18 +49,19 @@ function sigmoid(z) {
 }
 
 function normalizeConf(c) {
-  const min = 0.40, max = 0.90;
+  const min = 0.4;
+  const max = 0.9;
   if (c <= min) return 0;
   if (c >= max) return 1;
   return (c - min) / (max - min);
 }
 
-function surfaceAdjust(surface = "", indoor = false) {
+function surfaceAdjust(surface = '', indoor = false) {
   const s = String(surface).toLowerCase();
   let adj = 0;
-  if (s.includes("clay")) adj -= 0.05;
-  if (s.includes("grass")) adj += 0.05;
-  if (s.includes("hard")) adj += 0;
+  if (s.includes('clay')) adj -= 0.05;
+  if (s.includes('grass')) adj += 0.05;
+  if (s.includes('hard')) adj += 0;
   if (indoor) adj += 0.03;
   return adj;
 }
@@ -69,13 +70,13 @@ function surfaceAdjust(surface = "", indoor = false) {
 // Volatility model (0..1)
 // -------------------------
 function volatilityScore(ctx = {}) {
-  const { gA = 0, gB = 0, total = 0, diff = 0, pointScore = "" } = ctx;
+  const { gA = 0, gB = 0, total = 0, diff = 0, pointScore = '' } = ctx;
   const [pA, pB] = parsePointScore(pointScore);
 
   let vol;
   if (total <= 3) vol = 0.65;
   else if (total <= 6) vol = diff >= 2 ? 0.75 : 0.55;
-  else if (total <= 9) vol = diff >= 3 ? 0.60 : 0.45;
+  else if (total <= 9) vol = diff >= 3 ? 0.6 : 0.45;
   else vol = 0.35;
 
   if (Math.abs(pA - pB) >= 2) vol += 0.05;
@@ -89,7 +90,9 @@ function volatilityScore(ctx = {}) {
 // -------------------------
 function kellyFraction(conf, odds) {
   if (!Number.isFinite(odds) || odds <= 1) return 0;
-  const b = odds - 1, p = conf, q = 1 - p;
+  const b = odds - 1;
+  const p = conf;
+  const q = 1 - p;
   const fStar = (b * p - q) / b;
   return fStar > 0 ? round2(Math.min(fStar, 1)) : 0;
 }
@@ -104,28 +107,42 @@ export function predictMatch(m = {}, featuresIn = {}) {
     drift: featuresIn.drift ?? m.drift ?? 0,
     live: featuresIn.live ?? m.live ?? false,
     setNum: featuresIn.setNum ?? currentSetFromScores(m),
-    surface: m.categoryName || m.surface || "",
-    indoor: /indoor/i.test(m.categoryName || m.surface || ""),
-    pointScore: m.pointScore || "",
-    ...featuresIn
+    surface: m.categoryName || m.surface || '',
+    indoor: /indoor/i.test(m.categoryName || m.surface || ''),
+    pointScore: m.pointScore || '',
+    ...featuresIn,
   };
 
+  // Not live → label by set / soon, no logging
   if (!f.live) {
     const badge =
-      f.setNum === 1 ? "SET 1" :
-      f.setNum === 2 ? "SET 2" :
-      f.setNum >= 3 ? "SET 3" : "START SOON";
-    return decorate({ label: badge, conf: 0.0, tip: "", kellyFraction: 0 }, f, m);
+      f.setNum === 1 ? 'SET 1' :
+      f.setNum === 2 ? 'SET 2' :
+      f.setNum >= 3 ? 'SET 3' : 'START SOON';
+    return decorate({ label: badge, conf: 0.0, tip: '', kellyFraction: 0 }, f, m);
   }
 
-  if (f.setNum === 1)  return decorate({ label: "SET 1", conf: 0.0, tip: "", kellyFraction: 0 }, f, m);
-  if (f.setNum >= 3)   return decorate({ label: "SET 3", conf: 0.0, tip: "", kellyFraction: 0 }, f, m);
+  // Live but wrong set → no bet logic
+  if (f.setNum === 1) {
+    return decorate({ label: 'SET 1', conf: 0.0, tip: '', kellyFraction: 0 }, f, m);
+  }
+  if (f.setNum >= 3) {
+    return decorate({ label: 'SET 3', conf: 0.0, tip: '', kellyFraction: 0 }, f, m);
+  }
 
   const { gA, gB, total, diff } = currentGameFromScores(m.players || []);
-  if (total < 3)       return decorate({ label: "SET 2", conf: 0.0, tip: "", kellyFraction: 0 }, f, m);
-  if (total > 6 || (gA >= 6 && gB >= 6))
-                       return decorate({ label: "AVOID", conf: 0.0, tip: "", kellyFraction: 0 }, f, m);
 
+  // Too early in set 2 → just tag as SET 2
+  if (total < 3) {
+    return decorate({ label: 'SET 2', conf: 0.0, tip: '', kellyFraction: 0 }, f, m);
+  }
+
+  // Too late / tie-break chaos → avoid
+  if (total > 6 || (gA >= 6 && gB >= 6)) {
+    return decorate({ label: 'AVOID', conf: 0.0, tip: '', kellyFraction: 0 }, f, m);
+  }
+
+  // Logistic model over odds / momentum / drift
   const w = [1.6, 0.9, 1.1, 0.3];
   const b0 = -1.0;
 
@@ -134,79 +151,99 @@ export function predictMatch(m = {}, featuresIn = {}) {
   const x2 = Number.isFinite(f.drift) ? f.drift : 0;
   let conf = sigmoid(w[0] * x0 + w[1] * x1 + w[2] * x2 + w[3] + b0);
 
+  // Previous set winner momentum
   const winner = previousSetWinner(m.players || []);
   if (winner === 1) conf += 0.05;
   else if (winner === 2) conf -= 0.05;
 
-  if (f.drift > 0.10) conf -= 0.05;
-  if (f.drift < -0.10) conf += 0.05;
+  // Line movement awareness
+  if (f.drift > 0.1) conf -= 0.05;
+  if (f.drift < -0.1) conf += 0.05;
 
+  // Surface / indoor tweaks
   conf += surfaceAdjust(f.surface, f.indoor);
 
+  // Point-score edge
   const [pA, pB] = parsePointScore(f.pointScore);
   if (pA - pB >= 2) conf += 0.05;
   if (pB - pA >= 2) conf -= 0.05;
 
+  // Volatility damping
   const vol = volatilityScore({ gA, gB, total, diff, pointScore: f.pointScore });
   conf = conf * (1 - 0.25 * vol);
 
+  // Normalise + clamp
   conf = normalizeConf(conf);
   conf = round2(Math.min(1, Math.max(0, conf)));
 
-  let label = "RISKY";
-  if (conf >= 0.80) label = "SAFE";
-  else if (conf < 0.65) label = "AVOID";
+  // Labeling
+  let label = 'RISKY';
+  if (conf >= 0.8) label = 'SAFE';
+  else if (conf < 0.65) label = 'AVOID';
 
+  // Fav prob / odds for logging
   const favProb = conf;
-  const favOdds = Number.isFinite(f.pOdds) && f.pOdds > 1 ? round2(f.pOdds) : 0;
+  const favOdds =
+    Number.isFinite(f.pOdds) && f.pOdds > 1 ? round2(f.pOdds) : 0;
 
+  // Store them in features so they travel through the pipeline
   f.favProb = favProb;
   f.favOdds = favOdds;
 
+  // Kelly with volatility scaling
   const rawKelly = kellyFraction(conf, f.pOdds);
-  const kMult = 1 - 0.50 * vol;
+  const kMult = 1 - 0.5 * vol;
   const kScaled = round2(Math.max(0, rawKelly * kMult));
 
   const tip = makeTip(m, f);
   const out = decorate({ label, conf, tip, kellyFraction: kScaled }, f, m);
 
+  // ---- Central logging hook ----
   try {
-    const p1 = m?.players?.[0]?.name || "";
-    const p2 = m?.players?.[1]?.name || "";
+    const p1 = m?.players?.[0]?.name || '';
+    const p2 = m?.players?.[1]?.name || '';
 
+    // IMPORTANT: send favProb / favOdds at top-level as well
     logPrediction({
-      matchId: m.id || m.matchId || "-",
+      matchId: m.id || m.matchId || '-',
       label,
       conf,
       tip,
       kelly: kScaled,
-      prob: favProb,
-      odds: favOdds,
+      favProb,
+      favOdds,
       features: out.features,
       p1,
-      p2
+      p2,
     });
-  } catch (e) {}
+  } catch (e) {
+    // swallow logging errors
+  }
 
+  // Debug console trace
   try {
-    console.table([{
-      matchId: m.id || "-",
-      players: `${m?.players?.[0]?.name || "?"} vs ${m?.players?.[1]?.name || "?"}`,
-      setNum: f.setNum,
-      gA,
-      gB,
-      total,
-      diff,
-      pointScore: f.pointScore,
-      odds: f.pOdds,
-      momentum: f.momentum,
-      drift: f.drift,
-      surface: f.surface,
-      vol,
-      conf,
-      label,
-      kelly: kScaled
-    }]);
+    console.table([
+      {
+        matchId: m.id || '-',
+        players: `${m?.players?.[0]?.name || '?'} vs ${
+          m?.players?.[1]?.name || '?'
+        }`,
+        setNum: f.setNum,
+        gA,
+        gB,
+        total,
+        diff,
+        pointScore: f.pointScore,
+        odds: f.pOdds,
+        momentum: f.momentum,
+        drift: f.drift,
+        surface: f.surface,
+        vol,
+        conf,
+        label,
+        kelly: kScaled,
+      },
+    ]);
   } catch (e) {}
 
   return out;
@@ -226,7 +263,8 @@ function decorate(out, features, m) {
 
 function clampOdds(v) {
   if (!Number.isFinite(v)) return 0.5;
-  const min = 1.1, max = 3.0;
+  const min = 1.1;
+  const max = 3.0;
   const t = Math.max(min, Math.min(max, v));
   const norm = (t - min) / (max - min);
   return 1 - norm;
@@ -237,18 +275,30 @@ function round2(x) {
 }
 
 function makeTip(m = {}, f = {}) {
-  const pA = m?.players?.[0]?.name || m?.home?.name || firstFromName(m?.name, 0) || "Player A";
-  const pB = m?.players?.[1]?.name || m?.away?.name || firstFromName(m?.name, 1) || "Player B";
+  const pA =
+    m?.players?.[0]?.name ||
+    m?.home?.name ||
+    firstFromName(m?.name, 0) ||
+    'Player A';
+  const pB =
+    m?.players?.[1]?.name ||
+    m?.away?.name ||
+    firstFromName(m?.name, 1) ||
+    'Player B';
+
   if (Number.isFinite(f.pOdds)) {
-    return f.pOdds <= 1.75 ? `TIP: ${pA} to win match` : `TIP: ${pB} to win match`;
+    return f.pOdds <= 1.75
+      ? `TIP: ${pA} to win match`
+      : `TIP: ${pB} to win match`;
   }
+
   if ((f.momentum ?? 0) >= 0) return `TIP: ${pA} to win match`;
   return `TIP: ${pB} to win match`;
 }
 
 function firstFromName(full, index) {
-  if (!full || typeof full !== "string") return null;
-  const vs = full.split(" vs ");
+  if (!full || typeof full !== 'string') return null;
+  const vs = full.split(' vs ');
   if (vs.length !== 2) return null;
   return vs[index]?.trim() || null;
 }
