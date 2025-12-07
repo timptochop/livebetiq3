@@ -1,6 +1,7 @@
 ﻿/**
  * src/utils/predictor.js
- * v3.4-calibrated — rawProb for EV/Kelly + normalized conf for labels
+ * v3.4b — rawProb for EV/Kelly + normalized conf for labels
+ * and sends favProb/favOdds directly to logger payload.
  */
 
 import { logPrediction } from './predictionLogger';
@@ -141,7 +142,6 @@ export function predictMatch(m = {}, featuresIn = {}) {
   const w = [1.6, 0.9, 1.1, 0.3];
   const b0 = -1.0;
 
-  // raw model probability before scaling for labels
   let rawProb = sigmoid(
     w[0] * clampOdds(f.pOdds) +
       w[1] * (Number.isFinite(f.momentum) ? f.momentum : 0) +
@@ -166,11 +166,9 @@ export function predictMatch(m = {}, featuresIn = {}) {
   const vol = volatilityScore({ gA, gB, total, diff, pointScore: f.pointScore });
   rawProb = rawProb * (1 - 0.25 * vol);
 
-  // clamp raw probability for EV/Kelly/logging
   rawProb = Math.min(0.99, Math.max(0.01, rawProb));
   const favProb = round2(rawProb);
 
-  // separate normalized confidence just for label thresholds
   let confScore = normalizeConf(rawProb);
   confScore = Math.min(1, Math.max(0, confScore));
   const conf = round2(confScore);
@@ -195,15 +193,20 @@ export function predictMatch(m = {}, featuresIn = {}) {
   try {
     const p1 = m?.players?.[0]?.name || '';
     const p2 = m?.players?.[1]?.name || '';
+
     logPrediction({
       matchId: m.id || m.matchId || '-',
       label,
       conf,
       tip,
       kelly: kScaled,
-      prob: favProb,
-      odds: favOdds,
-      features: out.features,
+      favProb,
+      favOdds,
+      features: {
+        ...out.features,
+        favProb,
+        favOdds,
+      },
       p1,
       p2,
     });
