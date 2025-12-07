@@ -1,13 +1,12 @@
 ﻿/**
  * src/utils/predictor.js
- * v3.3-calibrated — pointContext + volatility-aware confidence + Dynamic Kelly stake
- * Single-module drop-in, no UI changes.
+ * v3.4-calibrated — rawProb for EV/Kelly + normalized conf for labels
  */
 
 import { logPrediction } from './predictionLogger';
 
 // -------------------------
-// Helpers (robust, no-crash)
+// Helpers
 // -------------------------
 export function currentSetFromScores(m = {}) {
   const s = (m.status || m.set || '').toString().toLowerCase();
@@ -48,6 +47,7 @@ function sigmoid(z) {
   return 1 / (1 + Math.exp(-z));
 }
 
+// normalize model-score → [0,1] “confidence for labels”
 function normalizeConf(c) {
   const min = 0.4;
   const max = 0.9;
@@ -88,17 +88,19 @@ function volatilityScore(ctx = {}) {
 // -------------------------
 // Kelly Criterion
 // -------------------------
-function kellyFraction(conf, odds) {
+function kellyFraction(prob, odds) {
   if (!Number.isFinite(odds) || odds <= 1) return 0;
+  const p = prob;
+  if (!Number.isFinite(p) || p <= 0 || p >= 1) return 0;
   const b = odds - 1;
-  const p = conf;
   const q = 1 - p;
   const fStar = (b * p - q) / b;
-  return fStar > 0 ? round2(Math.min(fStar, 1)) : 0;
+  if (fStar <= 0) return 0;
+  return round2(Math.min(fStar, 1));
 }
 
 // -------------------------
-// Core predictor (SET 2 only)
+// Core predictor (SET 2 focus)
 // -------------------------
 export function predictMatch(m = {}, featuresIn = {}) {
   const f = {
@@ -113,67 +115,77 @@ export function predictMatch(m = {}, featuresIn = {}) {
     ...featuresIn,
   };
 
-  // Not live → fallback labels only
   if (!f.live) {
     const badge =
-      f.setNum === 1
-        ? 'SET 1'
-        : f.setNum === 2
-        ? 'SET 2'
-        : f.setNum >= 3
-        ? 'SET 3'
-        : 'START SOON';
-    return decorate({ label: badge, conf: 0.0, tip: '', kellyFraction: 0 }, f, m);
+      f.setNum === 1 ? 'SET 1' :
+      f.setNum === 2 ? 'SET 2' :
+      f.setNum >= 3 ? 'SET 3' : 'START SOON';
+    return decorate({ label: badge, conf: 0, tip: '', kellyFraction: 0 }, f, m);
   }
 
-  // Live but outside main window
-  if (f.setNum === 1)
-    return decorate({ label: 'SET 1', conf: 0.0, tip: '', kellyFraction: 0 }, f, m);
-  if (f.setNum >= 3)
-    return decorate({ label: 'SET 3', conf: 0.0, tip: '', kellyFraction: 0 }, f, m);
+  if (f.setNum === 1) {
+    return decorate({ label: 'SET 1', conf: 0, tip: '', kellyFraction: 0 }, f, m);
+  }
+  if (f.setNum >= 3) {
+    return decorate({ label: 'SET 3', conf: 0, tip: '', kellyFraction: 0 }, f, m);
+  }
 
   const { gA, gB, total, diff } = currentGameFromScores(m.players || []);
-  if (total < 3)
-    return decorate({ label: 'SET 2', conf: 0.0, tip: '', kellyFraction: 0 }, f, m);
-  if (total > 6 || (gA >= 6 && gB >= 6))
-    return decorate({ label: 'AVOID', conf: 0.0, tip: '', kellyFraction: 0 }, f, m);
+  if (total < 3) {
+    return decorate({ label: 'SET 2', conf: 0, tip: '', kellyFraction: 0 }, f, m);
+  }
+  if (total > 6 || (gA >= 6 && gB >= 6)) {
+    return decorate({ label: 'AVOID', conf: 0, tip: '', kellyFraction: 0 }, f, m);
+  }
 
   const w = [1.6, 0.9, 1.1, 0.3];
   const b0 = -1.0;
 
-  const x0 = clampOdds(f.pOdds);
-  const x1 = Number.isFinite(f.momentum) ? f.momentum : 0;
-  const x2 = Number.isFinite(f.drift) ? f.drift : 0;
-  let conf = sigmoid(w[0] * x0 + w[1] * x1 + w[2] * x2 + w[3] + b0);
+  // raw model probability before scaling for labels
+  let rawProb = sigmoid(
+    w[0] * clampOdds(f.pOdds) +
+      w[1] * (Number.isFinite(f.momentum) ? f.momentum : 0) +
+      w[2] * (Number.isFinite(f.drift) ? f.drift : 0) +
+      w[3] +
+      b0
+  );
 
   const winner = previousSetWinner(m.players || []);
-  if (winner === 1) conf += 0.05;
-  else if (winner === 2) conf -= 0.05;
+  if (winner === 1) rawProb += 0.05;
+  else if (winner === 2) rawProb -= 0.05;
 
-  if (f.drift > 0.1) conf -= 0.05;
-  if (f.drift < -0.1) conf += 0.05;
+  if (f.drift > 0.1) rawProb -= 0.05;
+  if (f.drift < -0.1) rawProb += 0.05;
 
-  conf += surfaceAdjust(f.surface, f.indoor);
+  rawProb += surfaceAdjust(f.surface, f.indoor);
 
   const [pA, pB] = parsePointScore(f.pointScore);
-  if (pA - pB >= 2) conf += 0.05;
-  if (pB - pA >= 2) conf -= 0.05;
+  if (pA - pB >= 2) rawProb += 0.05;
+  if (pB - pA >= 2) rawProb -= 0.05;
 
   const vol = volatilityScore({ gA, gB, total, diff, pointScore: f.pointScore });
-  conf = conf * (1 - 0.25 * vol);
+  rawProb = rawProb * (1 - 0.25 * vol);
 
-  conf = normalizeConf(conf);
-  conf = round2(Math.min(1, Math.max(0, conf)));
+  // clamp raw probability for EV/Kelly/logging
+  rawProb = Math.min(0.99, Math.max(0.01, rawProb));
+  const favProb = round2(rawProb);
+
+  // separate normalized confidence just for label thresholds
+  let confScore = normalizeConf(rawProb);
+  confScore = Math.min(1, Math.max(0, confScore));
+  const conf = round2(confScore);
 
   let label = 'RISKY';
   if (conf >= 0.8) label = 'SAFE';
   else if (conf < 0.65) label = 'AVOID';
 
-  // Only odds are hard-coded here.
-  const favOdds = Number.isFinite(f.pOdds) && f.pOdds > 1 ? round2(f.pOdds) : 0;
+  const favOdds =
+    Number.isFinite(f.pOdds) && f.pOdds > 1 ? round2(f.pOdds) : 0;
+
+  f.favProb = favProb;
   f.favOdds = favOdds;
 
-  const rawKelly = kellyFraction(conf, f.pOdds);
+  const rawKelly = kellyFraction(rawProb, f.pOdds);
   const kMult = 1 - 0.5 * vol;
   const kScaled = round2(Math.max(0, rawKelly * kMult));
 
@@ -183,15 +195,13 @@ export function predictMatch(m = {}, featuresIn = {}) {
   try {
     const p1 = m?.players?.[0]?.name || '';
     const p2 = m?.players?.[1]?.name || '';
-
-    // IMPORTANT: we do NOT send favProb explicitly.
-    // predictionLogger will derive favProb from conf and/or odds.
     logPrediction({
       matchId: m.id || m.matchId || '-',
       label,
       conf,
       tip,
       kelly: kScaled,
+      prob: favProb,
       odds: favOdds,
       features: out.features,
       p1,
@@ -203,7 +213,9 @@ export function predictMatch(m = {}, featuresIn = {}) {
     console.table([
       {
         matchId: m.id || '-',
-        players: `${m?.players?.[0]?.name || '?'} vs ${m?.players?.[1]?.name || '?'}`,
+        players: `${m?.players?.[0]?.name || '?'} vs ${
+          m?.players?.[1]?.name || '?'
+        }`,
         setNum: f.setNum,
         gA,
         gB,
@@ -215,6 +227,7 @@ export function predictMatch(m = {}, featuresIn = {}) {
         drift: f.drift,
         surface: f.surface,
         vol,
+        prob: favProb,
         conf,
         label,
         kelly: kScaled,
@@ -261,11 +274,13 @@ function makeTip(m = {}, f = {}) {
     m?.away?.name ||
     firstFromName(m?.name, 1) ||
     'Player B';
+
   if (Number.isFinite(f.pOdds)) {
     return f.pOdds <= 1.75
       ? `TIP: ${pA} to win match`
       : `TIP: ${pB} to win match`;
   }
+
   if ((f.momentum ?? 0) >= 0) return `TIP: ${pA} to win match`;
   return `TIP: ${pB} to win match`;
 }
