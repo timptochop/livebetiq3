@@ -1,7 +1,7 @@
 ﻿/**
  * src/utils/predictor.js
- * v3.4d — rawProb for EV/Kelly + normalized conf for labels
- * Explicit favProb/favOdds logging προς τον logger (debug).
+ * v3.4d — volatility-relaxed conf + volatility-aware Kelly
+ * Raw probability drives favProb/conf; volatility only damps Kelly.
  */
 
 import { logPrediction } from './predictionLogger';
@@ -48,7 +48,7 @@ function sigmoid(z) {
   return 1 / (1 + Math.exp(-z));
 }
 
-// normalize model-score → [0,1] “confidence for labels”
+// Normalize model-score → [0,1] confidence for labels
 function normalizeConf(c) {
   const min = 0.4;
   const max = 0.9;
@@ -116,7 +116,6 @@ export function predictMatch(m = {}, featuresIn = {}) {
     ...featuresIn,
   };
 
-  // Not live: UI-only label, no logging
   if (!f.live) {
     const badge =
       f.setNum === 1 ? 'SET 1' :
@@ -125,7 +124,6 @@ export function predictMatch(m = {}, featuresIn = {}) {
     return decorate({ label: badge, conf: 0, tip: '', kellyFraction: 0 }, f, m);
   }
 
-  // Live but wrong set → UI fallback, no logging
   if (f.setNum === 1) {
     return decorate({ label: 'SET 1', conf: 0, tip: '', kellyFraction: 0 }, f, m);
   }
@@ -166,9 +164,8 @@ export function predictMatch(m = {}, featuresIn = {}) {
   if (pB - pA >= 2) rawProb -= 0.05;
 
   const vol = volatilityScore({ gA, gB, total, diff, pointScore: f.pointScore });
-  rawProb = rawProb * (1 - 0.25 * vol);
 
-  // clamp probability
+  // Volatility no longer damps probability; only Kelly uses it.
   rawProb = Math.min(0.99, Math.max(0.01, rawProb));
   const favProb = round2(rawProb);
 
@@ -205,43 +202,27 @@ export function predictMatch(m = {}, featuresIn = {}) {
     m
   );
 
-  const p1 = m?.players?.[0]?.name || '';
-  const p2 = m?.players?.[1]?.name || '';
+  try {
+    const p1 = m?.players?.[0]?.name || '';
+    const p2 = m?.players?.[1]?.name || '';
 
-  const logPayload = {
-    matchId: m.id || m.matchId || '-',
-    label,
-    conf,
-    tip,
-    kelly: kScaled,
-    favProb,
-    favOdds,
-    features: {
-      ...out.features,
+    logPrediction({
+      matchId: m.id || m.matchId || '-',
+      label,
+      conf,
+      tip,
+      kelly: kScaled,
       favProb,
       favOdds,
-    },
-    p1,
-    p2,
-  };
-
-  // DEBUG: δείξε ακριβώς τι στέλνει ο predictor στον logger
-  try {
-    console.log('[LBQ][Predictor v3.4d] about to log', {
-      matchId: logPayload.matchId,
-      label: logPayload.label,
-      conf: logPayload.conf,
-      favProb: logPayload.favProb,
-      favOdds: logPayload.favOdds,
-      setNum: out.features.setNum,
-      live: out.features.live,
+      features: {
+        ...out.features,
+        favProb,
+        favOdds,
+      },
+      p1,
+      p2,
     });
-  } catch {}
-
-  try {
-    // fire-and-forget, δεν χρειάζεται await
-    logPrediction(logPayload);
-  } catch {}
+  } catch (e) {}
 
   try {
     console.table([
@@ -267,7 +248,7 @@ export function predictMatch(m = {}, featuresIn = {}) {
         kelly: kScaled,
       },
     ]);
-  } catch {}
+  } catch (e) {}
 
   return out;
 }
