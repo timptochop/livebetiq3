@@ -1,7 +1,7 @@
 ﻿/**
  * src/utils/predictor.js
- * v3.4b — rawProb for EV/Kelly + normalized conf for labels
- * and sends favProb/favOdds directly to logger payload.
+ * v3.4c — rawProb for EV/Kelly + normalized conf for labels
+ * Sends favProb/favOdds both in features AND top-level (για τον logger).
  */
 
 import { logPrediction } from './predictionLogger';
@@ -188,7 +188,20 @@ export function predictMatch(m = {}, featuresIn = {}) {
   const kScaled = round2(Math.max(0, rawKelly * kMult));
 
   const tip = makeTip(m, f);
-  const out = decorate({ label, conf, tip, kellyFraction: kScaled }, f, m);
+
+  const out = decorate(
+    {
+      label,
+      conf,
+      tip,
+      kellyFraction: kScaled,
+      // ΚΡΙΣΙΜΟ: top-level πεδία για τον logger
+      favProb,
+      favOdds,
+    },
+    f,
+    m
+  );
 
   try {
     const p1 = m?.players?.[0]?.name || '';
