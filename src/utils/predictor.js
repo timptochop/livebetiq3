@@ -1,7 +1,7 @@
 ﻿/**
  * src/utils/predictor.js
- * v3.4c — rawProb for EV/Kelly + normalized conf for labels
- * Sends favProb/favOdds both in features AND top-level (για τον logger).
+ * v3.4d — safe favProb/favOdds for logger, NaN-proof
+ * Sends favProb/favOdds both in features AND top-level.
  */
 
 import { logPrediction } from './predictionLogger';
@@ -105,7 +105,12 @@ function kellyFraction(prob, odds) {
 // -------------------------
 export function predictMatch(m = {}, featuresIn = {}) {
   const f = {
-    pOdds: featuresIn.pOdds ?? m.pOdds ?? null,
+    pOdds:
+      featuresIn.pOdds ??
+      featuresIn.favOdds ??
+      m.favOdds ??
+      m.pOdds ??
+      null,
     momentum: featuresIn.momentum ?? m.momentum ?? 0,
     drift: featuresIn.drift ?? m.drift ?? 0,
     live: featuresIn.live ?? m.live ?? false,
@@ -118,9 +123,13 @@ export function predictMatch(m = {}, featuresIn = {}) {
 
   if (!f.live) {
     const badge =
-      f.setNum === 1 ? 'SET 1' :
-      f.setNum === 2 ? 'SET 2' :
-      f.setNum >= 3 ? 'SET 3' : 'START SOON';
+      f.setNum === 1
+        ? 'SET 1'
+        : f.setNum === 2
+        ? 'SET 2'
+        : f.setNum >= 3
+        ? 'SET 3'
+        : 'START SOON';
     return decorate({ label: badge, conf: 0, tip: '', kellyFraction: 0 }, f, m);
   }
 
@@ -164,10 +173,11 @@ export function predictMatch(m = {}, featuresIn = {}) {
   if (pB - pA >= 2) rawProb -= 0.05;
 
   const vol = volatilityScore({ gA, gB, total, diff, pointScore: f.pointScore });
+  rawProb = Number.isFinite(rawProb) ? rawProb : 0.55;
   rawProb = rawProb * (1 - 0.25 * vol);
 
   rawProb = Math.min(0.99, Math.max(0.01, rawProb));
-  const favProb = round2(rawProb);
+  let favProb = round2(rawProb);
 
   let confScore = normalizeConf(rawProb);
   confScore = Math.min(1, Math.max(0, confScore));
@@ -177,13 +187,21 @@ export function predictMatch(m = {}, featuresIn = {}) {
   if (conf >= 0.8) label = 'SAFE';
   else if (conf < 0.65) label = 'AVOID';
 
-  const favOdds =
-    Number.isFinite(f.pOdds) && f.pOdds > 1 ? round2(f.pOdds) : 0;
+  let favOdds =
+    Number.isFinite(f.pOdds) && f.pOdds > 1 ? round2(f.pOdds) : NaN;
+
+  if (!Number.isFinite(favProb) || favProb <= 0 || favProb >= 1) {
+    favProb = 0.55;
+  }
+
+  if (!Number.isFinite(favOdds) || favOdds <= 1) {
+    favOdds = round2(1 / favProb);
+  }
 
   f.favProb = favProb;
   f.favOdds = favOdds;
 
-  const rawKelly = kellyFraction(rawProb, f.pOdds);
+  const rawKelly = kellyFraction(favProb, favOdds);
   const kMult = 1 - 0.5 * vol;
   const kScaled = round2(Math.max(0, rawKelly * kMult));
 
@@ -195,7 +213,6 @@ export function predictMatch(m = {}, featuresIn = {}) {
       conf,
       tip,
       kellyFraction: kScaled,
-      // ΚΡΙΣΙΜΟ: top-level πεδία για τον logger
       favProb,
       favOdds,
     },
@@ -238,7 +255,7 @@ export function predictMatch(m = {}, featuresIn = {}) {
         total,
         diff,
         pointScore: f.pointScore,
-        odds: f.pOdds,
+        odds: favOdds,
         momentum: f.momentum,
         drift: f.drift,
         surface: f.surface,
@@ -291,8 +308,8 @@ function makeTip(m = {}, f = {}) {
     firstFromName(m?.name, 1) ||
     'Player B';
 
-  if (Number.isFinite(f.pOdds)) {
-    return f.pOdds <= 1.75
+  if (Number.isFinite(f.favOdds) && f.favOdds > 1) {
+    return f.favOdds <= 1.75
       ? `TIP: ${pA} to win match`
       : `TIP: ${pB} to win match`;
   }
