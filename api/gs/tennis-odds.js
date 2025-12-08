@@ -1,96 +1,96 @@
 // api/gs/tennis-odds.js
-// LiveBet IQ – GoalServe tennis odds raw fetch (step 1)
+// LiveBet IQ – GoalServe Tennis Odds proxy (gzip + XML → JSON)
+// v1.0-odds-proxy
 
-import zlib from 'zlib';
-import { promisify } from 'util';
-import { parseStringPromise } from 'xml2js';
+const zlib = require('zlib');
+const { parseStringPromise } = require('xml2js');
 
-const gunzip = promisify(zlib.gunzip);
+/**
+ * Fetch raw odds feed from GoalServe (gzip-compressed XML).
+ */
+async function fetchRawOdds() {
+  const token = process.env.GOALSERVE_TOKEN;
 
-// Προσπαθούμε να χρησιμοποιήσουμε το ίδιο key setup με το tennis-live
-const GOALSERVE_KEY =
-  process.env.GOALSERVE_KEY || process.env.GOALSERVE_TENNIS_KEY || '';
-
-const ODDS_URL = GOALSERVE_KEY
-  ? `https://www.goalserve.com/getfeed/${GOALSERVE_KEY}/getodds/soccer?cat=tennis_10&json=1`
-  : null;
-
-async function fetchGoalServeOdds() {
-  if (!ODDS_URL) {
-    throw new Error('Missing GOALSERVE_KEY / GOALSERVE_TENNIS_KEY env');
+  if (!token) {
+    throw new Error('missing GOALSERVE_TOKEN');
   }
 
-  const res = await fetch(ODDS_URL, {
-    method: 'GET',
+  const url = `https://www.goalserve.com/getfeed/${token}/getodds/soccer?cat=tennis_10`;
+
+  const resp = await fetch(url, {
+    // δεν είναι υποχρεωτικό, αλλά βοηθάει να είναι καθαρό το response
     headers: {
-      // ζητάμε κανονικά gzip, ο Node 18 συνήθως το λύνει,
-      // αλλά έχουμε και manual gunzip fallback
-      'accept-encoding': 'gzip, deflate, br',
+      'Accept-Encoding': 'gzip,deflate',
+      'User-Agent': 'livebetiq3-tennis-odds/1.0',
     },
   });
 
-  if (!res.ok) {
-    throw new Error(`GoalServe odds HTTP ${res.status}`);
+  if (!resp.ok) {
+    throw new Error(`goalserve-http-${resp.status}`);
   }
 
-  const encoding = res.headers.get('content-encoding') || '';
-  const arrayBuf = await res.arrayBuffer();
-  const compressed = Buffer.from(arrayBuf);
+  // παίρνουμε το raw buffer
+  let buf = Buffer.from(await resp.arrayBuffer());
 
-  let decodedBuf = compressed;
-  if (/gzip/i.test(encoding)) {
-    decodedBuf = await gunzip(compressed);
-  }
-
-  const text = decodedBuf.toString('utf8').trim();
-
-  let parsed;
+  // Προσπάθεια αποσυμπίεσης GZIP
+  // Το feed, σύμφωνα με το manual, είναι "Feed compressed using GZIP"
   try {
-    // αν το endpoint γυρίζει JSON (με json=1)
-    parsed = JSON.parse(text);
-  } catch {
-    // αλλιώς το αντιμετωπίζουμε σαν XML
-    parsed = await parseStringPromise(text, {
-      explicitArray: false,
-      mergeAttrs: true,
-      trim: true,
-    });
+    // Αν είναι ήδη gzip -> gunzipSync δουλεύει
+    buf = zlib.gunzipSync(buf);
+  } catch (e) {
+    // Αν ΔΕΝ είναι gzip, το αφήνουμε όπως είναι (fallback)
+    // π.χ. σε περίπτωση που κάποια στιγμή το επιστρέψουν plain XML
+    // console.warn('tennis-odds: gunzip failed, using raw buffer', e);
   }
 
-  return {
-    raw: parsed,
-    meta: {
-      encoding,
-      bytes: compressed.length,
-      url: ODDS_URL,
-    },
-  };
+  const text = buf.toString('utf8').trim();
+
+  if (!text || !text.startsWith('<')) {
+    throw new Error('goalserve-odds-not-xml');
+  }
+
+  return text;
 }
 
-export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    return res.status(405).json({ ok: false, error: 'Method Not Allowed' });
-  }
+/**
+ * Parse XML → JS object (χωρίς ιδιαίτερο normalize προς το παρόν).
+ */
+async function parseOddsXml(xml) {
+  const parsed = await parseStringPromise(xml, {
+    explicitArray: false,
+    mergeAttrs: true,
+    trim: true,
+  });
 
-  if (!GOALSERVE_KEY) {
-    return res.status(500).json({
-      ok: false,
-      error: 'Missing GOALSERVE_KEY / GOALSERVE_TENNIS_KEY in environment',
-    });
-  }
+  return parsed;
+}
+
+/**
+ * Vercel API handler
+ */
+module.exports = async function handler(req, res) {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
 
   try {
-    const data = await fetchGoalServeOdds();
-    return res.status(200).json({
+    const xml = await fetchRawOdds();
+    const data = await parseOddsXml(xml);
+
+    // Προς το παρόν επιστρέφουμε το πλήρες αντικείμενο ως "raw",
+    // για να το δούμε πρώτα στο browser / Postman και μετά να κάνουμε
+    // κανονικό normalize σε επόμενο βήμα.
+    res.status(200).json({
       ok: true,
-      ...data, // { raw, meta }
+      source: 'goalserve-tennis-odds',
+      ts: Date.now(),
+      raw: data,
     });
   } catch (err) {
-    console.error('[LBQ] tennis-odds route error', err);
-    return res.status(500).json({
+    console.error('[tennis-odds] error', err);
+
+    res.status(500).json({
       ok: false,
       error: String(err && err.message ? err.message : err),
     });
   }
-}
+};
