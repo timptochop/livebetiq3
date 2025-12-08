@@ -1,137 +1,141 @@
 // api/gs/tennis-odds.js
-// LiveBet IQ – GoalServe Tennis Odds proxy (v1.0)
+// v1.1 – GoalServe tennis odds proxy with gzip handling
 
 const zlib = require('zlib');
 
-module.exports = async function handler(req, res) {
-  // Simple HEAD/health handling
-  if (req.method === 'HEAD') {
-    res.status(204).end();
-    return;
+const TOKEN = process.env.GOALSERVE_TOKEN || '';
+
+/**
+ * Safely gunzip if needed.
+ * @param {Buffer} buf
+ * @returns {string}
+ */
+function maybeGunzipToString(buf) {
+  if (!buf || !buf.length) return '';
+  // GZIP magic bytes: 0x1f 0x8b
+  const isGzip = buf[0] === 0x1f && buf[1] === 0x8b;
+  if (!isGzip) {
+    return buf.toString('utf8');
   }
-
-  const token = process.env.GOALSERVE_TOKEN || '';
-
-  // Explicit healthcheck mode: /api/gs/tennis-odds?health=1
-  if (req.query && req.query.health === '1') {
-    res.status(200).json({
-      ok: true,
-      message: 'tennis-odds healthcheck',
-      hasToken: !!token,
-      envKeys: ['GOALSERVE_TOKEN'],
-    });
-    return;
-  }
-
-  if (!token) {
-    res.status(500).json({
-      ok: false,
-      error: 'missing-goalserve-token',
-    });
-    return;
-  }
-
-  // Base GoalServe odds endpoint
-  const baseUrl = `https://www.goalserve.com/getfeed/${token}/getodds/soccer`;
-
-  // Build querystring
-  const qs = new URLSearchParams();
-
-  // Mandatory tennis odds category
-  qs.set('cat', 'tennis_10');
-
-  // Try JSON output; αν δεν επιστρέψει JSON, θα κάνουμε fallback σε raw text
-  qs.set('json', '1');
-
-  // Pass-through φίλτρα αν τα στείλουμε από το frontend
-  const allowedFilters = [
-    'date_start',
-    'date_end',
-    'bm',      // bookmaker filter
-    'market',
-    'league',
-    'match',
-    'ts',      // incremental updates
-  ];
-
-  for (const key of allowedFilters) {
-    const v = req.query && req.query[key];
-    if (typeof v === 'string' && v.trim() !== '') {
-      qs.set(key, v.trim());
-    }
-  }
-
-  const url = `${baseUrl}?${qs.toString()}`;
 
   try {
-    const upstream = await fetch(url, {
-      method: 'GET',
-      headers: {
-        // Ζητάμε JSON, αλλά δεχόμαστε και XML/άλλο ώστε να μην σκάει
-        Accept: 'application/json, text/xml;q=0.9, */*;q=0.8',
-      },
-    });
+    const out = zlib.gunzipSync(buf);
+    return out.toString('utf8');
+  } catch (err) {
+    // fallback: at least return latin1 so έχουμε κάτι να δούμε
+    return buf.toString('latin1');
+  }
+}
 
+/**
+ * Build upstream URL for tennis odds feed.
+ */
+function buildOddsUrl() {
+  if (!TOKEN) return null;
+  // Από το feed_urls: getodds/soccer?cat=tennis_10&json=1
+  return `https://www.goalserve.com/getfeed/${TOKEN}/getodds/soccer?cat=tennis_10&json=1`;
+}
+
+/**
+ * Vercel Serverless handler
+ */
+module.exports = async function handler(req, res) {
+  try {
+    // 1) Healthcheck mode
+    const health = req.query && req.query.health;
+    if (health) {
+      return res.status(200).json({
+        ok: true,
+        message: 'tennis-odds healthcheck',
+        hasToken: Boolean(TOKEN),
+        envKeys: ['GOALSERVE_TOKEN'],
+      });
+    }
+
+    // 2) Basic env validation
+    const url = buildOddsUrl();
+    if (!url) {
+      return res.status(500).json({
+        ok: false,
+        error: 'missing-goalserve-token',
+      });
+    }
+
+    // 3) Fetch από GoalServe (αφήνουμε το Node fetch να κάνει ό,τι μπορεί μόνο του)
+    let upstream;
+    try {
+      upstream = await fetch(url, {
+        method: 'GET',
+        headers: {
+          // δεν βάζουμε explicit Accept-Encoding, αφήνουμε το default
+        },
+      });
+    } catch (err) {
+      return res.status(502).json({
+        ok: false,
+        error: 'fetch-failed',
+        detail: String(err),
+        url,
+      });
+    }
+
+    // 4) Πάντα διαβάζουμε το σώμα ως Buffer και προσπαθούμε να κάνουμε gunzip
+    let buf;
+    try {
+      const ab = await upstream.arrayBuffer();
+      buf = Buffer.from(ab);
+    } catch (err) {
+      return res.status(502).json({
+        ok: false,
+        error: 'body-read-failed',
+        detail: String(err),
+        status: upstream.status,
+        url,
+      });
+    }
+
+    const text = maybeGunzipToString(buf);
+
+    // Αν ο HTTP status ΔΕΝ είναι 2xx, επιστρέφουμε diagnostic JSON
     if (!upstream.ok) {
-      const bodySnippet = await upstream
-        .text()
-        .then((t) => t.slice(0, 500))
-        .catch(() => '');
-
-      res.status(502).json({
+      return res.status(502).json({
         ok: false,
         error: 'upstream-not-ok',
         status: upstream.status,
         url,
-        bodySnippet,
+        bodySnippet: text.slice(0, 400),
       });
-      return;
     }
 
-    const encoding = (upstream.headers.get('content-encoding') || '').toLowerCase();
-
-    let text;
-    if (encoding.includes('gzip')) {
-      // Handle gzipped odds feed explicitly
-      const buf = Buffer.from(await upstream.arrayBuffer());
-      text = zlib.gunzipSync(buf).toString('utf8');
-    } else {
-      text = await upstream.text();
-    }
-
-    // First προσπάθεια: JSON parse (αν παίζει το json=1)
+    // 5) Προσπαθούμε να κάνουμε JSON parse (γιατί βάλαμε &json=1)
+    let json;
     try {
-      const data = JSON.parse(text);
-
-      res.status(200).json({
-        ok: true,
-        source: 'goalserve-tennis-odds',
+      json = JSON.parse(text);
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: 'json-parse-failed',
+        status: upstream.status,
         url,
-        // προσπαθούμε να δώσουμε ένα μικρό summary count αν γίνεται
-        count: Array.isArray(data?.odds)
-          ? data.odds.length
-          : Array.isArray(data?.matches)
-          ? data.matches.length
-          : undefined,
-        data,
+        bodySnippet: text.slice(0, 400),
+        detail: String(err),
       });
-      return;
-    } catch (e) {
-      // Fallback: δεν είναι JSON → δίνουμε raw text πίσω για inspect
-      res.status(200).json({
-        ok: true,
-        source: 'goalserve-tennis-odds',
-        url,
-        format: 'text',
-        raw: text.slice(0, 20000), // κόβουμε για ασφάλεια
-      });
-      return;
     }
+
+    // 6) Προς το παρόν, γυρνάμε raw odds feed όπως είναι
+    // Αργότερα θα φτιάξουμε κανονικό normalization (ανά matchId, market κλπ)
+    return res.status(200).json({
+      ok: true,
+      source: 'goalserve-tennis-odds',
+      url,
+      raw: json,
+    });
   } catch (err) {
-    res.status(500).json({
+    // Safety net – να ΜΗΝ ξαναδούμε το generic Vercel "This Serverless Function has crashed."
+    return res.status(500).json({
       ok: false,
-      error: 'handler-exception',
-      message: String(err),
+      error: 'handler-crashed',
+      detail: String(err),
     });
   }
 };
