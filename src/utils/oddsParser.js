@@ -1,131 +1,133 @@
 // src/utils/oddsParser.js
 
-function buildOddsIndex(raw) {
-  if (!raw || typeof raw !== 'object') return {};
+function toNumberOrNull(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
-  const scores = raw.scores;
-  if (!scores) return {};
+function normalizeArray(x) {
+  if (Array.isArray(x)) return x;
+  if (x === null || x === undefined) return [];
+  return [x];
+}
 
-  let categories = scores.category || [];
-  if (!Array.isArray(categories)) {
-    categories = [categories];
+function safeGet(obj, path, def = null) {
+  try {
+    const parts = path.split(".");
+    let cur = obj;
+    for (const p of parts) {
+      if (!cur || typeof cur !== "object") return def;
+      cur = cur[p];
+    }
+    return cur == null ? def : cur;
+  } catch {
+    return def;
+  }
+}
+
+export function buildOddsIndex(feed) {
+  const raw = feed && feed.raw ? feed.raw : feed;
+  const out = Object.create(null);
+
+  if (!raw || typeof raw !== "object") {
+    return out;
   }
 
-  const index = {};
+  const scores = raw.scores || raw;
+  const categories = normalizeArray(scores.category);
 
-  for (const cat of categories) {
-    if (!cat || typeof cat !== 'object') continue;
+  categories.forEach((cat) => {
+    if (!cat) return;
 
-    let matches = cat.matches && cat.matches.match;
-    if (!matches) continue;
-    if (!Array.isArray(matches)) {
-      matches = [matches];
-    }
+    const matchesContainer = cat.matches || cat.match || {};
+    const matches = normalizeArray(matchesContainer.match || matchesContainer);
 
-    for (const m of matches) {
-      if (!m || typeof m !== 'object') continue;
+    matches.forEach((m) => {
+      if (!m) return;
 
-      const matchId = String(
-        m.id ??
-        m.matchid ??
-        (m['@id'] ?? '')
-      ).trim();
+      const mid =
+        m.id ||
+        m.matchid ||
+        m["@id"] ||
+        m["@matchid"] ||
+        safeGet(m, "id._text") ||
+        null;
 
-      if (!matchId) continue;
+      if (!mid) return;
 
-      let players = m.player || [];
-      if (!Array.isArray(players)) {
-        players = [players];
-      }
-      if (players.length < 2) continue;
-
+      const players = normalizeArray(m.player || m.players);
       const p1 = players[0] || {};
       const p2 = players[1] || {};
-      const homeName = (p1.name ?? p1['@name'] ?? '').trim();
-      const awayName = (p2.name ?? p2['@name'] ?? '').trim();
-      if (!homeName || !awayName) continue;
 
-      const oddsBlock = m.odds || m['@odds'] || {};
-      let types = oddsBlock.type || [];
-      if (!Array.isArray(types)) {
-        types = [types];
-      }
-      if (!types.length) continue;
+      const homeName = p1.name || p1["@name"] || p1._ || "";
+      const awayName = p2.name || p2["@name"] || p2._ || "";
 
-      let homeAwayType = null;
-      for (const t of types) {
-        if (!t) continue;
-        const label = String(t.value ?? t['@value'] ?? '').trim();
-        if (!label) continue;
+      const oddsRoot = m.odds || m.Odds || {};
+      const types = normalizeArray(oddsRoot.type);
 
-        if (label === 'Home/Away') {
-          homeAwayType = t;
-          break;
-        }
-        if (!homeAwayType && label.startsWith('Home/Away')) {
-          homeAwayType = t;
-        }
-      }
-      if (!homeAwayType) continue;
+      let bestBook = null;
+      let bestBookTs = 0;
 
-      let bookmakers = homeAwayType.bookmaker || [];
-      if (!Array.isArray(bookmakers)) {
-        bookmakers = [bookmakers];
-      }
-      if (!bookmakers.length) continue;
+      types.forEach((t) => {
+        if (!t) return;
+        const tVal = t.value || t["@value"] || t.type;
+        if (!tVal) return;
 
-      let chosen = null;
-      for (const bk of bookmakers) {
-        if (!bk) continue;
-        const stop = String(bk.stop ?? '').toLowerCase();
-        if (stop === 'true') continue;
+        const label = String(tVal).toLowerCase();
+        if (!label.startsWith("home/away")) return;
 
-        const tsNum = toIntSafe(bk.ts);
-        if (!chosen || tsNum > chosen.ts) {
-          chosen = { ts: tsNum, node: bk };
-        }
-      }
+        const books = normalizeArray(t.bookmaker || t.Bookmaker);
+        books.forEach((bk) => {
+          if (!bk) return;
 
-      if (!chosen) {
-        const fallbackBk = bookmakers[0];
-        chosen = {
-          ts: toIntSafe(fallbackBk && fallbackBk.ts),
-          node: fallbackBk,
-        };
-      }
+          const stop = String(bk.stop || bk["@stop"] || "").toLowerCase();
+          if (stop === "true") return;
 
-      const bk = chosen.node || {};
-      let oddsList = bk.odd || [];
-      if (!Array.isArray(oddsList)) {
-        oddsList = [oddsList];
-      }
-      if (oddsList.length < 2) continue;
+          const tsRaw = bk.last_update || bk["@last_update"] || bk.ts;
+          const ts = Date.parse(tsRaw) || 0;
 
-      const homeOdds = toFloatSafe(oddsList[0] && oddsList[0].value);
-      const awayOdds = toFloatSafe(oddsList[1] && oddsList[1].value);
+          const oddsArr = normalizeArray(bk.odd);
+          if (oddsArr.length < 2) return;
 
-      if (!Number.isFinite(homeOdds) || !Number.isFinite(awayOdds)) {
-        continue;
-      }
-      if (homeOdds <= 1.01 && awayOdds <= 1.01) {
-        continue;
-      }
+          const oHome = toNumberOrNull(
+            oddsArr[0].value || oddsArr[0]["@value"]
+          );
+          const oAway = toNumberOrNull(
+            oddsArr[1].value || oddsArr[1]["@value"]
+          );
 
-      let favName, favOdds, dogName, dogOdds;
-      if (homeOdds <= awayOdds) {
-        favName = homeName;
-        favOdds = homeOdds;
-        dogName = awayName;
-        dogOdds = awayOdds;
-      } else {
+          if (!oHome || !oAway) return;
+
+          if (ts >= bestBookTs) {
+            bestBookTs = ts;
+            bestBook = {
+              homeOdds: oHome,
+              awayOdds: oAway,
+              name: bk.name || bk["@name"] || "",
+              ts,
+            };
+          }
+        });
+      });
+
+      if (!bestBook) return;
+
+      const { homeOdds, awayOdds, name: bookmaker, ts } = bestBook;
+
+      let favName = homeName;
+      let favOdds = homeOdds;
+      let dogName = awayName;
+      let dogOdds = awayOdds;
+
+      if (awayOdds < homeOdds) {
         favName = awayName;
         favOdds = awayOdds;
         dogName = homeName;
         dogOdds = homeOdds;
       }
 
-      index[matchId] = {
-        matchId,
+      out[mid] = {
+        matchId: mid,
         homeName,
         awayName,
         homeOdds,
@@ -134,25 +136,13 @@ function buildOddsIndex(raw) {
         favOdds,
         dogName,
         dogOdds,
-        bookmaker: bk.name ?? bk['@name'] ?? null,
-        ts: chosen.ts || null,
+        bookmaker,
+        ts,
       };
-    }
-  }
+    });
+  });
 
-  return index;
-}
-
-function toFloatSafe(value) {
-  if (value === null || value === undefined) return NaN;
-  const num = Number(String(value).replace(',', '.'));
-  return Number.isFinite(num) ? num : NaN;
-}
-
-function toIntSafe(value) {
-  if (value === null || value === undefined) return 0;
-  const num = parseInt(String(value).trim(), 10);
-  return Number.isFinite(num) ? num : 0;
+  return out;
 }
 
 export default buildOddsIndex;
