@@ -1,7 +1,15 @@
 ﻿// src/utils/predictor.js
-// v3.2 – EV + Kelly + Volatility integration
+// v3.3 – EV + Kelly + Volatility + dynamic thresholds
 
 import applyVolatility from '../aiPredictionEngineModules/applyVolatility';
+
+const DEFAULT_THRESHOLDS = {
+  SAFE_MIN_EV: 0.03,
+  SAFE_MIN_CONF: 0.58,
+  SAFE_MAX_VOL: 0.55,
+  RISKY_MIN_EV: 0.01,
+  RISKY_MIN_CONF: 0.53,
+};
 
 function clamp01(x) {
   const n = Number(x);
@@ -51,16 +59,53 @@ function computeBaseConfidence(prob, ev) {
   return clamp01(base);
 }
 
-function chooseLabel({ ev, confidence, volatility }) {
+/**
+ * Normalise raw config από GAS σε thresholds που χρησιμοποιεί ο predictor.
+ * Δέχεται keys όπως:
+ *   SAFE_MIN_EV, SAFE_MIN_CONF, MAX_VOL_SAFE, SAFE_MAX_VOL,
+ *   RISKY_MIN_EV, RISKY_MIN_CONF
+ */
+function normalizeThresholds(raw) {
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_THRESHOLDS };
+
+  const out = { ...DEFAULT_THRESHOLDS };
+
+  const map = {
+    SAFE_MIN_EV: 'SAFE_MIN_EV',
+    SAFE_MIN_CONF: 'SAFE_MIN_CONF',
+    MAX_VOL_SAFE: 'SAFE_MAX_VOL',
+    SAFE_MAX_VOL: 'SAFE_MAX_VOL',
+    RISKY_MIN_EV: 'RISKY_MIN_EV',
+    RISKY_MIN_CONF: 'RISKY_MIN_CONF',
+  };
+
+  Object.keys(map).forEach((k) => {
+    const targetKey = map[k];
+    let v = raw[k];
+    if (v === undefined && raw[targetKey] !== undefined) {
+      v = raw[targetKey];
+    }
+    const n = Number(v);
+    if (Number.isFinite(n)) {
+      out[targetKey] = n;
+    }
+  });
+
+  return out;
+}
+
+function chooseLabel({ ev, confidence, volatility, thresholds }) {
   const v = clamp01(volatility);
   const c = clamp01(confidence);
   const e = Number(ev) || 0;
 
-  if (e >= 0.03 && c >= 0.58 && v <= 0.55) {
+  const th = normalizeThresholds(thresholds);
+
+  if (e >= th.SAFE_MIN_EV && c >= th.SAFE_MIN_CONF && v <= th.SAFE_MAX_VOL) {
     return 'SAFE';
   }
 
-  if (e >= 0.01 && c >= 0.53) {
+  if (e >= th.RISKY_MIN_EV && c >= th.RISKY_MIN_CONF) {
     return 'RISKY';
   }
 
@@ -125,6 +170,10 @@ export function runPredictor(ctx = {}) {
   const baseConfidence = computeBaseConfidence(fairProb, ev);
   const baseKelly = computeKelly(fairProb, decimalOdds);
 
+  const thresholdsRaw =
+    ctx.thresholds || ctx.lbqConfig || ctx.config || ctx.lbqThresholds || null;
+  const thresholds = normalizeThresholds(thresholdsRaw);
+
   const basePrediction = {
     ok: true,
     matchId: ctx.matchId || ctx.id || null,
@@ -138,9 +187,10 @@ export function runPredictor(ctx = {}) {
     ev,
     confidence: baseConfidence,
     kelly: baseKelly,
-    modelVersion: 'v3.2',
+    modelVersion: 'v3.3',
     volatility: 0,
     volatilityBreakdown: null,
+    thresholds,
   };
 
   const volCtx = {
@@ -163,6 +213,7 @@ export function runPredictor(ctx = {}) {
     ev: withVolatility.ev,
     confidence: withVolatility.confidence,
     volatility: withVolatility.volatility,
+    thresholds,
   });
 
   const tip = buildTip(ctx, side);
