@@ -102,20 +102,37 @@ export default function LiveTennis({
   async function load() {
     setLoading(true);
     try {
-      // Fetch scores + odds in parallel
-      const [base, oddsRaw] = await Promise.all([
-        fetchTennisLive(),
-        fetchTennisOdds().catch(() => null),
-      ]);
+      // 1) Fetch ONLY scores first
+      const base = await fetchTennisLive();
+      const baseArr = Array.isArray(base) ? base : [];
+
+      // 2) Drop finished matches
+      const keep = baseArr.filter(
+        (m) => !isFinishedLike(m.status || m["@status"])
+      );
+
+      // 3) Detect if there is at least one LIVE match
+      const hasLive = keep.some((m) => {
+        const raw = m.status || m["@status"] || "";
+        const s = String(raw).toLowerCase();
+        return !!raw && !isUpcoming(raw) && !isFinishedLike(raw) && s !== "";
+      });
+
+      // 4) Fetch odds ONLY if we have live matches
+      let oddsRaw = null;
+      if (hasLive) {
+        try {
+          oddsRaw = await fetchTennisOdds();
+        } catch {
+          oddsRaw = null;
+        }
+      }
 
       const oddsIndex =
         oddsRaw && typeof oddsRaw === "object"
           ? buildOddsIndex({ raw: oddsRaw }) || {}
           : {};
 
-      const keep = (Array.isArray(base) ? base : []).filter(
-        (m) => !isFinishedLike(m.status || m["@status"])
-      );
       const now = Date.now();
 
       const enriched = keep.map((m, idx) => {
@@ -145,8 +162,10 @@ export default function LiveTennis({
         let drift = 0;
 
         if (odds && Number(odds.favOdds) > 1) {
-          const homeOdds = Number(odds.homeOdds) > 1 ? Number(odds.homeOdds) : null;
-          const awayOdds = Number(odds.awayOdds) > 1 ? Number(odds.awayOdds) : null;
+          const homeOdds =
+            Number(odds.homeOdds) > 1 ? Number(odds.homeOdds) : null;
+          const awayOdds =
+            Number(odds.awayOdds) > 1 ? Number(odds.awayOdds) : null;
           const fav = Number(odds.favOdds);
 
           const invHome = homeOdds ? 1 / homeOdds : 0;
@@ -172,7 +191,7 @@ export default function LiveTennis({
           favName: odds && odds.favName ? odds.favName : null,
         };
 
-        const ai = analyzeMatch(m, extraFeatures) || {};
+        const ai = analyzeMatch({ ...m, odds }, extraFeatures) || {};
 
         let startAt = null;
         let startInMs = null;
@@ -209,10 +228,10 @@ export default function LiveTennis({
       ingestBatch(enriched);
 
       await Promise.allSettled(
-        (Array.isArray(base) ? base : []).map((m) => maybeLogResult(m))
+        baseArr.map((m) => maybeLogResult(m))
       );
 
-      trySettleFinished(base);
+      trySettleFinished(baseArr);
     } catch (e) {
       setRows([]);
     } finally {
@@ -300,7 +319,7 @@ export default function LiveTennis({
 
         if (notificationsOn) {
           const t = `${cur}: ${m.name1} vs ${m.name2}${
-            m.categoryName ? ` Ã‚Â· ${m.categoryName}` : ""
+            m.categoryName ? ` Ãƒâ€šÃ‚Â· ${m.categoryName}` : ""
           }`;
           showToast(t, 3500);
         }
@@ -335,7 +354,7 @@ export default function LiveTennis({
 
         if (cur === "SAFE") {
           const t = `SAFE: ${m.name1} vs ${m.name2}${
-            m.categoryName ? ` Ã‚Â· ${m.categoryName}` : ""
+            m.categoryName ? ` Ãƒâ€šÃ‚Â· ${m.categoryName}` : ""
           }`;
           tryTg(t);
         }
@@ -445,7 +464,7 @@ export default function LiveTennis({
                   fontSize: 14,
                 }}
               >
-                {m.date} {m.time} Ã‚Â· {m.categoryName}
+                {m.date} {m.time} Ãƒâ€šÃ‚Â· {m.categoryName}
                 {m.uiLabel === "UPCOMING" && (
                   <span
                     style={{
@@ -453,7 +472,7 @@ export default function LiveTennis({
                       color: "#9fb0c3",
                     }}
                   >
-                    Ã¢â‚¬â€ starts in {m.startInText || "n/a"}
+                    ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â starts in {m.startInText || "n/a"}
                   </span>
                 )}
               </div>
