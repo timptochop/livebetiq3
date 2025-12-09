@@ -1,6 +1,9 @@
 // src/components/LiveTennis.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import fetchTennisLive from "../utils/fetchTennisLive";
+import fetchTennisOdds from "../utils/fetchTennisOdds";
+import buildOddsIndex from "../utils/oddsParser";
+import { trackOdds, getDrift } from "../utils/oddsTracker";
 import analyzeMatch from "../utils/analyzeMatch";
 import { showToast } from "../utils/toast";
 import useLiveCount from "../hooks/useLiveCount";
@@ -99,7 +102,16 @@ export default function LiveTennis({
   async function load() {
     setLoading(true);
     try {
-      const base = await fetchTennisLive();
+      // Fetch scores + odds in parallel
+      const [base, oddsRaw] = await Promise.all([
+        fetchTennisLive(),
+        fetchTennisOdds().catch(() => null),
+      ]);
+
+      const oddsIndex =
+        oddsRaw && typeof oddsRaw === "object"
+          ? buildOddsIndex({ raw: oddsRaw }) || {}
+          : {};
 
       const keep = (Array.isArray(base) ? base : []).filter(
         (m) => !isFinishedLike(m.status || m["@status"])
@@ -120,7 +132,47 @@ export default function LiveTennis({
         const time = m.time || m["@time"] || "";
         const status = m.status || m["@status"] || "";
         const setNum = currentSetFromScores(players);
-        const ai = analyzeMatch(m) || {};
+
+        // Stable matchId used also for odds join
+        const matchId =
+          m.id || m["@id"] || `${date}-${time}-${name1}-${name2}-${idx}`;
+
+        // --- ODDS + DRIFT JOIN (safe fallbacks) ---
+        const odds = oddsIndex && matchId ? oddsIndex[matchId] : null;
+
+        let favOdds = null;
+        let favImplied = null;
+        let drift = 0;
+
+        if (odds && Number(odds.favOdds) > 1) {
+          const homeOdds = Number(odds.homeOdds) > 1 ? Number(odds.homeOdds) : null;
+          const awayOdds = Number(odds.awayOdds) > 1 ? Number(odds.awayOdds) : null;
+          const fav = Number(odds.favOdds);
+
+          const invHome = homeOdds ? 1 / homeOdds : 0;
+          const invAway = awayOdds ? 1 / awayOdds : 0;
+          const invFav = 1 / fav;
+          const denom = invHome + invAway;
+
+          if (denom > 0 && Number.isFinite(invFav)) {
+            favImplied = invFav / denom;
+          }
+
+          if (Number.isFinite(favImplied) && favImplied > 0 && favImplied < 1) {
+            trackOdds(matchId, favImplied);
+            drift = getDrift(matchId);
+          }
+
+          favOdds = fav;
+        }
+
+        const extraFeatures = {
+          pOdds: favOdds,
+          drift,
+          favName: odds && odds.favName ? odds.favName : null,
+        };
+
+        const ai = analyzeMatch(m, extraFeatures) || {};
 
         let startAt = null;
         let startInMs = null;
@@ -135,10 +187,7 @@ export default function LiveTennis({
         }
 
         return {
-          id:
-            m.id ||
-            m["@id"] ||
-            `${date}-${time}-${name1}-${name2}-${idx}`,
+          id: matchId,
           name1,
           name2,
           date,
@@ -149,6 +198,7 @@ export default function LiveTennis({
             m.categoryName || m["@category"] || m.category || "",
           ai,
           players,
+          odds: odds || null,
           startAt,
           startInMs,
           startInText,
@@ -250,7 +300,7 @@ export default function LiveTennis({
 
         if (notificationsOn) {
           const t = `${cur}: ${m.name1} vs ${m.name2}${
-            m.categoryName ? ` Â· ${m.categoryName}` : ""
+            m.categoryName ? ` Ã‚Â· ${m.categoryName}` : ""
           }`;
           showToast(t, 3500);
         }
@@ -285,7 +335,7 @@ export default function LiveTennis({
 
         if (cur === "SAFE") {
           const t = `SAFE: ${m.name1} vs ${m.name2}${
-            m.categoryName ? ` Â· ${m.categoryName}` : ""
+            m.categoryName ? ` Ã‚Â· ${m.categoryName}` : ""
           }`;
           tryTg(t);
         }
@@ -395,7 +445,7 @@ export default function LiveTennis({
                   fontSize: 14,
                 }}
               >
-                {m.date} {m.time} Â· {m.categoryName}
+                {m.date} {m.time} Ã‚Â· {m.categoryName}
                 {m.uiLabel === "UPCOMING" && (
                   <span
                     style={{
@@ -403,7 +453,7 @@ export default function LiveTennis({
                       color: "#9fb0c3",
                     }}
                   >
-                    â€” starts in {m.startInText || "n/a"}
+                    Ã¢â‚¬â€ starts in {m.startInText || "n/a"}
                   </span>
                 )}
               </div>
