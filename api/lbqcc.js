@@ -1,39 +1,62 @@
-// api/lbqcc.js — v5.1.10-debug-passthrough
-// Node 20 (Vercel). ESM source, compiled to CJS by Vercel.
-// Purpose: fast local ping + strict JSON passthrough proxy to GAS, with POST body debug logs.
+// api/lbqcc.js
+
+const FALLBACK_CONFIG = {
+  SAFE_MIN_EV: 0.03,
+  SAFE_MIN_CONF: 0.58,
+  MAX_VOL_SAFE: 0.55,
+  RISKY_MIN_EV: 0.01,
+  RISKY_MIN_CONF: 0.53,
+  MAX_VOL_RISKY: 0.9,
+  MIN_ODDS: 1.3,
+  MAX_ODDS: 7.5,
+  LOG_PREDICTIONS: 1,
+  ENGINE_VERSION: 'v3.3'
+};
 
 export default async function handler(req, res) {
   const ts = new Date().toISOString();
   const { method, query } = req;
+  const mode = String(query.mode || '').toLowerCase();
 
   try {
-    // 0) Fast local ping (no proxy)
-    if (String(query.mode || '').toLowerCase() === 'ping') {
-      return res.status(200).json({ ok: true, via: 'local', webapi: 'v5.1.10-debug-passthrough', ts });
+    if (mode === 'ping') {
+      return res.status(200).json({
+        ok: true,
+        via: 'local',
+        webapi: 'v5.2-config-proxy',
+        ts
+      });
     }
 
-    // 1) Resolve GAS endpoint from env
     const GAS = process.env.LBQ_GAS_URL;
     if (!GAS) {
-      return res.status(500).json({ ok: false, error: 'missing_env_LBQ_GAS_URL' });
+      if (mode === 'config') {
+        return res.status(200).json({
+          ok: true,
+          webapi: 'v5.2-config-fallback-no-env',
+          sheet: 'LBQ_Config',
+          config: FALLBACK_CONFIG,
+          warning: 'missing_env_LBQ_GAS_URL'
+        });
+      }
+      return res
+        .status(500)
+        .json({ ok: false, error: 'missing_env_LBQ_GAS_URL' });
     }
 
-    // 2) Build target URL (keep all query params)
     const url = new URL(GAS);
     for (const [k, v] of Object.entries(query || {})) {
       url.searchParams.set(k, String(v));
     }
 
-    // 3) Proxy options
     const controller = new AbortController();
-    const timeoutMs = 4500; // keep short to avoid 504 from Vercel edge
+    const timeoutMs = 8000;
     const to = setTimeout(() => controller.abort(), timeoutMs);
 
     let fetchOpts = { method, signal: controller.signal, headers: {} };
 
     if (method === 'POST') {
       const raw = await readRawBody(req);
-      // Debug log (safe snippet only)
       console.log(
         JSON.stringify({
           route: '/api/lbqcc',
@@ -45,27 +68,54 @@ export default async function handler(req, res) {
         })
       );
 
-      // Preserve incoming content-type if present
       const ct = req.headers['content-type'] || 'application/json';
       fetchOpts.headers['content-type'] = ct;
       fetchOpts.body = raw || '{}';
     }
 
-    // 4) Forward to GAS
-    const upstream = await fetch(url.toString(), fetchOpts);
+    let upstream;
+    try {
+      upstream = await fetch(url.toString(), fetchOpts);
+    } finally {
+      clearTimeout(to);
+    }
 
-    // 5) Passthrough response as-is (text)
     const text = await upstream.text();
-    clearTimeout(to);
 
-    // Mirror upstream status and content-type
     res.status(upstream.status || 200);
-    res.setHeader('content-type', upstream.headers.get('content-type') || 'application/json; charset=utf-8');
+    res.setHeader(
+      'content-type',
+      upstream.headers.get('content-type') ||
+        'application/json; charset=utf-8'
+    );
     return res.send(text);
   } catch (e) {
-    const aborted = e && (e.name === 'AbortError' || e.code === 'ABORT_ERR');
+    const aborted =
+      e && (e.name === 'AbortError' || e.code === 'ABORT_ERR');
     const msg = e?.message || String(e);
-    console.error(JSON.stringify({ route: '/api/lbqcc', ts, error: aborted ? 'timeout' : 'exception', message: msg }));
+
+    console.error(
+      JSON.stringify({
+        route: '/api/lbqcc',
+        ts,
+        error: aborted ? 'timeout' : 'exception',
+        message: msg
+      })
+    );
+
+    if (mode === 'config') {
+      return res.status(200).json({
+        ok: true,
+        webapi: aborted
+          ? 'v5.2-config-fallback-timeout'
+          : 'v5.2-config-fallback-exception',
+        sheet: 'LBQ_Config',
+        config: FALLBACK_CONFIG,
+        warning: aborted ? 'upstream-timeout' : 'upstream-exception',
+        message: msg
+      });
+    }
+
     return res.status(aborted ? 504 : 500).json({
       ok: false,
       error: aborted ? 'timeout' : 'exception',
@@ -74,7 +124,6 @@ export default async function handler(req, res) {
   }
 }
 
-// --- helpers ---
 async function readRawBody(req) {
   return new Promise((resolve, reject) => {
     try {
