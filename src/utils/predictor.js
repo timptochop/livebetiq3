@@ -2,6 +2,7 @@
 // v3.3 – EV + Kelly + Volatility + dynamic thresholds
 
 import applyVolatility from '../aiPredictionEngineModules/applyVolatility';
+import { getLbqConfig } from './lbqConfigClient';
 
 const DEFAULT_THRESHOLDS = {
   SAFE_MIN_EV: 0.03,
@@ -9,6 +10,9 @@ const DEFAULT_THRESHOLDS = {
   SAFE_MAX_VOL: 0.55,
   RISKY_MIN_EV: 0.01,
   RISKY_MIN_CONF: 0.53,
+  MAX_VOL_RISKY: 0.9,
+  MIN_ODDS: 1.3,
+  MAX_ODDS: 7.5
 };
 
 function clamp01(x) {
@@ -59,12 +63,6 @@ function computeBaseConfidence(prob, ev) {
   return clamp01(base);
 }
 
-/**
- * Normalise raw config από GAS σε thresholds που χρησιμοποιεί ο predictor.
- * Δέχεται keys όπως:
- *   SAFE_MIN_EV, SAFE_MIN_CONF, MAX_VOL_SAFE, SAFE_MAX_VOL,
- *   RISKY_MIN_EV, RISKY_MIN_CONF
- */
 function normalizeThresholds(raw) {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_THRESHOLDS };
 
@@ -77,6 +75,9 @@ function normalizeThresholds(raw) {
     SAFE_MAX_VOL: 'SAFE_MAX_VOL',
     RISKY_MIN_EV: 'RISKY_MIN_EV',
     RISKY_MIN_CONF: 'RISKY_MIN_CONF',
+    MAX_VOL_RISKY: 'MAX_VOL_RISKY',
+    MIN_ODDS: 'MIN_ODDS',
+    MAX_ODDS: 'MAX_ODDS'
   };
 
   Object.keys(map).forEach((k) => {
@@ -105,7 +106,11 @@ function chooseLabel({ ev, confidence, volatility, thresholds }) {
     return 'SAFE';
   }
 
-  if (e >= th.RISKY_MIN_EV && c >= th.RISKY_MIN_CONF) {
+  const maxVolRisky = Number(th.MAX_VOL_RISKY);
+  const volOkForRisky =
+    !Number.isFinite(maxVolRisky) || maxVolRisky <= 0 ? true : v <= maxVolRisky;
+
+  if (e >= th.RISKY_MIN_EV && c >= th.RISKY_MIN_CONF && volOkForRisky) {
     return 'RISKY';
   }
 
@@ -152,7 +157,39 @@ export function runPredictor(ctx = {}) {
       ok: false,
       label: 'AVOID',
       reason: 'no-valid-odds',
+      matchId: ctx.matchId || ctx.id || null
+    };
+  }
+
+  let thresholdsRaw =
+    ctx.thresholds || ctx.lbqConfig || ctx.config || ctx.lbqThresholds || null;
+
+  if (!thresholdsRaw) {
+    thresholdsRaw = getLbqConfig();
+  }
+
+  const thresholds = normalizeThresholds(thresholdsRaw);
+
+  const minOdds = Number(thresholds.MIN_ODDS);
+  const maxOdds = Number(thresholds.MAX_ODDS);
+
+  if (Number.isFinite(minOdds) && decimalOdds < minOdds) {
+    return {
+      ok: false,
+      label: 'AVOID',
+      reason: 'odds-out-of-range',
       matchId: ctx.matchId || ctx.id || null,
+      decimalOdds
+    };
+  }
+
+  if (Number.isFinite(maxOdds) && decimalOdds > maxOdds) {
+    return {
+      ok: false,
+      label: 'AVOID',
+      reason: 'odds-out-of-range',
+      matchId: ctx.matchId || ctx.id || null,
+      decimalOdds
     };
   }
 
@@ -170,10 +207,6 @@ export function runPredictor(ctx = {}) {
   const baseConfidence = computeBaseConfidence(fairProb, ev);
   const baseKelly = computeKelly(fairProb, decimalOdds);
 
-  const thresholdsRaw =
-    ctx.thresholds || ctx.lbqConfig || ctx.config || ctx.lbqThresholds || null;
-  const thresholds = normalizeThresholds(thresholdsRaw);
-
   const basePrediction = {
     ok: true,
     matchId: ctx.matchId || ctx.id || null,
@@ -190,7 +223,7 @@ export function runPredictor(ctx = {}) {
     modelVersion: 'v3.3',
     volatility: 0,
     volatilityBreakdown: null,
-    thresholds,
+    thresholds
   };
 
   const volCtx = {
@@ -204,7 +237,7 @@ export function runPredictor(ctx = {}) {
     lineDriftAbs: ctx.lineDriftAbs,
     surface: ctx.surface,
     p1HoldPct: ctx.p1HoldPct,
-    p2HoldPct: ctx.p2HoldPct,
+    p2HoldPct: ctx.p2HoldPct
   };
 
   const withVolatility = applyVolatility(basePrediction, volCtx);
@@ -213,7 +246,7 @@ export function runPredictor(ctx = {}) {
     ev: withVolatility.ev,
     confidence: withVolatility.confidence,
     volatility: withVolatility.volatility,
-    thresholds,
+    thresholds
   });
 
   const tip = buildTip(ctx, side);
@@ -221,7 +254,7 @@ export function runPredictor(ctx = {}) {
   return {
     ...withVolatility,
     label,
-    tip,
+    tip
   };
 }
 
