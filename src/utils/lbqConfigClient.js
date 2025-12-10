@@ -1,35 +1,22 @@
 // src/utils/lbqConfigClient.js
-// LBQ Config Client v2.0 – fetch thresholds from /api/lbqcc?mode=config
-// and expose them to the rest of the app.
-//
-// This is the single source of truth for SAFE/RISKY thresholds
-// on the frontend side.
 
 const DEFAULT_CONFIG = {
   SAFE_MIN_EV: 0.03,
   SAFE_MIN_CONF: 0.58,
   MAX_VOL_SAFE: 0.55,
-
   RISKY_MIN_EV: 0.01,
   RISKY_MIN_CONF: 0.53,
   MAX_VOL_RISKY: 0.9,
-
   MIN_ODDS: 1.3,
   MAX_ODDS: 7.5,
-
   LOG_PREDICTIONS: 1,
   ENGINE_VERSION: 'v3.3'
 };
 
-// In-memory cache for the current config
 let currentConfig = { ...DEFAULT_CONFIG };
 let loaded = false;
 let loadingPromise = null;
 
-/**
- * Merge server config into defaults.
- * Any unknown keys from the server are also kept.
- */
 function mergeConfig(serverCfg) {
   if (!serverCfg || typeof serverCfg !== 'object') {
     return { ...DEFAULT_CONFIG };
@@ -37,9 +24,8 @@ function mergeConfig(serverCfg) {
 
   const cfg = { ...DEFAULT_CONFIG };
 
-  Object.keys(serverCfg).forEach(key => {
+  Object.keys(serverCfg).forEach((key) => {
     const val = serverCfg[key];
-    // Simple numeric coercion where appropriate
     if (typeof DEFAULT_CONFIG[key] === 'number') {
       const asNum = Number(val);
       if (!Number.isNaN(asNum)) {
@@ -53,14 +39,6 @@ function mergeConfig(serverCfg) {
   return cfg;
 }
 
-/**
- * Load LBQ config from /api/lbqcc?mode=config.
- * Uses in-memory caching so we don't ping on every call.
- *
- * Usage:
- *   await loadLbqConfig();
- *   const cfg = getLbqConfig();
- */
 export async function loadLbqConfig() {
   if (loaded && currentConfig) {
     return currentConfig;
@@ -119,10 +97,6 @@ export async function loadLbqConfig() {
   return loadingPromise;
 }
 
-/**
- * Get the currently loaded config.
- * If loadLbqConfig() has not been awaited yet, this returns defaults.
- */
 export function getLbqConfig() {
   if (!loaded || !currentConfig) {
     return { ...DEFAULT_CONFIG };
@@ -130,9 +104,6 @@ export function getLbqConfig() {
   return { ...currentConfig };
 }
 
-/**
- * Hard reset (for tests / dev only).
- */
 export function resetLbqConfigCache() {
   loaded = false;
   loadingPromise = null;
