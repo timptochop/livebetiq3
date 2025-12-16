@@ -66,7 +66,7 @@ function withComputed(m) {
   };
 }
 
-function pickDeterministicMatches(matches, now, tzOffsetMinutes) {
+function pickDeterministicMatches(matches, now, tzOffsetMinutes, minToday) {
   const todayKey = dayKeyFromNowWithOffset(now, tzOffsetMinutes);
 
   const enriched = (Array.isArray(matches) ? matches : []).map(withComputed);
@@ -92,7 +92,9 @@ function pickDeterministicMatches(matches, now, tzOffsetMinutes) {
   }
 
   if (live.length > 0) return { chosen: [...live, ...today], mode: 'LIVE+TODAY' };
-  if (today.length > 0) return { chosen: [...today], mode: 'TODAY' };
+
+  if (today.length >= minToday) return { chosen: [...today], mode: 'TODAY' };
+
   if (next24h.length > 0) return { chosen: [...next24h], mode: 'NEXT_24H' };
 
   return { chosen: enriched, mode: 'RAW_FALLBACK' };
@@ -120,18 +122,15 @@ async function tryFetchViaLocalLib() {
   }
 }
 
-function stripInternals(m) {
-  const { __dayKey, __bucket, ...rest } = m || {};
-  return rest;
-}
-
 export default async function handler(req, res) {
   const debug = normStr(req?.query?.debug) === '1';
   const tzOffsetMinutes = Number.isFinite(Number(req?.query?.tzOffsetMinutes))
     ? Number(req.query.tzOffsetMinutes)
     : 120;
 
-  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  const minToday = Number.isFinite(Number(req?.query?.minToday))
+    ? Math.max(0, Number(req.query.minToday))
+    : 4;
 
   try {
     const matches = await tryFetchViaLocalLib();
@@ -145,7 +144,7 @@ export default async function handler(req, res) {
     }
 
     const now = new Date();
-    const { chosen, mode } = pickDeterministicMatches(matches, now, tzOffsetMinutes);
+    const { chosen, mode } = pickDeterministicMatches(matches, now, tzOffsetMinutes, minToday);
 
     if (debug) {
       const all = (Array.isArray(matches) ? matches : []).map(withComputed);
@@ -174,20 +173,26 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true,
         mode,
-        matches: chosen.map(stripInternals),
+        matches: chosen.map((m) => {
+          const { __dayKey, __bucket, ...rest } = m;
+          return rest;
+        }),
         meta: {
           now: now.toISOString(),
           tzOffsetMinutes,
           todayKey,
           determinismMode: mode,
+          minToday,
           counts,
-          note: 'Determinism priority: LIVE+TODAY → TODAY → NEXT_24H',
         },
       });
     }
 
     return res.status(200).json({
-      matches: chosen.map(stripInternals),
+      matches: chosen.map((m) => {
+        const { __dayKey, __bucket, ...rest } = m;
+        return rest;
+      }),
     });
   } catch (e) {
     if (debug) {
