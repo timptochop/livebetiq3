@@ -66,9 +66,8 @@ function withComputed(m) {
   };
 }
 
-function pickDeterministicMatches(matches, now, tzOffsetMinutes, minToday) {
+function pickDeterministicMatches(matches, now, tzOffsetMinutes, minToday = 1) {
   const todayKey = dayKeyFromNowWithOffset(now, tzOffsetMinutes);
-
   const enriched = (Array.isArray(matches) ? matches : []).map(withComputed);
 
   const live = [];
@@ -92,9 +91,7 @@ function pickDeterministicMatches(matches, now, tzOffsetMinutes, minToday) {
   }
 
   if (live.length > 0) return { chosen: [...live, ...today], mode: 'LIVE+TODAY' };
-
   if (today.length >= minToday) return { chosen: [...today], mode: 'TODAY' };
-
   if (next24h.length > 0) return { chosen: [...next24h], mode: 'NEXT_24H' };
 
   return { chosen: enriched, mode: 'RAW_FALLBACK' };
@@ -122,6 +119,11 @@ async function tryFetchViaLocalLib() {
   }
 }
 
+function sendJsonUtf8(res, status, payload, pretty = false) {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.status(status).send(JSON.stringify(payload, null, pretty ? 2 : 0));
+}
+
 export default async function handler(req, res) {
   const debug = normStr(req?.query?.debug) === '1';
   const tzOffsetMinutes = Number.isFinite(Number(req?.query?.tzOffsetMinutes))
@@ -129,8 +131,8 @@ export default async function handler(req, res) {
     : 120;
 
   const minToday = Number.isFinite(Number(req?.query?.minToday))
-    ? Math.max(0, Number(req.query.minToday))
-    : 4;
+    ? Math.max(0, Math.min(999, Number(req.query.minToday)))
+    : 1;
 
   try {
     const matches = await tryFetchViaLocalLib();
@@ -138,9 +140,9 @@ export default async function handler(req, res) {
     if (!matches) {
       const errMsg = 'tennis-live: upstream fetch unavailable';
       if (debug) {
-        return res.status(500).json({ ok: false, error: errMsg, matches: [], meta: { debug: true } });
+        return sendJsonUtf8(res, 500, { ok: false, error: errMsg, matches: [], meta: { debug: true } }, true);
       }
-      return res.status(500).json({ matches: [] });
+      return sendJsonUtf8(res, 500, { matches: [] }, false);
     }
 
     const now = new Date();
@@ -170,7 +172,7 @@ export default async function handler(req, res) {
         { total: 0, live: 0, scheduled: 0, finished: 0, unknown: 0, today: 0, tomorrow: 0, past: 0, future: 0, noDate: 0 }
       );
 
-      return res.status(200).json({
+      const payload = {
         ok: true,
         mode,
         matches: chosen.map((m) => {
@@ -185,19 +187,24 @@ export default async function handler(req, res) {
           minToday,
           counts,
         },
-      });
+      };
+
+      return sendJsonUtf8(res, 200, payload, true);
     }
 
-    return res.status(200).json({
+    const payload = {
       matches: chosen.map((m) => {
         const { __dayKey, __bucket, ...rest } = m;
         return rest;
       }),
-    });
+    };
+
+    return sendJsonUtf8(res, 200, payload, false);
   } catch (e) {
+    const msg = String(e?.message || e || 'unknown error');
     if (debug) {
-      return res.status(500).json({ ok: false, error: String(e?.message || e), matches: [] });
+      return sendJsonUtf8(res, 500, { ok: false, error: msg, matches: [] }, true);
     }
-    return res.status(500).json({ matches: [] });
+    return sendJsonUtf8(res, 500, { matches: [] }, false);
   }
 }
