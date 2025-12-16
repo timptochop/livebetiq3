@@ -7,11 +7,7 @@ import { trackOdds, getDrift } from "../utils/oddsTracker";
 import analyzeMatch from "../utils/analyzeMatch";
 import { showToast } from "../utils/toast";
 import useLiveCount from "../hooks/useLiveCount";
-import {
-  logPrediction,
-  addPending,
-  trySettleFinished,
-} from "../utils/predictionLogger";
+import { logPrediction, addPending, trySettleFinished } from "../utils/predictionLogger";
 import { maybeLogResult } from "../ai/autoLogger";
 import { ingestBatch } from "../ai/adaptTuner";
 
@@ -24,8 +20,32 @@ const FINISHED = new Set([
   "walk over",
 ]);
 
-const isFinishedLike = (s) => FINISHED.has(String(s || "").toLowerCase());
-const isUpcoming = (s) => String(s || "").toLowerCase() === "not started";
+const toLower = (v) => String(v ?? "").trim().toLowerCase();
+
+const isFinishedLike = (s) => FINISHED.has(toLower(s));
+
+const isUpcomingLike = (s) => {
+  const x = toLower(s);
+  return (
+    x === "not started" ||
+    x === "scheduled" ||
+    x === "upcoming" ||
+    x === "0" ||
+    x === "ns" ||
+    x === "pending"
+  );
+};
+
+const isLiveLike = (s) => {
+  const x = toLower(s);
+  return (
+    x === "1" ||
+    x === "live" ||
+    x === "in progress" ||
+    x === "playing" ||
+    x === "started"
+  );
+};
 
 const toInt = (v) => {
   if (v === null || v === undefined) return null;
@@ -102,23 +122,16 @@ export default function LiveTennis({
   async function load() {
     setLoading(true);
     try {
-      // 1) Fetch ONLY scores first
       const base = await fetchTennisLive();
       const baseArr = Array.isArray(base) ? base : [];
 
-      // 2) Drop finished matches
-      const keep = baseArr.filter(
-        (m) => !isFinishedLike(m.status || m["@status"])
-      );
+      const keep = baseArr.filter((m) => !isFinishedLike(m.status || m["@status"]));
 
-      // 3) Detect if there is at least one LIVE match
       const hasLive = keep.some((m) => {
         const raw = m.status || m["@status"] || "";
-        const s = String(raw).toLowerCase();
-        return !!raw && !isUpcoming(raw) && !isFinishedLike(raw) && s !== "";
+        return isLiveLike(raw);
       });
 
-      // 4) Fetch odds ONLY if we have live matches
       let oddsRaw = null;
       if (hasLive) {
         try {
@@ -129,9 +142,7 @@ export default function LiveTennis({
       }
 
       const oddsIndex =
-        oddsRaw && typeof oddsRaw === "object"
-          ? buildOddsIndex({ raw: oddsRaw }) || {}
-          : {};
+        oddsRaw && typeof oddsRaw === "object" ? buildOddsIndex({ raw: oddsRaw }) || {} : {};
 
       const now = Date.now();
 
@@ -150,11 +161,8 @@ export default function LiveTennis({
         const status = m.status || m["@status"] || "";
         const setNum = currentSetFromScores(players);
 
-        // Stable matchId used also for odds join
-        const matchId =
-          m.id || m["@id"] || `${date}-${time}-${name1}-${name2}-${idx}`;
+        const matchId = m.id || m["@id"] || `${date}-${time}-${name1}-${name2}-${idx}`;
 
-        // --- ODDS + DRIFT JOIN (safe fallbacks) ---
         const odds = oddsIndex && matchId ? oddsIndex[matchId] : null;
 
         let favOdds = null;
@@ -162,10 +170,8 @@ export default function LiveTennis({
         let drift = 0;
 
         if (odds && Number(odds.favOdds) > 1) {
-          const homeOdds =
-            Number(odds.homeOdds) > 1 ? Number(odds.homeOdds) : null;
-          const awayOdds =
-            Number(odds.awayOdds) > 1 ? Number(odds.awayOdds) : null;
+          const homeOdds = Number(odds.homeOdds) > 1 ? Number(odds.homeOdds) : null;
+          const awayOdds = Number(odds.awayOdds) > 1 ? Number(odds.awayOdds) : null;
           const fav = Number(odds.favOdds);
 
           const invHome = homeOdds ? 1 / homeOdds : 0;
@@ -196,7 +202,8 @@ export default function LiveTennis({
         let startAt = null;
         let startInMs = null;
         let startInText = null;
-        if (isUpcoming(status)) {
+
+        if (!isLiveLike(status) && isUpcomingLike(status)) {
           const dt = parseStart(date, time);
           if (dt) {
             startAt = dt.getTime();
@@ -213,8 +220,7 @@ export default function LiveTennis({
           time,
           status,
           setNum,
-          categoryName:
-            m.categoryName || m["@category"] || m.category || "",
+          categoryName: m.categoryName || m["@category"] || m.category || "",
           ai,
           players,
           odds: odds || null,
@@ -227,9 +233,7 @@ export default function LiveTennis({
       setRows(enriched);
       ingestBatch(enriched);
 
-      await Promise.allSettled(
-        baseArr.map((m) => maybeLogResult(m))
-      );
+      await Promise.allSettled(baseArr.map((m) => maybeLogResult(m)));
 
       trySettleFinished(baseArr);
     } catch (e) {
@@ -248,14 +252,24 @@ export default function LiveTennis({
 
   const list = useMemo(() => {
     const items = rows.map((m) => {
-      const s = m.status || "";
-      const live = !!s && !isUpcoming(s) && !isFinishedLike(s);
+      const rawStatus = m.status || "";
+      const live = isLiveLike(rawStatus) || (!!rawStatus && !isUpcomingLike(rawStatus) && !isFinishedLike(rawStatus));
       let label = m.ai?.label || null;
 
-      if (!live && isUpcoming(s)) {
+      const aiMarkedUpcoming =
+        label === "UPCOMING" ||
+        label === "STARTS SOON" ||
+        label === "SOON" ||
+        label === "PENDING";
+
+      if (!live && isUpcomingLike(rawStatus)) {
         label = "UPCOMING";
-      } else if (!label || label === "PENDING") {
-        label = live ? `SET ${m.setNum || 1}` : "UPCOMING";
+      } else if (live) {
+        if (!label || aiMarkedUpcoming) {
+          label = `SET ${m.setNum || 1}`;
+        }
+      } else {
+        if (!label || label === "PENDING") label = "UPCOMING";
       }
 
       if (label && label.startsWith && label.startsWith("SET")) {
@@ -309,26 +323,21 @@ export default function LiveTennis({
       if (isPred && cur !== prev) {
         if (cur === "SAFE" && audioOn) {
           try {
-            // fire-and-forget audio
             // eslint-disable-next-line no-new
             new Audio("/notify.mp3").play().catch(() => {});
           } catch {
-            // ignore audio errors
+            // ignore
           }
         }
 
         if (notificationsOn) {
-          const t = `${cur}: ${m.name1} vs ${m.name2}${
-            m.categoryName ? ` Ãƒâ€šÃ‚Â· ${m.categoryName}` : ""
-          }`;
+          const t = `${cur}: ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ""}`;
           showToast(t, 3500);
         }
 
-        // === TRAINING LOOP: SAFE/RISKY/AVOID ===
         if (cur === "SAFE" || cur === "RISKY" || cur === "AVOID") {
           const fav =
-            m.ai?.features?.favName &&
-            String(m.ai.features.favName).trim()
+            m.ai?.features?.favName && String(m.ai.features.favName).trim()
               ? m.ai.features.favName
               : m.name1;
 
@@ -353,9 +362,7 @@ export default function LiveTennis({
         }
 
         if (cur === "SAFE") {
-          const t = `SAFE: ${m.name1} vs ${m.name2}${
-            m.categoryName ? ` Ãƒâ€šÃ‚Â· ${m.categoryName}` : ""
-          }`;
+          const t = `SAFE: ${m.name1} vs ${m.name2}${m.categoryName ? ` · ${m.categoryName}` : ""}`;
           tryTg(t);
         }
       }
@@ -450,10 +457,7 @@ export default function LiveTennis({
                 }}
               >
                 <span>{m.name1}</span>
-                <span style={{ color: "#98a0a6", fontWeight: 600 }}>
-                  {" "}
-                  &nbsp;vs&nbsp;{" "}
-                </span>
+                <span style={{ color: "#98a0a6", fontWeight: 600 }}> &nbsp;vs&nbsp; </span>
                 <span>{m.name2}</span>
               </div>
 
@@ -464,32 +468,26 @@ export default function LiveTennis({
                   fontSize: 14,
                 }}
               >
-                {m.date} {m.time} Ãƒâ€šÃ‚Â· {m.categoryName}
+                {m.date} {m.time} · {m.categoryName}
                 {m.uiLabel === "UPCOMING" && (
-                  <span
-                    style={{
-                      marginLeft: 8,
-                      color: "#9fb0c3",
-                    }}
-                  >
-                    ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â starts in {m.startInText || "n/a"}
+                  <span style={{ marginLeft: 8, color: "#9fb0c3" }}>
+                    — starts in {m.startInText || "n/a"}
                   </span>
                 )}
               </div>
 
-              {(m.ai?.label === "SAFE" || m.ai?.label === "RISKY") &&
-                m.ai?.tip && (
-                  <div
-                    style={{
-                      marginTop: 6,
-                      fontSize: 13,
-                      fontWeight: 800,
-                      color: "#1fdd73",
-                    }}
-                  >
-                    TIP: {m.ai.tip}
-                  </div>
-                )}
+              {(m.ai?.label === "SAFE" || m.ai?.label === "RISKY") && m.ai?.tip && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontSize: 13,
+                    fontWeight: 800,
+                    color: "#1fdd73",
+                  }}
+                >
+                  TIP: {m.ai.tip}
+                </div>
+              )}
             </div>
 
             <Pill label={m.uiLabel} />
