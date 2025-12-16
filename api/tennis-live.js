@@ -1,5 +1,3 @@
-// api/tennis-live.js
-
 function normStr(x) {
   return (x ?? '').toString().trim();
 }
@@ -122,11 +120,18 @@ async function tryFetchViaLocalLib() {
   }
 }
 
+function stripInternals(m) {
+  const { __dayKey, __bucket, ...rest } = m || {};
+  return rest;
+}
+
 export default async function handler(req, res) {
   const debug = normStr(req?.query?.debug) === '1';
   const tzOffsetMinutes = Number.isFinite(Number(req?.query?.tzOffsetMinutes))
     ? Number(req.query.tzOffsetMinutes)
     : 120;
+
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
 
   try {
     const matches = await tryFetchViaLocalLib();
@@ -169,25 +174,20 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true,
         mode,
-        matches: chosen.map((m) => {
-          const { __dayKey, __bucket, ...rest } = m;
-          return rest;
-        }),
+        matches: chosen.map(stripInternals),
         meta: {
           now: now.toISOString(),
           tzOffsetMinutes,
           todayKey,
           determinismMode: mode,
           counts,
+          note: 'Determinism priority: LIVE+TODAY → TODAY → NEXT_24H',
         },
       });
     }
 
     return res.status(200).json({
-      matches: chosen.map((m) => {
-        const { __dayKey, __bucket, ...rest } = m;
-        return rest;
-      }),
+      matches: chosen.map(stripInternals),
     });
   } catch (e) {
     if (debug) {
