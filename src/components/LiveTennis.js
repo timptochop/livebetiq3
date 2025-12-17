@@ -104,19 +104,12 @@ const labelPriority = {
   SAFE: 1,
   RISKY: 2,
   AVOID: 3,
-  "SET 3": 4,
-  "SET 2": 5,
-  "SET 1": 6,
-  LIVE: 7,
+  LIVE: 4,
+  "SET 3": 5,
+  "SET 2": 6,
+  "SET 1": 7,
   UPCOMING: 8,
 };
-
-function normalizeSetNum(maybeSetNum) {
-  const n = Number(maybeSetNum);
-  if (!Number.isFinite(n)) return null;
-  if (n < 1 || n > 5) return null;
-  return n;
-}
 
 export default function LiveTennis({
   onLiveCount = () => {},
@@ -160,7 +153,6 @@ export default function LiveTennis({
           : Array.isArray(m.player)
           ? m.player
           : [];
-
         const p1 = players[0] || {};
         const p2 = players[1] || {};
         const name1 = p1.name || p1["@name"] || "";
@@ -168,19 +160,11 @@ export default function LiveTennis({
         const date = m.date || m["@date"] || "";
         const time = m.time || m["@time"] || "";
         const status = m.status || m["@status"] || "";
+        const setNum = currentSetFromScores(players);
 
         const matchId = m.id || m["@id"] || `${date}-${time}-${name1}-${name2}-${idx}`;
 
         const odds = oddsIndex && matchId ? oddsIndex[matchId] : null;
-
-        // --- Canonical setNum source order:
-        // 1) API-normalized setNum (if present) 2) XML/@setNum 3) infer from scores 4) null
-        const apiSetNum = normalizeSetNum(m.setNum);
-        const xmlSetNum = normalizeSetNum(m["@setNum"]);
-        const inferred = currentSetFromScores(players);
-        const inferredSetNum = inferred > 0 ? inferred : null;
-
-        const setNum = apiSetNum ?? xmlSetNum ?? inferredSetNum ?? null;
 
         let favOdds = null;
         let favImplied = null;
@@ -214,7 +198,7 @@ export default function LiveTennis({
           favName: odds && odds.favName ? odds.favName : null,
         };
 
-        const ai = analyzeMatch({ ...m, odds, setNum }, extraFeatures) || {};
+        const ai = analyzeMatch({ ...m, odds }, extraFeatures) || {};
 
         let startAt = null;
         let startInMs = null;
@@ -251,6 +235,7 @@ export default function LiveTennis({
       ingestBatch(enriched);
 
       await Promise.allSettled(baseArr.map((m) => maybeLogResult(m)));
+
       trySettleFinished(baseArr);
     } catch (e) {
       setRows([]);
@@ -269,7 +254,8 @@ export default function LiveTennis({
   const list = useMemo(() => {
     const items = rows.map((m) => {
       const rawStatus = m.status || "";
-      const live = isLiveLike(rawStatus) || (!!rawStatus && !isUpcomingLike(rawStatus) && !isFinishedLike(rawStatus));
+      const live =
+        isLiveLike(rawStatus) || (!!rawStatus && !isUpcomingLike(rawStatus) && !isFinishedLike(rawStatus));
 
       let label = m.ai?.label || null;
 
@@ -279,22 +265,22 @@ export default function LiveTennis({
         label === "SOON" ||
         label === "PENDING";
 
-      // --- Canonical UI label fallback (no "SET 1" unless setNum exists)
       if (!live && isUpcomingLike(rawStatus)) {
         label = "UPCOMING";
       } else if (live) {
+        // KEY FIX: If live but we don't have set scores yet, show LIVE (not SET 1).
         if (!label || aiMarkedUpcoming) {
-          label = m.setNum != null ? `SET ${m.setNum}` : "LIVE";
+          if ((m.setNum || 0) > 0) label = `SET ${m.setNum}`;
+          else label = "LIVE";
         }
       } else {
         if (!label || label === "PENDING") label = "UPCOMING";
       }
 
-      // Normalize any SET X that might come from AI
       if (label && label.startsWith && label.startsWith("SET")) {
         const parts = label.split(/\s+/);
-        const n = normalizeSetNum(parts[1]) ?? m.setNum;
-        label = n != null ? `SET ${n}` : "LIVE";
+        const n = Number(parts[1]) || m.setNum || 1;
+        label = `SET ${n}`;
       }
 
       return {
@@ -308,15 +294,13 @@ export default function LiveTennis({
     return items.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
 
-      if (a.order >= 4 && a.order <= 6 && b.order >= 4 && b.order <= 6) {
+      // Keep SET 3/2/1 order stable
+      if (a.order >= 5 && a.order <= 7 && b.order >= 5 && b.order <= 7) {
         return a.order - b.order;
       }
 
       if (a.live && b.live) {
-        // If both live and setNum exists, higher set first; otherwise stable
-        const ax = a.setNum || 0;
-        const bx = b.setNum || 0;
-        return bx - ax;
+        return (b.setNum || 0) - (a.setNum || 0);
       }
 
       if (a.uiLabel === "UPCOMING" && b.uiLabel === "UPCOMING") {
@@ -406,11 +390,11 @@ export default function LiveTennis({
       fg = "#151515";
     } else if (label === "AVOID") {
       bg = "#e53935";
+    } else if (label === "LIVE") {
+      bg = "#2d7ff9";
+      text = "LIVE";
     } else if (label && label.startsWith("SET")) {
       bg = "#6e42c1";
-    } else if (label === "LIVE") {
-      bg = "#6e42c1";
-      text = "LIVE";
     } else if (label === "UPCOMING") {
       bg = "#3a4452";
       text = "STARTS SOON";
