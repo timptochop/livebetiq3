@@ -33,27 +33,44 @@ function parseDateTime(m, tzOffsetMinutes) {
   return new Date(utc - tzOffsetMinutes * 60000);
 }
 
-function normalizeMatch(m, tzOffsetMinutes, now) {
-  const statusRaw = String(m?.status ?? '').trim();
+function pickScore(p, key) {
+  if (!p) return null;
+  const v = p[key];
+  if (v === undefined || v === null) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const n = Number.parseInt(s, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function computeSetNum(m) {
+  const p1 = m?.players?.[0];
+  const p2 = m?.players?.[1];
+  if (!p1 || !p2) return null;
+
+  const keys = ['s5', 's4', 's3', 's2', 's1']; // check from latest to earliest
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i];
+    const a = pickScore(p1, k);
+    const b = pickScore(p2, k);
+    if (a !== null || b !== null) {
+      // keys[0] is s5 => set 5, keys[4] is s1 => set 1
+      const setNum = 5 - i;
+      return setNum >= 1 && setNum <= 5 ? setNum : null;
+    }
+  }
+  return null;
+}
+
+function normalizeMatch(m) {
   const live = isLiveMatch(m);
-
-  const dt = parseDateTime(m, tzOffsetMinutes);
-  const startTimeISO = dt ? dt.toISOString() : null;
-
-  // Critical normalization:
-  // If live, never leave status as "1" because many UIs interpret that as "SET 1".
-  const status = live ? 'LIVE' : (statusRaw || '0');
-
-  const diffMs = dt ? (dt.getTime() - now.getTime()) : null;
-  const diffH = Number.isFinite(diffMs) ? (diffMs / 3600000) : null;
+  const setNum = live ? computeSetNum(m) : null;
 
   return {
     ...m,
-    status,              // normalized
-    statusRaw,           // original
-    isLive: live,        // explicit boolean
-    startTimeISO,        // explicit ISO
-    startInHours: diffH  // useful for UI/debug
+    isLive: live,
+    setNum, // <-- THIS is the canonical set indicator for the UI
+    statusRaw: m?.status, // keep original for debugging
   };
 }
 
@@ -79,13 +96,13 @@ export default async function handler(req, res) {
         now: now.toISOString(),
         tzOffsetMinutes,
         todayKey,
-        error: String(e?.message || e || 'fetchLiveTennis failed')
-      }
+        error: String(e?.message || e || 'fetchLiveTennis failed'),
+      },
     });
   }
 
   const allMatchesRaw = Array.isArray(raw?.matches) ? raw.matches : [];
-  const allMatches = allMatchesRaw.map((m) => normalizeMatch(m, tzOffsetMinutes, now));
+  const allMatches = allMatchesRaw.map(normalizeMatch);
 
   const live = [];
   const today = [];
@@ -97,9 +114,8 @@ export default async function handler(req, res) {
       continue;
     }
 
-    if (!m.startTimeISO) continue;
-    const dt = new Date(m.startTimeISO);
-    if (!Number.isFinite(dt.getTime())) continue;
+    const dt = parseDateTime(m, tzOffsetMinutes);
+    if (!dt) continue;
 
     const diffMs = dt.getTime() - now.getTime();
     const diffH = diffMs / 3600000;
@@ -110,10 +126,6 @@ export default async function handler(req, res) {
       next24h.push(m);
     }
   }
-
-  // Optional: stable ordering for upcoming buckets (soonest first)
-  today.sort((a, b) => String(a.startTimeISO || '').localeCompare(String(b.startTimeISO || '')));
-  next24h.sort((a, b) => String(a.startTimeISO || '').localeCompare(String(b.startTimeISO || '')));
 
   let mode = 'LIVE';
   let matches = live;
@@ -140,8 +152,8 @@ export default async function handler(req, res) {
         live: live.length,
         today: today.length,
         next24h: next24h.length,
-        total: allMatches.length
-      }
-    }
+        total: allMatches.length,
+      },
+    },
   });
 }
