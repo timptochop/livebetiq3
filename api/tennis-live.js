@@ -1,22 +1,43 @@
-import { fetchLiveTennis } from './_lib/goalServeLiveAPI.js';
+// api/tennis-live.js
+import { fetchLiveTennis } from "./_lib/goalServeLiveAPI.js";
 
 function toInt(v, d = 0) {
-  const n = Number.parseInt(v, 10);
+  const n = Number.parseInt(String(v ?? "").trim(), 10);
   return Number.isFinite(n) ? n : d;
 }
 
 function isLiveMatch(m) {
-  return String(m?.status) === '1';
+  return String(m?.status ?? m?.["@status"] ?? "") === "1";
+}
+
+function scoreInt(v) {
+  const x = Number.parseInt(String(v ?? "").trim(), 10);
+  return Number.isFinite(x) ? x : null;
+}
+
+function calcSetNumFromPlayers(players) {
+  const p = Array.isArray(players) ? players : [];
+  const a = p[0] || {};
+  const b = p[1] || {};
+
+  const aS = [a.s1, a.s2, a.s3, a.s4, a.s5].map(scoreInt);
+  const bS = [b.s1, b.s2, b.s3, b.s4, b.s5].map(scoreInt);
+
+  let k = 0;
+  for (let i = 0; i < 5; i++) {
+    if (aS[i] !== null || bS[i] !== null) k = i + 1;
+  }
+  return k || null;
 }
 
 function parseDateTime(m, tzOffsetMinutes) {
-  const dateStr = String(m?.date || '').trim();
-  const timeStr = String(m?.time || '00:00').trim();
+  const dateStr = String(m?.date || "").trim();
+  const timeStr = String(m?.time || "00:00").trim();
 
-  const d = dateStr.split('.');
+  const d = dateStr.split(".");
   if (d.length !== 3) return null;
 
-  const t = timeStr.split(':');
+  const t = timeStr.split(":");
   const year = toInt(d[2]);
   const month = toInt(d[1]) - 1;
   const day = toInt(d[0]);
@@ -33,52 +54,25 @@ function parseDateTime(m, tzOffsetMinutes) {
   return new Date(utc - tzOffsetMinutes * 60000);
 }
 
-function pickScore(p, key) {
-  if (!p) return null;
-  const v = p[key];
-  if (v === undefined || v === null) return null;
-  const s = String(v).trim();
-  if (!s) return null;
-  const n = Number.parseInt(s, 10);
-  return Number.isFinite(n) ? n : null;
-}
-
-function computeSetNum(m) {
-  const p1 = m?.players?.[0];
-  const p2 = m?.players?.[1];
-  if (!p1 || !p2) return null;
-
-  const keys = ['s5', 's4', 's3', 's2', 's1']; // check from latest to earliest
-  for (let i = 0; i < keys.length; i++) {
-    const k = keys[i];
-    const a = pickScore(p1, k);
-    const b = pickScore(p2, k);
-    if (a !== null || b !== null) {
-      // keys[0] is s5 => set 5, keys[4] is s1 => set 1
-      const setNum = 5 - i;
-      return setNum >= 1 && setNum <= 5 ? setNum : null;
-    }
-  }
-  return null;
-}
-
 function normalizeMatch(m) {
+  const players = Array.isArray(m?.players) ? m.players : Array.isArray(m?.player) ? m.player : [];
+  const setNum = calcSetNumFromPlayers(players);
   const live = isLiveMatch(m);
-  const setNum = live ? computeSetNum(m) : null;
 
   return {
     ...m,
+    players,
     isLive: live,
-    setNum, // <-- THIS is the canonical set indicator for the UI
-    statusRaw: m?.status, // keep original for debugging
+    setNum, // null if truly unknown, else 1..5
+    statusRaw: String(m?.status ?? m?.["@status"] ?? ""),
   };
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.status(200).end();
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") return res.status(200).end();
 
   const tzOffsetMinutes = toInt(req.query.tzOffsetMinutes, 0);
   const now = new Date();
@@ -90,13 +84,13 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(200).json({
       ok: false,
-      mode: 'ERROR',
+      mode: "ERROR",
       matches: [],
       meta: {
         now: now.toISOString(),
         tzOffsetMinutes,
         todayKey,
-        error: String(e?.message || e || 'fetchLiveTennis failed'),
+        error: String(e?.message || e || "fetchLiveTennis failed"),
       },
     });
   }
@@ -127,16 +121,16 @@ export default async function handler(req, res) {
     }
   }
 
-  let mode = 'LIVE';
+  let mode = "LIVE";
   let matches = live;
 
   if (matches.length === 0 && today.length > 0) {
-    mode = 'TODAY';
+    mode = "TODAY";
     matches = today;
   }
 
   if (matches.length === 0 && next24h.length > 0) {
-    mode = 'NEXT_24H';
+    mode = "NEXT_24H";
     matches = next24h;
   }
 
