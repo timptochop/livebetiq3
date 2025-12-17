@@ -107,8 +107,16 @@ const labelPriority = {
   "SET 3": 4,
   "SET 2": 5,
   "SET 1": 6,
-  UPCOMING: 7,
+  LIVE: 7,
+  UPCOMING: 8,
 };
+
+function normalizeSetNum(maybeSetNum) {
+  const n = Number(maybeSetNum);
+  if (!Number.isFinite(n)) return null;
+  if (n < 1 || n > 5) return null;
+  return n;
+}
 
 export default function LiveTennis({
   onLiveCount = () => {},
@@ -152,6 +160,7 @@ export default function LiveTennis({
           : Array.isArray(m.player)
           ? m.player
           : [];
+
         const p1 = players[0] || {};
         const p2 = players[1] || {};
         const name1 = p1.name || p1["@name"] || "";
@@ -159,11 +168,19 @@ export default function LiveTennis({
         const date = m.date || m["@date"] || "";
         const time = m.time || m["@time"] || "";
         const status = m.status || m["@status"] || "";
-        const setNum = currentSetFromScores(players);
 
         const matchId = m.id || m["@id"] || `${date}-${time}-${name1}-${name2}-${idx}`;
 
         const odds = oddsIndex && matchId ? oddsIndex[matchId] : null;
+
+        // --- Canonical setNum source order:
+        // 1) API-normalized setNum (if present) 2) XML/@setNum 3) infer from scores 4) null
+        const apiSetNum = normalizeSetNum(m.setNum);
+        const xmlSetNum = normalizeSetNum(m["@setNum"]);
+        const inferred = currentSetFromScores(players);
+        const inferredSetNum = inferred > 0 ? inferred : null;
+
+        const setNum = apiSetNum ?? xmlSetNum ?? inferredSetNum ?? null;
 
         let favOdds = null;
         let favImplied = null;
@@ -197,7 +214,7 @@ export default function LiveTennis({
           favName: odds && odds.favName ? odds.favName : null,
         };
 
-        const ai = analyzeMatch({ ...m, odds }, extraFeatures) || {};
+        const ai = analyzeMatch({ ...m, odds, setNum }, extraFeatures) || {};
 
         let startAt = null;
         let startInMs = null;
@@ -234,7 +251,6 @@ export default function LiveTennis({
       ingestBatch(enriched);
 
       await Promise.allSettled(baseArr.map((m) => maybeLogResult(m)));
-
       trySettleFinished(baseArr);
     } catch (e) {
       setRows([]);
@@ -254,6 +270,7 @@ export default function LiveTennis({
     const items = rows.map((m) => {
       const rawStatus = m.status || "";
       const live = isLiveLike(rawStatus) || (!!rawStatus && !isUpcomingLike(rawStatus) && !isFinishedLike(rawStatus));
+
       let label = m.ai?.label || null;
 
       const aiMarkedUpcoming =
@@ -262,20 +279,22 @@ export default function LiveTennis({
         label === "SOON" ||
         label === "PENDING";
 
+      // --- Canonical UI label fallback (no "SET 1" unless setNum exists)
       if (!live && isUpcomingLike(rawStatus)) {
         label = "UPCOMING";
       } else if (live) {
         if (!label || aiMarkedUpcoming) {
-          label = `SET ${m.setNum || 1}`;
+          label = m.setNum != null ? `SET ${m.setNum}` : "LIVE";
         }
       } else {
         if (!label || label === "PENDING") label = "UPCOMING";
       }
 
+      // Normalize any SET X that might come from AI
       if (label && label.startsWith && label.startsWith("SET")) {
         const parts = label.split(/\s+/);
-        const n = Number(parts[1]) || m.setNum || 1;
-        label = `SET ${n}`;
+        const n = normalizeSetNum(parts[1]) ?? m.setNum;
+        label = n != null ? `SET ${n}` : "LIVE";
       }
 
       return {
@@ -294,7 +313,10 @@ export default function LiveTennis({
       }
 
       if (a.live && b.live) {
-        return (b.setNum || 0) - (a.setNum || 0);
+        // If both live and setNum exists, higher set first; otherwise stable
+        const ax = a.setNum || 0;
+        const bx = b.setNum || 0;
+        return bx - ax;
       }
 
       if (a.uiLabel === "UPCOMING" && b.uiLabel === "UPCOMING") {
@@ -386,6 +408,9 @@ export default function LiveTennis({
       bg = "#e53935";
     } else if (label && label.startsWith("SET")) {
       bg = "#6e42c1";
+    } else if (label === "LIVE") {
+      bg = "#6e42c1";
+      text = "LIVE";
     } else if (label === "UPCOMING") {
       bg = "#3a4452";
       text = "STARTS SOON";
