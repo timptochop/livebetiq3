@@ -1,1 +1,1 @@
-export { default } from '../tennis-live.js';
+export { default } from "../tennis-live.js";

@@ -1,153 +1,159 @@
-// api/tennis-live.js
 import { fetchLiveTennis } from "./_lib/goalServeLiveAPI.js";
 
-function toInt(v, d = 0) {
-  const n = Number.parseInt(String(v ?? "").trim(), 10);
-  return Number.isFinite(n) ? n : d;
-}
-
-function isLiveMatch(m) {
-  return String(m?.status ?? m?.["@status"] ?? "") === "1";
-}
-
-function scoreInt(v) {
-  const x = Number.parseInt(String(v ?? "").trim(), 10);
-  return Number.isFinite(x) ? x : null;
-}
-
-function calcSetNumFromPlayers(players) {
-  const p = Array.isArray(players) ? players : [];
-  const a = p[0] || {};
-  const b = p[1] || {};
-
-  const aS = [a.s1, a.s2, a.s3, a.s4, a.s5].map(scoreInt);
-  const bS = [b.s1, b.s2, b.s3, b.s4, b.s5].map(scoreInt);
-
-  let k = 0;
-  for (let i = 0; i < 5; i++) {
-    if (aS[i] !== null || bS[i] !== null) k = i + 1;
-  }
-  return k || null;
-}
-
-function parseDateTime(m, tzOffsetMinutes) {
-  const dateStr = String(m?.date || "").trim();
-  const timeStr = String(m?.time || "00:00").trim();
-
-  const d = dateStr.split(".");
-  if (d.length !== 3) return null;
-
-  const t = timeStr.split(":");
-  const year = toInt(d[2]);
-  const month = toInt(d[1]) - 1;
-  const day = toInt(d[0]);
-  const hour = toInt(t[0]);
-  const minute = toInt(t[1]);
-
-  if (!Number.isFinite(year) || year < 2000) return null;
-  if (!Number.isFinite(month) || month < 0 || month > 11) return null;
-  if (!Number.isFinite(day) || day < 1 || day > 31) return null;
-
-  const utc = Date.UTC(year, month, day, hour, minute);
-  if (!Number.isFinite(utc)) return null;
-
-  return new Date(utc - tzOffsetMinutes * 60000);
-}
-
-function normalizeMatch(m) {
-  const players = Array.isArray(m?.players) ? m.players : Array.isArray(m?.player) ? m.player : [];
-  const setNum = calcSetNumFromPlayers(players);
-  const live = isLiveMatch(m);
-
-  return {
-    ...m,
-    players,
-    isLive: live,
-    setNum, // null if truly unknown, else 1..5
-    statusRaw: String(m?.status ?? m?.["@status"] ?? ""),
-  };
-}
-
-export default async function handler(req, res) {
+function withCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  if (req.method === "OPTIONS") return res.status(200).end();
+}
 
-  const tzOffsetMinutes = toInt(req.query.tzOffsetMinutes, 0);
-  const now = new Date();
-  const todayKey = now.toISOString().slice(0, 10);
+function parseTzOffsetMinutes(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(-840, Math.min(840, Math.trunc(n)));
+}
 
-  let raw;
+function parseDateTimeToMs(dateStr, timeStr, tzOffsetMinutes) {
+  // GoalServe: date "DD.MM.YYYY", time "HH:MM"
+  if (!dateStr || !timeStr) return null;
+  const m = String(dateStr).match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  const t = String(timeStr).match(/^(\d{2}):(\d{2})$/);
+  if (!m || !t) return null;
+
+  const dd = Number(m[1]);
+  const mm = Number(m[2]);
+  const yyyy = Number(m[3]);
+  const HH = Number(t[1]);
+  const MM = Number(t[2]);
+
+  if (![dd, mm, yyyy, HH, MM].every(Number.isFinite)) return null;
+
+  // Interpret the match time as "local time at tzOffsetMinutes"
+  // then convert to UTC ms.
+  const utcMs = Date.UTC(yyyy, mm - 1, dd, HH, MM) - tzOffsetMinutes * 60 * 1000;
+  return Number.isFinite(utcMs) ? utcMs : null;
+}
+
+function dateKeyFromNow(tzOffsetMinutes, nowMs = Date.now()) {
+  const localMs = nowMs + tzOffsetMinutes * 60 * 1000;
+  const d = new Date(localMs);
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function dateKeyFromMs(ms, tzOffsetMinutes) {
+  const localMs = ms + tzOffsetMinutes * 60 * 1000;
+  const d = new Date(localMs);
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+export default async function handler(req, res) {
+  withCors(res);
+
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
+  const tzOffsetMinutes = parseTzOffsetMinutes(req.query?.tzOffsetMinutes ?? 0);
+  const debug = String(req.query?.debug ?? "") === "1";
+
+  const startedAt = Date.now();
+  const nowISO = new Date().toISOString();
+  const todayKey = dateKeyFromNow(tzOffsetMinutes);
+
   try {
-    raw = await fetchLiveTennis();
-  } catch (e) {
-    return res.status(200).json({
-      ok: false,
-      mode: "ERROR",
-      matches: [],
-      meta: {
-        now: now.toISOString(),
+    if (debug) {
+      console.log("[tennis-live] debug=1 request", {
+        nowISO,
         tzOffsetMinutes,
         todayKey,
-        error: String(e?.message || e || "fetchLiveTennis failed"),
-      },
+        query: req.query,
+      });
+    }
+
+    const raw = await fetchLiveTennis();
+
+    const matches = Array.isArray(raw?.matches) ? raw.matches : [];
+    const normalized = matches.map((m) => {
+      const startMs = parseDateTimeToMs(m?.date, m?.time, tzOffsetMinutes);
+      const startKey = startMs ? dateKeyFromMs(startMs, tzOffsetMinutes) : null;
+
+      const statusRaw = String(m?.status ?? "");
+      const isLive = statusRaw === "1" || m?.isLive === true;
+
+      return {
+        ...m,
+        isLive,
+        startMs,
+        startKey,
+      };
     });
-  }
 
-  const allMatchesRaw = Array.isArray(raw?.matches) ? raw.matches : [];
-  const allMatches = allMatchesRaw.map(normalizeMatch);
+    const live = normalized.filter((m) => m.isLive === true);
+    const today = normalized.filter((m) => m.startKey === todayKey);
+    const next24h = normalized.filter((m) => {
+      if (!Number.isFinite(m.startMs)) return false;
+      return m.startMs >= Date.now() && m.startMs <= Date.now() + 24 * 60 * 60 * 1000;
+    });
 
-  const live = [];
-  const today = [];
-  const next24h = [];
+    const mode = live.length ? "LIVE" : today.length ? "TODAY" : next24h.length ? "NEXT_24H" : "LIVE";
+    const out = mode === "LIVE" ? live : mode === "TODAY" ? today : next24h;
 
-  for (const m of allMatches) {
-    if (m.isLive) {
-      live.push(m);
-      continue;
-    }
-
-    const dt = parseDateTime(m, tzOffsetMinutes);
-    if (!dt) continue;
-
-    const diffMs = dt.getTime() - now.getTime();
-    const diffH = diffMs / 3600000;
-
-    if (dt.toISOString().slice(0, 10) === todayKey) {
-      today.push(m);
-    } else if (diffH > 0 && diffH <= 24) {
-      next24h.push(m);
-    }
-  }
-
-  let mode = "LIVE";
-  let matches = live;
-
-  if (matches.length === 0 && today.length > 0) {
-    mode = "TODAY";
-    matches = today;
-  }
-
-  if (matches.length === 0 && next24h.length > 0) {
-    mode = "NEXT_24H";
-    matches = next24h;
-  }
-
-  return res.status(200).json({
-    ok: true,
-    mode,
-    matches,
-    meta: {
-      now: now.toISOString(),
-      tzOffsetMinutes,
-      todayKey,
-      counts: {
+    if (debug) {
+      console.log("[tennis-live] upstream + counts", {
+        upstreamMatches: matches.length,
+        normalized: normalized.length,
         live: live.length,
         today: today.length,
         next24h: next24h.length,
-        total: allMatches.length,
+        mode,
+        durationMs: Date.now() - startedAt,
+      });
+      if (!matches.length) {
+        console.log("[tennis-live] WARNING: upstream returned 0 matches");
+      }
+    }
+
+    return res.status(200).json({
+      ok: true,
+      mode,
+      matches: out,
+      meta: {
+        now: nowISO,
+        tzOffsetMinutes,
+        todayKey,
+        counts: {
+          live: live.length,
+          today: today.length,
+          next24h: next24h.length,
+          total: normalized.length,
+        },
+        ...(debug
+          ? {
+              debug: {
+                upstreamMatches: matches.length,
+                durationMs: Date.now() - startedAt,
+              },
+            }
+          : {}),
       },
-    },
-  });
+    });
+  } catch (err) {
+    console.error("[tennis-live] ERROR", err);
+    return res.status(200).json({
+      ok: false,
+      mode: "LIVE",
+      matches: [],
+      meta: {
+        now: nowISO,
+        tzOffsetMinutes,
+        todayKey,
+        error: String(err?.message || err),
+      },
+    });
+  }
 }
