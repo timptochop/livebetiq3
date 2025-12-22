@@ -57,10 +57,44 @@ function makeDayKeyFromLocalMs(localMs) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function hasAnyScore(playersArr) {
+  const fields = ["s1", "s2", "s3", "s4", "s5"];
+  for (const p of playersArr || []) {
+    for (const f of fields) {
+      const v = p?.[f];
+      // GoalServe sometimes uses "" for empty; treat non-empty as a live signal.
+      if (v != null && String(v).trim() !== "") return true;
+    }
+  }
+  return false;
+}
+
+function isLiveFromStatus(statusStr) {
+  const s = String(statusStr || "").trim().toLowerCase();
+  // IMPORTANT:
+  // We explicitly DO NOT treat "1" as live because it can represent scheduled/fixture.
+  // Keep this list conservative; live is only asserted on strong signals.
+  const LIVE_TOKENS = new Set([
+    "2",
+    "3",
+    "live",
+    "inplay",
+    "in_play",
+    "in-play",
+    "playing",
+    "started",
+    "inprogress",
+    "in_progress",
+    "in-progress",
+  ]);
+  return LIVE_TOKENS.has(s);
+}
+
 function normalizeMatch(raw) {
   const r = raw || {};
   const statusRaw = String(r.status ?? "").trim();
-  const isLive = statusRaw === "1" || String(r.statusRaw ?? "").trim() === "1" || r.isLive === true;
+  const statusRaw2 = String(r.statusRaw ?? "").trim();
+  const statusCombined = statusRaw2 || statusRaw || "";
 
   const playersArr = Array.isArray(r.players) ? r.players : [];
   const p1 = playersArr[0]?.name || r.home || r.player1 || "";
@@ -72,16 +106,32 @@ function normalizeMatch(raw) {
   const setNum =
     r.setNum == null ? null : Number.isFinite(Number(r.setNum)) ? Number(r.setNum) : null;
 
+  // Live heuristic:
+  // 1) Any non-empty score in players -> live
+  // 2) Otherwise, live only if status is in known live tokens (NOT "1")
+  // 3) Never default to live just because status === "1"
+  const scoresPresent = hasAnyScore(playersArr);
+  const liveByStatus = isLiveFromStatus(statusCombined);
+  const isLive = scoresPresent || liveByStatus || r.isLive === true;
+
   return {
     id: r.id ?? r.matchId ?? `${p1}__${p2}__${dateStr}__${timeStr}`.replace(/\s+/g, "_"),
     date: dateStr,
     time: timeStr,
     status: statusRaw || null,
-    statusRaw: String(r.statusRaw ?? statusRaw ?? "").trim() || null,
+    statusRaw: statusCombined || null,
     categoryId: r.categoryId ?? null,
     categoryName: r.categoryName ?? r.tournament ?? null,
     players: playersArr.length
-      ? playersArr.map((p) => ({ id: p?.id ?? null, name: p?.name ?? "" }))
+      ? playersArr.map((p) => ({
+          id: p?.id ?? null,
+          name: p?.name ?? "",
+          s1: p?.s1 ?? null,
+          s2: p?.s2 ?? null,
+          s3: p?.s3 ?? null,
+          s4: p?.s4 ?? null,
+          s5: p?.s5 ?? null,
+        }))
       : [{ id: null, name: p1 }, { id: null, name: p2 }],
     isLive,
     setNum,
@@ -90,6 +140,10 @@ function normalizeMatch(raw) {
     s3: r.s3 ?? null,
     s4: r.s4 ?? null,
     s5: r.s5 ?? null,
+
+    // Internal helpers (not used by UI directly)
+    _scoresPresent: scoresPresent,
+    _liveByStatus: liveByStatus,
   };
 }
 
@@ -148,7 +202,9 @@ export default async function handler(req, res) {
   }
 
   const rawMatches = Array.isArray(raw?.matches) ? raw.matches : Array.isArray(raw) ? raw : [];
-  const normalized = rawMatches.map(normalizeMatch).map((m) => withStartMeta(m, tzOffsetMinutes, nowUtcMs));
+  const normalized = rawMatches
+    .map(normalizeMatch)
+    .map((m) => withStartMeta(m, tzOffsetMinutes, nowUtcMs));
 
   // Local day key for "today"
   const nowLocalMs = nowUtcMs + tzOffsetMinutes * 60 * 1000;
@@ -226,9 +282,18 @@ export default async function handler(req, res) {
 
   if (debug) {
     payload.debug = {
-      sample: normalized.slice(0, 3),
+      sample: normalized.slice(0, 5).map((m) => ({
+        id: m.id,
+        date: m.date,
+        time: m.time,
+        statusRaw: m.statusRaw,
+        isLive: m.isLive,
+        scoresPresent: m._scoresPresent,
+        liveByStatus: m._liveByStatus,
+        startsInMs: m.startsInMs,
+      })),
       note:
-        "If counts.total > 0 but LIVE/TODAY/NEXT_24H are 0, UPCOMING_7D should still show future matches.",
+        "Live heuristic: scoresPresent OR status in known live tokens. Status '1' is NOT treated as live.",
     };
   }
 
