@@ -36,15 +36,11 @@ const isUpcomingLike = (s) => {
   );
 };
 
-const isLiveLike = (s) => {
+// IMPORTANT: Do NOT treat status "1" as LIVE.
+// GoalServe frequently uses status "1" for future fixtures.
+const isLiveToken = (s) => {
   const x = toLower(s);
-  return (
-    x === "1" ||
-    x === "live" ||
-    x === "in progress" ||
-    x === "playing" ||
-    x === "started"
-  );
+  return x === "live" || x === "in progress" || x === "playing" || x === "started";
 };
 
 const toInt = (v) => {
@@ -128,9 +124,18 @@ export default function LiveTennis({
 
       const keep = baseArr.filter((m) => !isFinishedLike(m.status || m["@status"]));
 
+      // Only fetch odds when we have at least one match that is actually LIVE by evidence:
+      // - scores present (setNum > 0) OR
+      // - strong live token ("live", "in progress", etc.)
       const hasLive = keep.some((m) => {
+        const players = Array.isArray(m.players)
+          ? m.players
+          : Array.isArray(m.player)
+          ? m.player
+          : [];
+        const setNum = currentSetFromScores(players);
         const raw = m.status || m["@status"] || "";
-        return isLiveLike(raw);
+        return setNum > 0 || isLiveToken(raw);
       });
 
       let oddsRaw = null;
@@ -204,7 +209,7 @@ export default function LiveTennis({
         let startInMs = null;
         let startInText = null;
 
-        if (!isLiveLike(status) && isUpcomingLike(status)) {
+        if (!isLiveToken(status) && isUpcomingLike(status)) {
           const dt = parseStart(date, time);
           if (dt) {
             startAt = dt.getTime();
@@ -254,8 +259,13 @@ export default function LiveTennis({
   const list = useMemo(() => {
     const items = rows.map((m) => {
       const rawStatus = m.status || "";
-      const live =
-        isLiveLike(rawStatus) || (!!rawStatus && !isUpcomingLike(rawStatus) && !isFinishedLike(rawStatus));
+
+      // Evidence-based LIVE:
+      // 1) scores present (setNum > 0)
+      // 2) strong live token (not "1")
+      // Anything else is UPCOMING/OTHER.
+      const scoresPresent = (m.setNum || 0) > 0;
+      const live = scoresPresent || isLiveToken(rawStatus);
 
       let label = m.ai?.label || null;
 
@@ -268,7 +278,6 @@ export default function LiveTennis({
       if (!live && isUpcomingLike(rawStatus)) {
         label = "UPCOMING";
       } else if (live) {
-        // KEY FIX: If live but we don't have set scores yet, show LIVE (not SET 1).
         if (!label || aiMarkedUpcoming) {
           if ((m.setNum || 0) > 0) label = `SET ${m.setNum}`;
           else label = "LIVE";
@@ -294,7 +303,6 @@ export default function LiveTennis({
     return items.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
 
-      // Keep SET 3/2/1 order stable
       if (a.order >= 5 && a.order <= 7 && b.order >= 5 && b.order <= 7) {
         return a.order - b.order;
       }
