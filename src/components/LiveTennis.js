@@ -68,31 +68,42 @@ function currentSetFromScores(players) {
   return k || 0;
 }
 
-/**
- * FIX: GoalServe uses DD.MM.YYYY. Browser Date() does NOT parse it reliably.
- * We convert "31.12.2025" + "07:00" -> "2025-12-31T07:00:00"
- */
+// FIX: GoalServe dates are often DD.MM.YYYY (e.g., 31.12.2025). Native Date parsing fails on that.
 function parseStart(dateStr, timeStr) {
   const d = String(dateStr || "").trim();
   const t = String(timeStr || "").trim();
   if (!d || !t) return null;
 
-  // If already ISO-like, try directly
+  // Try ISO-ish first (safe if it already arrives as YYYY-MM-DD)
   const dtA = new Date(`${d}T${t}`);
   if (Number.isFinite(dtA.getTime())) return dtA;
 
-  // GoalServe format: DD.MM.YYYY
+  // DD.MM.YYYY + HH:MM (GoalServe typical)
   const m = d.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (m) {
-    const dd = String(m[1]).padStart(2, "0");
-    const mm = String(m[2]).padStart(2, "0");
-    const yy = String(m[3]);
-    const iso = `${yy}-${mm}-${dd}T${t}:00`;
-    const dt = new Date(iso);
-    return Number.isFinite(dt.getTime()) ? dt : null;
+  const tm = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (m && tm) {
+    const day = Number(m[1]);
+    const mon = Number(m[2]);
+    const year = Number(m[3]);
+    const hh = Number(tm[1]);
+    const mm = Number(tm[2]);
+    const ss = tm[3] ? Number(tm[3]) : 0;
+
+    if (
+      Number.isFinite(day) &&
+      Number.isFinite(mon) &&
+      Number.isFinite(year) &&
+      Number.isFinite(hh) &&
+      Number.isFinite(mm) &&
+      Number.isFinite(ss)
+    ) {
+      // Interpret as local time (browser/user timezone). That's what we want for "starts in".
+      const dt = new Date(year, mon - 1, day, hh, mm, ss, 0);
+      if (Number.isFinite(dt.getTime())) return dt;
+    }
   }
 
-  // Fallback
+  // Last chance: "DD.MM.YYYY HH:MM" style
   const dtB = new Date(`${d} ${t}`);
   return Number.isFinite(dtB.getTime()) ? dtB : null;
 }
@@ -217,17 +228,16 @@ export default function LiveTennis({
 
         const ai = analyzeMatch({ ...m, odds }, extraFeatures) || {};
 
+        // FIX: compute startIn for any non-live match when we have date+time (GoalServe gives them).
         let startAt = null;
         let startInMs = null;
         let startInText = null;
 
-        if (!isLiveLike(status) && isUpcomingLike(status)) {
-          const dt = parseStart(date, time);
-          if (dt) {
-            startAt = dt.getTime();
-            startInMs = startAt - now;
-            startInText = formatDiff(startInMs);
-          }
+        const dt = parseStart(date, time);
+        if (dt) {
+          startAt = dt.getTime();
+          startInMs = startAt - now;
+          startInText = formatDiff(startInMs);
         }
 
         return {
@@ -285,6 +295,7 @@ export default function LiveTennis({
       if (!live && isUpcomingLike(rawStatus)) {
         label = "UPCOMING";
       } else if (live) {
+        // If live but we don't have set scores yet, show LIVE (not SET 1).
         if (!label || aiMarkedUpcoming) {
           if ((m.setNum || 0) > 0) label = `SET ${m.setNum}`;
           else label = "LIVE";
@@ -310,6 +321,7 @@ export default function LiveTennis({
     return items.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
 
+      // Keep SET 3/2/1 order stable
       if (a.order >= 5 && a.order <= 7 && b.order >= 5 && b.order <= 7) {
         return a.order - b.order;
       }
@@ -344,6 +356,7 @@ export default function LiveTennis({
       if (isPred && cur !== prev) {
         if (cur === "SAFE" && audioOn) {
           try {
+            // eslint-disable-next-line no-new
             new Audio("/notify.mp3").play().catch(() => {});
           } catch {
             // ignore
