@@ -1,301 +1,260 @@
-// api/tennis-live.js
-import fetchLiveTennis from "./_lib/goalServeLiveAPI.js";
+import { parseStringPromise } from "xml2js";
+import zlib from "zlib";
 
-function cors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+export const config = {
+  api: { bodyParser: false },
+};
+
+function asArr(x) {
+  if (!x) return [];
+  return Array.isArray(x) ? x : [x];
 }
 
-function clampInt(n, min, max, fallback = 0) {
-  const x = Number.parseInt(String(n), 10);
-  if (!Number.isFinite(x)) return fallback;
-  return Math.min(max, Math.max(min, x));
+function pickAttr(node, key, fallback = "") {
+  if (!node) return fallback;
+  if (node[key] != null) return node[key];
+  if (node.$ && node.$[key] != null) return node.$[key];
+  return fallback;
 }
 
-// GoalServe date often: "DD.MM.YYYY", time often: "HH:MM"
-function parseGoalServeDateTimeToUtcMs(dateStr, timeStr) {
-  const d = String(dateStr || "").trim();
-  const t = String(timeStr || "").trim();
-
-  const m = d.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+function parseDDMMYYYY(dateStr) {
+  const s = String(dateStr || "").trim();
+  const m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
   if (!m) return null;
-
   const dd = Number(m[1]);
   const mm = Number(m[2]);
-  const yyyy = Number(m[3]);
+  const yy = Number(m[3]);
+  if (!dd || !mm || !yy) return null;
+  return { yy, mm, dd };
+}
 
-  let hh = 0;
-  let min = 0;
+function parseHHMM(timeStr) {
+  const s = String(timeStr || "").trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mi = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mi)) return null;
+  return { hh, mi };
+}
 
-  const tm = t.match(/^(\d{1,2}):(\d{2})$/);
-  if (tm) {
-    hh = Number(tm[1]);
-    min = Number(tm[2]);
+function toIsoLocal(yy, mm, dd, hh, mi) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${yy}-${pad(mm)}-${pad(dd)}T${pad(hh)}:${pad(mi)}:00`;
+}
+
+function dayKeyFromLocalMs(ms) {
+  const d = new Date(ms);
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+function isScoresPresent(players) {
+  const p = asArr(players);
+  const a = p[0] || {};
+  const b = p[1] || {};
+  const keys = ["s1", "s2", "s3", "s4", "s5", "score", "game_score", "total"];
+  const has = (obj) =>
+    keys.some((k) => {
+      const v = pickAttr(obj, k, "");
+      return String(v || "").trim() !== "";
+    });
+  return has(a) || has(b);
+}
+
+function isLiveToken(statusRaw) {
+  const s = String(statusRaw ?? "").trim().toLowerCase();
+  return s === "live" || s === "in progress" || s === "playing" || s === "started";
+}
+
+function normalizeMatch(matchNode, categoryNode) {
+  const id = pickAttr(matchNode, "id", "");
+  const date = pickAttr(matchNode, "date", "");
+  const time = pickAttr(matchNode, "time", "");
+  const status = pickAttr(matchNode, "status", "");
+  const statusRaw = pickAttr(matchNode, "statusRaw", status);
+
+  const categoryId = pickAttr(categoryNode, "id", "");
+  const categoryName = pickAttr(categoryNode, "name", "");
+
+  const players = asArr(matchNode.player || matchNode.players || []);
+  const p = players.map((pl) => ({
+    id: pickAttr(pl, "id", ""),
+    name: pickAttr(pl, "name", ""),
+    s1: pickAttr(pl, "s1", ""),
+    s2: pickAttr(pl, "s2", ""),
+    s3: pickAttr(pl, "s3", ""),
+    s4: pickAttr(pl, "s4", ""),
+    s5: pickAttr(pl, "s5", ""),
+    game_score: pickAttr(pl, "game_score", ""),
+    total: pickAttr(pl, "total", ""),
+  }));
+
+  let startLocalMs = null;
+  const d = parseDDMMYYYY(date);
+  const t = parseHHMM(time);
+  if (d && t) {
+    const iso = toIsoLocal(d.yy, d.mm, d.dd, t.hh, t.mi);
+    const dt = new Date(iso);
+    if (Number.isFinite(dt.getTime())) startLocalMs = dt.getTime();
   }
 
-  if (
-    !Number.isFinite(dd) ||
-    !Number.isFinite(mm) ||
-    !Number.isFinite(yyyy) ||
-    !Number.isFinite(hh) ||
-    !Number.isFinite(min)
-  ) {
-    return null;
-  }
+  const scoresPresent = isScoresPresent(p);
+  const liveByToken = isLiveToken(statusRaw);
+  const liveByNumeric = String(statusRaw).trim() === "1";
 
-  // Construct as UTC (so we can apply tzOffsetMinutes consistently)
-  const utcMs = Date.UTC(yyyy, mm - 1, dd, hh, min, 0, 0);
-  return Number.isFinite(utcMs) ? utcMs : null;
-}
-
-function makeDayKeyFromLocalMs(localMs) {
-  const dt = new Date(localMs);
-  const yyyy = dt.getUTCFullYear();
-  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(dt.getUTCDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function hasAnyScore(playersArr) {
-  const fields = ["s1", "s2", "s3", "s4", "s5"];
-  for (const p of playersArr || []) {
-    for (const f of fields) {
-      const v = p?.[f];
-      // GoalServe sometimes uses "" for empty; treat non-empty as a live signal.
-      if (v != null && String(v).trim() !== "") return true;
-    }
-  }
-  return false;
-}
-
-function isLiveFromStatus(statusStr) {
-  const s = String(statusStr || "").trim().toLowerCase();
-  // IMPORTANT:
-  // We explicitly DO NOT treat "1" as live because it can represent scheduled/fixture.
-  // Keep this list conservative; live is only asserted on strong signals.
-  const LIVE_TOKENS = new Set([
-    "2",
-    "3",
-    "live",
-    "inplay",
-    "in_play",
-    "in-play",
-    "playing",
-    "started",
-    "inprogress",
-    "in_progress",
-    "in-progress",
-  ]);
-  return LIVE_TOKENS.has(s);
-}
-
-function normalizeMatch(raw) {
-  const r = raw || {};
-  const statusRaw = String(r.status ?? "").trim();
-  const statusRaw2 = String(r.statusRaw ?? "").trim();
-  const statusCombined = statusRaw2 || statusRaw || "";
-
-  const playersArr = Array.isArray(r.players) ? r.players : [];
-  const p1 = playersArr[0]?.name || r.home || r.player1 || "";
-  const p2 = playersArr[1]?.name || r.away || r.player2 || "";
-
-  const dateStr = r.date || r.matchDate || r.day || "";
-  const timeStr = r.time || r.matchTime || "";
-
-  const setNum =
-    r.setNum == null ? null : Number.isFinite(Number(r.setNum)) ? Number(r.setNum) : null;
-
-  // Live heuristic:
-  // 1) Any non-empty score in players -> live
-  // 2) Otherwise, live only if status is in known live tokens (NOT "1")
-  // 3) Never default to live just because status === "1"
-  const scoresPresent = hasAnyScore(playersArr);
-  const liveByStatus = isLiveFromStatus(statusCombined);
-  const isLive = scoresPresent || liveByStatus || r.isLive === true;
+  // IMPORTANT: statusRaw === "1" is NOT trusted as live.
+  const live = scoresPresent || liveByToken;
 
   return {
-    id: r.id ?? r.matchId ?? `${p1}__${p2}__${dateStr}__${timeStr}`.replace(/\s+/g, "_"),
-    date: dateStr,
-    time: timeStr,
-    status: statusRaw || null,
-    statusRaw: statusCombined || null,
-    categoryId: r.categoryId ?? null,
-    categoryName: r.categoryName ?? r.tournament ?? null,
-    players: playersArr.length
-      ? playersArr.map((p) => ({
-          id: p?.id ?? null,
-          name: p?.name ?? "",
-          s1: p?.s1 ?? null,
-          s2: p?.s2 ?? null,
-          s3: p?.s3 ?? null,
-          s4: p?.s4 ?? null,
-          s5: p?.s5 ?? null,
-        }))
-      : [{ id: null, name: p1 }, { id: null, name: p2 }],
-    isLive,
-    setNum,
-    s1: r.s1 ?? null,
-    s2: r.s2 ?? null,
-    s3: r.s3 ?? null,
-    s4: r.s4 ?? null,
-    s5: r.s5 ?? null,
-
-    // Internal helpers (not used by UI directly)
+    id: id || `${date}-${time}-${categoryId}-${Math.random().toString(16).slice(2)}`,
+    date,
+    time,
+    status,
+    statusRaw: String(statusRaw),
+    categoryId,
+    categoryName,
+    players: p,
     _scoresPresent: scoresPresent,
-    _liveByStatus: liveByStatus,
+    _liveByToken: liveByToken,
+    _liveByNumeric: liveByNumeric,
+    _live: live,
+    _startLocalMs: startLocalMs,
+    _dayKeyLocal: startLocalMs ? dayKeyFromLocalMs(startLocalMs) : null,
   };
 }
 
-function withStartMeta(m, tzOffsetMinutes, nowUtcMs) {
-  const startUtcMs = parseGoalServeDateTimeToUtcMs(m.date, m.time);
-  if (!Number.isFinite(startUtcMs)) {
-    return {
-      ...m,
-      startUtcMs: null,
-      startLocalMs: null,
-      startsInMs: null,
-      dayKeyLocal: null,
-    };
-  }
+function pickMode(matches, nowLocalMs) {
+  const todayKey = dayKeyFromLocalMs(nowLocalMs);
+  const in24h = nowLocalMs + 24 * 60 * 60 * 1000;
 
-  const startLocalMs = startUtcMs + tzOffsetMinutes * 60 * 1000;
-  const nowLocalMs = nowUtcMs + tzOffsetMinutes * 60 * 1000;
+  const live = matches.filter((m) => m._live);
+  if (live.length) return { mode: "LIVE", items: live };
 
-  return {
-    ...m,
-    startUtcMs,
-    startLocalMs,
-    startsInMs: startUtcMs - nowUtcMs,
-    dayKeyLocal: makeDayKeyFromLocalMs(startLocalMs),
-    _nowLocalMs: nowLocalMs, // internal debug helper
-  };
+  const today = matches.filter((m) => m._dayKeyLocal === todayKey);
+  if (today.length) return { mode: "TODAY", items: today };
+
+  const next24 = matches.filter((m) => {
+    if (!Number.isFinite(m._startLocalMs)) return false;
+    return m._startLocalMs >= nowLocalMs && m._startLocalMs <= in24h;
+  });
+  if (next24.length) return { mode: "NEXT_24H", items: next24 };
+
+  return { mode: matches.length ? "UPCOMING" : "EMPTY", items: matches };
+}
+
+async function fetchGoalServeXml(url) {
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": "livebetiq3/1.0",
+      "Accept-Encoding": "gzip, deflate",
+    },
+  });
+
+  const buf = Buffer.from(await res.arrayBuffer());
+  const enc = (res.headers.get("content-encoding") || "").toLowerCase();
+
+  let out = buf;
+  if (enc.includes("gzip")) out = zlib.gunzipSync(buf);
+  else if (enc.includes("deflate")) out = zlib.inflateSync(buf);
+
+  const text = out.toString("utf8");
+  return { ok: res.ok, status: res.status, headers: Object.fromEntries(res.headers), text };
 }
 
 export default async function handler(req, res) {
-  cors(res);
-
-  if (req.method === "OPTIONS") {
-    return res.status(200).send("ok");
-  }
-
-  if (req.method !== "GET") {
-    return res.status(405).json({ ok: false, error: "Method Not Allowed" });
-  }
-
-  const tzOffsetMinutes = clampInt(req.query.tzOffsetMinutes, -840, 840, 0);
-  const debug = String(req.query.debug || "").trim() === "1";
-  const nowUtcMs = Date.now();
-  const nowIso = new Date(nowUtcMs).toISOString();
-
-  let raw;
   try {
-    raw = await fetchLiveTennis();
-  } catch (e) {
-    return res.status(200).json({
-      ok: false,
-      mode: "ERROR",
-      matches: [],
-      error: "fetchLiveTennis_failed",
-      meta: { now: nowIso, tzOffsetMinutes, message: String(e?.message || e) },
+    const debug = String(req.query?.debug || "") === "1";
+
+    const token = process.env.GOALSERVE_TOKEN || process.env.GS_TOKEN || "";
+    if (!token) {
+      return res.status(500).json({
+        ok: false,
+        error: "Missing GOALSERVE_TOKEN (or GS_TOKEN) env var on Vercel.",
+      });
+    }
+
+    const url = `https://www.goalserve.com/getfeed/${token}/tennis_scores/home`;
+
+    const nowLocalMs = Date.now();
+    const raw = await fetchGoalServeXml(url);
+    const firstLine = (raw.text || "").trim().slice(0, 160);
+
+    if (!raw.ok) {
+      return res.status(502).json({
+        ok: false,
+        error: "Upstream GoalServe not OK",
+        status: raw.status,
+        firstLine,
+      });
+    }
+
+    const xmlObj = await parseStringPromise(raw.text, {
+      explicitArray: false,
+      mergeAttrs: true,
+      attrkey: "$",
+      charkey: "_",
+      trim: true,
     });
-  }
 
-  const rawMatches = Array.isArray(raw?.matches) ? raw.matches : Array.isArray(raw) ? raw : [];
-  const normalized = rawMatches
-    .map(normalizeMatch)
-    .map((m) => withStartMeta(m, tzOffsetMinutes, nowUtcMs));
+    const scores = xmlObj?.scores || xmlObj?.score || xmlObj;
+    const categories = asArr(scores?.category);
 
-  // Local day key for "today"
-  const nowLocalMs = nowUtcMs + tzOffsetMinutes * 60 * 1000;
-  const todayKey = makeDayKeyFromLocalMs(nowLocalMs);
+    const all = [];
+    for (const cat of categories) {
+      const matches = asArr(cat?.match);
+      for (const m of matches) all.push(normalizeMatch(m, cat));
+    }
 
-  // Buckets
-  const liveMatches = normalized.filter((m) => m.isLive === true);
+    const picked = pickMode(all, nowLocalMs);
 
-  const todayMatches = normalized.filter((m) => {
-    if (!m.startLocalMs) return false;
-    return m.dayKeyLocal === todayKey;
-  });
-
-  const next24hMatches = normalized.filter((m) => {
-    if (!m.startUtcMs) return false;
-    const diff = m.startUtcMs - nowUtcMs;
-    return diff > 0 && diff <= 24 * 60 * 60 * 1000;
-  });
-
-  // Safety net: upcoming within 7 days (this fixes “shows nothing” when TODAY/NEXT24H are empty)
-  const upcoming7dMatches = normalized.filter((m) => {
-    if (!m.startUtcMs) return false;
-    const diff = m.startUtcMs - nowUtcMs;
-    return diff > 0 && diff <= 7 * 24 * 60 * 60 * 1000;
-  });
-
-  // Mode chooser (strict priority)
-  let mode = "LIVE";
-  let matches = liveMatches;
-
-  if (!matches.length) {
-    mode = "TODAY";
-    matches = todayMatches;
-  }
-  if (!matches.length) {
-    mode = "NEXT_24H";
-    matches = next24hMatches;
-  }
-  if (!matches.length) {
-    mode = "UPCOMING_7D";
-    matches = upcoming7dMatches;
-  }
-  if (!matches.length) {
-    mode = "EMPTY";
-    matches = [];
-  }
-
-  // Sort: live first, then soonest start
-  matches = matches.slice().sort((a, b) => {
-    const al = a.isLive ? 0 : 1;
-    const bl = b.isLive ? 0 : 1;
-    if (al !== bl) return al - bl;
-    const at = Number.isFinite(a.startUtcMs) ? a.startUtcMs : Number.MAX_SAFE_INTEGER;
-    const bt = Number.isFinite(b.startUtcMs) ? b.startUtcMs : Number.MAX_SAFE_INTEGER;
-    return at - bt;
-  });
-
-  const payload = {
-    ok: true,
-    mode,
-    matches,
-    meta: {
-      now: nowIso,
-      tzOffsetMinutes,
-      todayKey,
-      counts: {
-        live: liveMatches.length,
-        today: todayMatches.length,
-        next24h: next24hMatches.length,
-        upcoming7d: upcoming7dMatches.length,
-        total: normalized.length,
-      },
-    },
-  };
-
-  if (debug) {
-    payload.debug = {
-      sample: normalized.slice(0, 5).map((m) => ({
+    const payload = {
+      ok: true,
+      mode: picked.mode,
+      matches: picked.items.map((m) => ({
         id: m.id,
         date: m.date,
         time: m.time,
+        status: m.status,
         statusRaw: m.statusRaw,
-        isLive: m.isLive,
-        scoresPresent: m._scoresPresent,
-        liveByStatus: m._liveByStatus,
-        startsInMs: m.startsInMs,
+        categoryId: m.categoryId,
+        categoryName: m.categoryName,
+        players: m.players,
       })),
-      note:
-        "Live heuristic: scoresPresent OR status in known live tokens. Status '1' is NOT treated as live.",
     };
-  }
 
-  return res.status(200).json(payload);
+    if (debug) {
+      const todayKey = dayKeyFromLocalMs(nowLocalMs);
+      payload.meta = {
+        nowLocalMs,
+        todayKey,
+        totalMatches: all.length,
+        counts: {
+          LIVE: all.filter((x) => x._live).length,
+          TODAY: all.filter((x) => x._dayKeyLocal === todayKey).length,
+          NEXT_24H: all.filter(
+            (x) =>
+              Number.isFinite(x._startLocalMs) &&
+              x._startLocalMs >= nowLocalMs &&
+              x._startLocalMs <= nowLocalMs + 24 * 60 * 60 * 1000
+          ).length,
+          BAD_DATE: all.filter((x) => !Number.isFinite(x._startLocalMs)).length,
+        },
+        firstLine,
+        note: "Live = scoresPresent OR strong live token. statusRaw==='1' is NOT treated as live.",
+      };
+      payload._sample = all.slice(0, 12);
+    }
+
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).json(payload);
+  } catch (e) {
+    return res.status(500).json({
+      ok: false,
+      error: "Server error",
+      message: String(e?.message || e),
+    });
+  }
 }
