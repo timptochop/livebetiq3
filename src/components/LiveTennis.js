@@ -26,25 +26,7 @@ const isFinishedLike = (s) => FINISHED.has(toLower(s));
 
 const isUpcomingLike = (s) => {
   const x = toLower(s);
-  return (
-    x === "not started" ||
-    x === "scheduled" ||
-    x === "upcoming" ||
-    x === "0" ||
-    x === "ns" ||
-    x === "pending"
-  );
-};
-
-const isLiveLike = (s) => {
-  const x = toLower(s);
-  return (
-    x === "1" ||
-    x === "live" ||
-    x === "in progress" ||
-    x === "playing" ||
-    x === "started"
-  );
+  return x === "not started" || x === "scheduled" || x === "upcoming" || x === "ns" || x === "0" || x === "pending";
 };
 
 const toInt = (v) => {
@@ -68,44 +50,41 @@ function currentSetFromScores(players) {
   return k || 0;
 }
 
-// FIX: GoalServe dates are often DD.MM.YYYY (e.g., 31.12.2025). Native Date parsing fails on that.
+/**
+ * Robust date parsing for GoalServe-like formats:
+ * - "YYYY-MM-DD" + "HH:MM"
+ * - "DD.MM.YYYY" + "HH:MM"
+ * - "DD/MM/YYYY" + "HH:MM"
+ * Returns a Date or null.
+ */
 function parseStart(dateStr, timeStr) {
-  const d = String(dateStr || "").trim();
-  const t = String(timeStr || "").trim();
-  if (!d || !t) return null;
+  const dRaw = String(dateStr || "").trim();
+  const tRaw = String(timeStr || "").trim();
+  if (!dRaw || !tRaw) return null;
 
-  // Try ISO-ish first (safe if it already arrives as YYYY-MM-DD)
-  const dtA = new Date(`${d}T${t}`);
-  if (Number.isFinite(dtA.getTime())) return dtA;
+  // Normalize time to HH:MM[:SS]
+  const t = tRaw.length === 5 ? `${tRaw}:00` : tRaw;
 
-  // DD.MM.YYYY + HH:MM (GoalServe typical)
-  const m = d.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  const tm = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (m && tm) {
-    const day = Number(m[1]);
-    const mon = Number(m[2]);
-    const year = Number(m[3]);
-    const hh = Number(tm[1]);
-    const mm = Number(tm[2]);
-    const ss = tm[3] ? Number(tm[3]) : 0;
+  // 1) Try ISO-like directly
+  const dtIso = new Date(`${dRaw}T${t}`);
+  if (Number.isFinite(dtIso.getTime())) return dtIso;
 
-    if (
-      Number.isFinite(day) &&
-      Number.isFinite(mon) &&
-      Number.isFinite(year) &&
-      Number.isFinite(hh) &&
-      Number.isFinite(mm) &&
-      Number.isFinite(ss)
-    ) {
-      // Interpret as local time (browser/user timezone). That's what we want for "starts in".
-      const dt = new Date(year, mon - 1, day, hh, mm, ss, 0);
+  // 2) Try "DD.MM.YYYY" or "DD/MM/YYYY"
+  const m = dRaw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+  if (m) {
+    const dd = parseInt(m[1], 10);
+    const mm = parseInt(m[2], 10);
+    const yyyy = parseInt(m[3], 10);
+    if (Number.isFinite(dd) && Number.isFinite(mm) && Number.isFinite(yyyy)) {
+      const iso = `${String(yyyy).padStart(4, "0")}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}T${t}`;
+      const dt = new Date(iso);
       if (Number.isFinite(dt.getTime())) return dt;
     }
   }
 
-  // Last chance: "DD.MM.YYYY HH:MM" style
-  const dtB = new Date(`${d} ${t}`);
-  return Number.isFinite(dtB.getTime()) ? dtB : null;
+  // 3) Last fallback: space join
+  const dtSpace = new Date(`${dRaw} ${tRaw}`);
+  return Number.isFinite(dtSpace.getTime()) ? dtSpace : null;
 }
 
 function formatDiff(ms) {
@@ -156,9 +135,10 @@ export default function LiveTennis({
 
       const keep = baseArr.filter((m) => !isFinishedLike(m.status || m["@status"]));
 
+      // We only fetch odds if we truly have at least one "live-ish" match (non-upcoming/non-finished)
       const hasLive = keep.some((m) => {
         const raw = m.status || m["@status"] || "";
-        return isLiveLike(raw);
+        return !!raw && !isUpcomingLike(raw) && !isFinishedLike(raw);
       });
 
       let oddsRaw = null;
@@ -228,16 +208,17 @@ export default function LiveTennis({
 
         const ai = analyzeMatch({ ...m, odds }, extraFeatures) || {};
 
-        // FIX: compute startIn for any non-live match when we have date+time (GoalServe gives them).
         let startAt = null;
         let startInMs = null;
         let startInText = null;
 
-        const dt = parseStart(date, time);
-        if (dt) {
-          startAt = dt.getTime();
-          startInMs = startAt - now;
-          startInText = formatDiff(startInMs);
+        if (isUpcomingLike(status)) {
+          const dt = parseStart(date, time);
+          if (dt) {
+            startAt = dt.getTime();
+            startInMs = startAt - now;
+            startInText = formatDiff(startInMs);
+          }
         }
 
         return {
@@ -262,9 +243,8 @@ export default function LiveTennis({
       ingestBatch(enriched);
 
       await Promise.allSettled(baseArr.map((m) => maybeLogResult(m)));
-
       trySettleFinished(baseArr);
-    } catch (e) {
+    } catch {
       setRows([]);
     } finally {
       setLoading(false);
@@ -281,24 +261,16 @@ export default function LiveTennis({
   const list = useMemo(() => {
     const items = rows.map((m) => {
       const rawStatus = m.status || "";
-      const live =
-        isLiveLike(rawStatus) || (!!rawStatus && !isUpcomingLike(rawStatus) && !isFinishedLike(rawStatus));
+      const live = !!rawStatus && !isUpcomingLike(rawStatus) && !isFinishedLike(rawStatus);
 
       let label = m.ai?.label || null;
 
-      const aiMarkedUpcoming =
-        label === "UPCOMING" ||
-        label === "STARTS SOON" ||
-        label === "SOON" ||
-        label === "PENDING";
-
+      // Force deterministic UI label rules (no PENDING)
       if (!live && isUpcomingLike(rawStatus)) {
         label = "UPCOMING";
       } else if (live) {
-        // If live but we don't have set scores yet, show LIVE (not SET 1).
-        if (!label || aiMarkedUpcoming) {
-          if ((m.setNum || 0) > 0) label = `SET ${m.setNum}`;
-          else label = "LIVE";
+        if (!label || label === "PENDING" || label === "UPCOMING" || label === "SOON" || label === "STARTS SOON") {
+          label = (m.setNum || 0) > 0 ? `SET ${m.setNum}` : "LIVE";
         }
       } else {
         if (!label || label === "PENDING") label = "UPCOMING";
@@ -497,13 +469,7 @@ export default function LiveTennis({
                 <span>{m.name2}</span>
               </div>
 
-              <div
-                style={{
-                  marginTop: 6,
-                  color: "#c2c7cc",
-                  fontSize: 14,
-                }}
-              >
+              <div style={{ marginTop: 6, color: "#c2c7cc", fontSize: 14 }}>
                 {m.date} {m.time} · {m.categoryName}
                 {m.uiLabel === "UPCOMING" && (
                   <span style={{ marginLeft: 8, color: "#9fb0c3" }}>
@@ -513,14 +479,7 @@ export default function LiveTennis({
               </div>
 
               {(m.ai?.label === "SAFE" || m.ai?.label === "RISKY") && m.ai?.tip && (
-                <div
-                  style={{
-                    marginTop: 6,
-                    fontSize: 13,
-                    fontWeight: 800,
-                    color: "#1fdd73",
-                  }}
-                >
+                <div style={{ marginTop: 6, fontSize: 13, fontWeight: 800, color: "#1fdd73" }}>
                   TIP: {m.ai.tip}
                 </div>
               )}
