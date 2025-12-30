@@ -36,11 +36,15 @@ const isUpcomingLike = (s) => {
   );
 };
 
-// IMPORTANT: Do NOT treat status "1" as LIVE.
-// GoalServe frequently uses status "1" for future fixtures.
-const isLiveToken = (s) => {
+const isLiveLike = (s) => {
   const x = toLower(s);
-  return x === "live" || x === "in progress" || x === "playing" || x === "started";
+  return (
+    x === "1" ||
+    x === "live" ||
+    x === "in progress" ||
+    x === "playing" ||
+    x === "started"
+  );
 };
 
 const toInt = (v) => {
@@ -64,14 +68,31 @@ function currentSetFromScores(players) {
   return k || 0;
 }
 
+/**
+ * FIX: GoalServe uses DD.MM.YYYY. Browser Date() does NOT parse it reliably.
+ * We convert "31.12.2025" + "07:00" -> "2025-12-31T07:00:00"
+ */
 function parseStart(dateStr, timeStr) {
   const d = String(dateStr || "").trim();
   const t = String(timeStr || "").trim();
   if (!d || !t) return null;
 
+  // If already ISO-like, try directly
   const dtA = new Date(`${d}T${t}`);
   if (Number.isFinite(dtA.getTime())) return dtA;
 
+  // GoalServe format: DD.MM.YYYY
+  const m = d.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (m) {
+    const dd = String(m[1]).padStart(2, "0");
+    const mm = String(m[2]).padStart(2, "0");
+    const yy = String(m[3]);
+    const iso = `${yy}-${mm}-${dd}T${t}:00`;
+    const dt = new Date(iso);
+    return Number.isFinite(dt.getTime()) ? dt : null;
+  }
+
+  // Fallback
   const dtB = new Date(`${d} ${t}`);
   return Number.isFinite(dtB.getTime()) ? dtB : null;
 }
@@ -124,18 +145,9 @@ export default function LiveTennis({
 
       const keep = baseArr.filter((m) => !isFinishedLike(m.status || m["@status"]));
 
-      // Only fetch odds when we have at least one match that is actually LIVE by evidence:
-      // - scores present (setNum > 0) OR
-      // - strong live token ("live", "in progress", etc.)
       const hasLive = keep.some((m) => {
-        const players = Array.isArray(m.players)
-          ? m.players
-          : Array.isArray(m.player)
-          ? m.player
-          : [];
-        const setNum = currentSetFromScores(players);
         const raw = m.status || m["@status"] || "";
-        return setNum > 0 || isLiveToken(raw);
+        return isLiveLike(raw);
       });
 
       let oddsRaw = null;
@@ -209,7 +221,7 @@ export default function LiveTennis({
         let startInMs = null;
         let startInText = null;
 
-        if (!isLiveToken(status) && isUpcomingLike(status)) {
+        if (!isLiveLike(status) && isUpcomingLike(status)) {
           const dt = parseStart(date, time);
           if (dt) {
             startAt = dt.getTime();
@@ -259,13 +271,8 @@ export default function LiveTennis({
   const list = useMemo(() => {
     const items = rows.map((m) => {
       const rawStatus = m.status || "";
-
-      // Evidence-based LIVE:
-      // 1) scores present (setNum > 0)
-      // 2) strong live token (not "1")
-      // Anything else is UPCOMING/OTHER.
-      const scoresPresent = (m.setNum || 0) > 0;
-      const live = scoresPresent || isLiveToken(rawStatus);
+      const live =
+        isLiveLike(rawStatus) || (!!rawStatus && !isUpcomingLike(rawStatus) && !isFinishedLike(rawStatus));
 
       let label = m.ai?.label || null;
 
@@ -337,7 +344,6 @@ export default function LiveTennis({
       if (isPred && cur !== prev) {
         if (cur === "SAFE" && audioOn) {
           try {
-            // eslint-disable-next-line no-new
             new Audio("/notify.mp3").play().catch(() => {});
           } catch {
             // ignore
