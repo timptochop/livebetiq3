@@ -2,8 +2,8 @@
 import zlib from "zlib";
 import { parseStringPromise } from "xml2js";
 
-const BUILD_TAG = "v10.1.3-gs-direct-handler";
-const DEFAULT_TZ_OFFSET_MINUTES = 120; // Cyprus winter (UTC+2). Override: ?tz=120
+const BUILD_TAG = "v10.1.4-gs-direct-handler-signature";
+const DEFAULT_TZ_OFFSET_MINUTES = 120;
 
 const FINISHED = new Set([
   "finished",
@@ -45,7 +45,6 @@ function parseGoalServeDateTimeToUtcMs(dateStr, timeStr) {
   const d = String(dateStr || "").trim();
   const t = String(timeStr || "").trim();
 
-  // GoalServe typical: DD.MM.YYYY + HH:MM
   const m = d.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
   const tm = t.match(/^(\d{1,2}):(\d{2})$/);
   if (!m || !tm) return null;
@@ -91,7 +90,6 @@ function scoresPresent(players) {
 
 function isLiveByStatus(statusRaw) {
   const s = toLower(statusRaw);
-  // Do NOT treat "1" as live.
   return (
     s === "live" ||
     s === "in progress" ||
@@ -164,6 +162,7 @@ export default async function handler(req, res) {
           counts: { live: 0, today: 0, next24h: 0, upcoming7d: 0, total: 0 },
         },
         upstream: f,
+        ...(debug ? { debug: { tzSeen: req.query?.tz ?? null } } : {}),
       });
     }
 
@@ -295,6 +294,7 @@ export default async function handler(req, res) {
       ...(debug
         ? {
             debug: {
+              tzSeen: req.query?.tz ?? null,
               sample: matches.slice(0, 5).map((x) => ({
                 id: x.id,
                 date: x.date,
@@ -306,7 +306,8 @@ export default async function handler(req, res) {
                 startsInMs: x.startsInMs,
                 dayKeyLocal: x.dayKeyLocal,
               })),
-              note: "Live heuristic: scoresPresent OR status in known live tokens. Status '1' is NOT treated as live.",
+              note:
+                "Live heuristic: scoresPresent OR status in known live tokens. Status '1' is NOT treated as live.",
             },
           }
         : {}),
