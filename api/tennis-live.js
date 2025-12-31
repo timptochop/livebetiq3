@@ -2,9 +2,8 @@
 import zlib from "zlib";
 import { parseStringPromise } from "xml2js";
 
-const BUILD_TAG = "v10.1.2-cyprus-default-tz"; // fingerprint to prove correct deploy
-
-const DEFAULT_TZ_OFFSET_MINUTES = 120; // Cyprus (winter). You can override via ?tz=120 or env.
+const BUILD_TAG = "v10.1.3-gs-direct-handler";
+const DEFAULT_TZ_OFFSET_MINUTES = 120; // Cyprus winter (UTC+2). Override: ?tz=120
 
 const FINISHED = new Set([
   "finished",
@@ -25,22 +24,16 @@ function clampInt(n, lo, hi) {
 }
 
 function getTzOffsetMinutes(req) {
-  // 1) explicit query override
-  const q = req?.query?.tz;
-  const fromQuery = clampInt(q, -840, 840);
+  const fromQuery = clampInt(req?.query?.tz, -840, 840);
   if (fromQuery !== null) return fromQuery;
 
-  // 2) env override (optional)
-  const env = process.env.TZ_OFFSET_MINUTES;
-  const fromEnv = clampInt(env, -840, 840);
+  const fromEnv = clampInt(process.env.TZ_OFFSET_MINUTES, -840, 840);
   if (fromEnv !== null) return fromEnv;
 
-  // 3) default: Cyprus
   return DEFAULT_TZ_OFFSET_MINUTES;
 }
 
 function dayKeyFromLocalMs(localMs) {
-  // IMPORTANT: localMs is already shifted by tzOffsetMinutes, so we can use UTC getters safely
   const d = new Date(localMs);
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -52,7 +45,7 @@ function parseGoalServeDateTimeToUtcMs(dateStr, timeStr) {
   const d = String(dateStr || "").trim();
   const t = String(timeStr || "").trim();
 
-  // GoalServe is DD.MM.YYYY + HH:MM
+  // GoalServe typical: DD.MM.YYYY + HH:MM
   const m = d.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
   const tm = t.match(/^(\d{1,2}):(\d{2})$/);
   if (!m || !tm) return null;
@@ -63,16 +56,8 @@ function parseGoalServeDateTimeToUtcMs(dateStr, timeStr) {
   const hh = Number(tm[1]);
   const mi = Number(tm[2]);
 
-  if (
-    !Number.isFinite(dd) ||
-    !Number.isFinite(mm) ||
-    !Number.isFinite(yyyy) ||
-    !Number.isFinite(hh) ||
-    !Number.isFinite(mi)
-  ) return null;
-
-  const utcMs = Date.UTC(yyyy, mm - 1, dd, hh, mi, 0);
-  return Number.isFinite(utcMs) ? utcMs : null;
+  if (![dd, mm, yyyy, hh, mi].every(Number.isFinite)) return null;
+  return Date.UTC(yyyy, mm - 1, dd, hh, mi, 0);
 }
 
 function normalizePlayers(matchNode) {
@@ -96,7 +81,9 @@ function normalizePlayers(matchNode) {
 function scoresPresent(players) {
   const p = Array.isArray(players) ? players : [];
   for (const pl of p) {
-    const s = [pl?.s1, pl?.s2, pl?.s3, pl?.s4, pl?.s5].map((v) => String(v ?? "").trim());
+    const s = [pl?.s1, pl?.s2, pl?.s3, pl?.s4, pl?.s5].map((v) =>
+      String(v ?? "").trim()
+    );
     if (s.some((v) => v !== "")) return true;
   }
   return false;
@@ -104,7 +91,7 @@ function scoresPresent(players) {
 
 function isLiveByStatus(statusRaw) {
   const s = toLower(statusRaw);
-  // DO NOT treat "1" as live.
+  // Do NOT treat "1" as live.
   return s === "live" || s === "in progress" || s === "playing" || s === "started";
 }
 
@@ -184,6 +171,7 @@ export default async function handler(req, res) {
 
       for (const m of matches) {
         if (!m) continue;
+
         const a = m?.$ || {};
         const id = a.id || null;
         const date = a.date || m?.date || "";
@@ -214,7 +202,11 @@ export default async function handler(req, res) {
           players,
           isLive,
           setNum: null,
-          s1: null, s2: null, s3: null, s4: null, s5: null,
+          s1: null,
+          s2: null,
+          s3: null,
+          s4: null,
+          s5: null,
           _scoresPresent,
           _liveByStatus,
           startUtcMs,
@@ -227,7 +219,6 @@ export default async function handler(req, res) {
     }
 
     const live = all.filter((m) => m.isLive);
-
     const today = all.filter((m) => !m.isLive && m.dayKeyLocal === todayKey);
 
     const next24h = all.filter((m) => {
@@ -254,10 +245,19 @@ export default async function handler(req, res) {
 
     let mode = "EMPTY";
     let matches = [];
-    if (live.length) { mode = "LIVE"; matches = live; }
-    else if (today.length) { mode = "TODAY"; matches = today; }
-    else if (next24h.length) { mode = "NEXT_24H"; matches = next24h; }
-    else if (upcoming7d.length) { mode = "UPCOMING_7D"; matches = upcoming7d; }
+    if (live.length) {
+      mode = "LIVE";
+      matches = live;
+    } else if (today.length) {
+      mode = "TODAY";
+      matches = today;
+    } else if (next24h.length) {
+      mode = "NEXT_24H";
+      matches = next24h;
+    } else if (upcoming7d.length) {
+      mode = "UPCOMING_7D";
+      matches = upcoming7d;
+    }
 
     return res.status(200).json({
       ok: true,
