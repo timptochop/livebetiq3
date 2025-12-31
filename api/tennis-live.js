@@ -2,8 +2,8 @@
 import zlib from "zlib";
 import { parseStringPromise } from "xml2js";
 
-const BUILD_TAG = "v10.1.5-gs-direct-handler-url-tz";
-const DEFAULT_TZ_OFFSET_MINUTES = 120; // Cyprus winter (UTC+2)
+const BUILD_TAG = "v10.1.7-tennis-live-build-tz";
+const DEFAULT_TZ_OFFSET_MINUTES = 120; // Cyprus (UTC+2 winter)
 
 const FINISHED = new Set([
   "finished",
@@ -26,7 +26,7 @@ function clampInt(n, lo, hi) {
 function getQueryParam(req, key) {
   try {
     const rawUrl = req?.url || "";
-    const u = new URL(rawUrl, "http://localhost"); // base required
+    const u = new URL(rawUrl, "http://localhost");
     return u.searchParams.get(key);
   } catch {
     return null;
@@ -34,21 +34,19 @@ function getQueryParam(req, key) {
 }
 
 function getTzOffsetMinutes(req) {
-  // 1) URL query (most reliable on Vercel)
+  // Priority #1: parse from req.url (this is the one that MUST work on Vercel)
   const tzFromUrl = getQueryParam(req, "tz");
   const fromUrl = clampInt(tzFromUrl, -840, 840);
   if (fromUrl !== null) return fromUrl;
 
-  // 2) req.query (fallback)
-  const tzFromQueryObj = req?.query?.tz;
-  const fromQueryObj = clampInt(tzFromQueryObj, -840, 840);
+  // Priority #2: legacy req.query
+  const fromQueryObj = clampInt(req?.query?.tz, -840, 840);
   if (fromQueryObj !== null) return fromQueryObj;
 
-  // 3) env (fallback)
+  // Priority #3: env fallback
   const fromEnv = clampInt(process.env.TZ_OFFSET_MINUTES, -840, 840);
   if (fromEnv !== null) return fromEnv;
 
-  // 4) default
   return DEFAULT_TZ_OFFSET_MINUTES;
 }
 
@@ -120,7 +118,7 @@ function isLiveByStatus(statusRaw) {
 async function fetchGoalServeXml(url) {
   const r = await fetch(url, {
     headers: {
-      "user-agent": "livebetiq3/tennis-live",
+      "user-agent": "livebetiq3/gs-tennis-live",
       accept: "application/xml,text/xml,*/*",
       "accept-encoding": "gzip,deflate,br",
     },
@@ -150,7 +148,9 @@ async function fetchGoalServeXml(url) {
 }
 
 export default async function handler(req, res) {
-  const debug = String(getQueryParam(req, "debug") || req?.query?.debug || "") === "1";
+  const debug =
+    String(getQueryParam(req, "debug") || req?.query?.debug || "") === "1";
+
   const tzOffsetMinutes = getTzOffsetMinutes(req);
 
   const key = process.env.GOALSERVE_KEY;
@@ -267,16 +267,13 @@ export default async function handler(req, res) {
     }
 
     const live = all.filter((m) => m.isLive);
-
     const today = all.filter((m) => !m.isLive && m.dayKeyLocal === todayKey);
-
     const next24h = all.filter((m) => {
       if (m.isLive) return false;
       if (!Number.isFinite(m.startUtcMs)) return false;
       const dt = m.startUtcMs - nowUtcMs;
       return dt > 0 && dt <= 24 * 60 * 60 * 1000;
     });
-
     const upcoming7d = all.filter((m) => {
       if (m.isLive) return false;
       if (!Number.isFinite(m.startUtcMs)) return false;
@@ -338,7 +335,7 @@ export default async function handler(req, res) {
                 dayKeyLocal: x.dayKeyLocal,
               })),
               note:
-                "TZ is parsed from req.url first (URLSearchParams), then req.query, then env, then default. Status '1' is NOT treated as live.",
+                "If meta.build is missing, you're NOT executing this handler. Fix the re-export route mapping.",
             },
           }
         : {}),
@@ -346,7 +343,7 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(500).json({
       ok: false,
-      error: "Unhandled exception in tennis-live handler.",
+      error: "Unhandled exception in /api/tennis-live handler.",
       message: String(e?.message || e),
     });
   }
