@@ -1,11 +1,10 @@
 // api/tennis-live.js
-// Vercel Serverless Function (Node 18+)
-// Goal: make "TODAY" correct for Cyprus by using tzOffsetMinutes=+120 by default.
-
 import zlib from "zlib";
 import { parseStringPromise } from "xml2js";
 
-const DEFAULT_TZ_OFFSET_MINUTES = 120; // Cyprus (Asia/Nicosia) = UTC+2 in winter. Good enough for our “TODAY” bucketing.
+const BUILD_TAG = "v10.1.2-cyprus-default-tz"; // fingerprint to prove correct deploy
+
+const DEFAULT_TZ_OFFSET_MINUTES = 120; // Cyprus (winter). You can override via ?tz=120 or env.
 
 const FINISHED = new Set([
   "finished",
@@ -26,16 +25,22 @@ function clampInt(n, lo, hi) {
 }
 
 function getTzOffsetMinutes(req) {
-  // Allow override: ?tz=120 (minutes)
+  // 1) explicit query override
   const q = req?.query?.tz;
   const fromQuery = clampInt(q, -840, 840);
   if (fromQuery !== null) return fromQuery;
 
-  // Default: Cyprus
+  // 2) env override (optional)
+  const env = process.env.TZ_OFFSET_MINUTES;
+  const fromEnv = clampInt(env, -840, 840);
+  if (fromEnv !== null) return fromEnv;
+
+  // 3) default: Cyprus
   return DEFAULT_TZ_OFFSET_MINUTES;
 }
 
-function dayKeyFromMs(localMs) {
+function dayKeyFromLocalMs(localMs) {
+  // IMPORTANT: localMs is already shifted by tzOffsetMinutes, so we can use UTC getters safely
   const d = new Date(localMs);
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -44,9 +49,10 @@ function dayKeyFromMs(localMs) {
 }
 
 function parseGoalServeDateTimeToUtcMs(dateStr, timeStr) {
-  // GoalServe: "DD.MM.YYYY" + "HH:MM"
   const d = String(dateStr || "").trim();
   const t = String(timeStr || "").trim();
+
+  // GoalServe is DD.MM.YYYY + HH:MM
   const m = d.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
   const tm = t.match(/^(\d{1,2}):(\d{2})$/);
   if (!m || !tm) return null;
@@ -58,12 +64,13 @@ function parseGoalServeDateTimeToUtcMs(dateStr, timeStr) {
   const mi = Number(tm[2]);
 
   if (
-    !Number.isFinite(dd) || !Number.isFinite(mm) || !Number.isFinite(yyyy) ||
-    !Number.isFinite(hh) || !Number.isFinite(mi)
+    !Number.isFinite(dd) ||
+    !Number.isFinite(mm) ||
+    !Number.isFinite(yyyy) ||
+    !Number.isFinite(hh) ||
+    !Number.isFinite(mi)
   ) return null;
 
-  // IMPORTANT: this builds a UTC timestamp for that “clock time” as given by feed.
-  // We later shift with tzOffsetMinutes to get local bucketing.
   const utcMs = Date.UTC(yyyy, mm - 1, dd, hh, mi, 0);
   return Number.isFinite(utcMs) ? utcMs : null;
 }
@@ -72,7 +79,6 @@ function normalizePlayers(matchNode) {
   const p = matchNode?.player || [];
   const arr = Array.isArray(p) ? p : [p];
 
-  // Keep only two sides, but don't crash if structure changes.
   return arr.slice(0, 2).map((x) => {
     const a = x?.$ || {};
     return {
@@ -90,8 +96,7 @@ function normalizePlayers(matchNode) {
 function scoresPresent(players) {
   const p = Array.isArray(players) ? players : [];
   for (const pl of p) {
-    if (!pl) continue;
-    const s = [pl.s1, pl.s2, pl.s3, pl.s4, pl.s5].map((v) => String(v ?? "").trim());
+    const s = [pl?.s1, pl?.s2, pl?.s3, pl?.s4, pl?.s5].map((v) => String(v ?? "").trim());
     if (s.some((v) => v !== "")) return true;
   }
   return false;
@@ -99,7 +104,7 @@ function scoresPresent(players) {
 
 function isLiveByStatus(statusRaw) {
   const s = toLower(statusRaw);
-  // We explicitly DO NOT treat "1" as live.
+  // DO NOT treat "1" as live.
   return s === "live" || s === "in progress" || s === "playing" || s === "started";
 }
 
@@ -107,7 +112,7 @@ async function fetchGoalServeXml(url) {
   const r = await fetch(url, {
     headers: {
       "user-agent": "livebetiq3/tennis-live",
-      "accept": "application/xml,text/xml,*/*",
+      accept: "application/xml,text/xml,*/*",
       "accept-encoding": "gzip,deflate,br",
     },
   });
@@ -115,18 +120,14 @@ async function fetchGoalServeXml(url) {
   const ab = await r.arrayBuffer();
   const buf = Buffer.from(ab);
 
-  // Handle gzip transparently
   const enc = (r.headers.get("content-encoding") || "").toLowerCase();
   let out = buf;
-  if (enc.includes("gzip")) {
-    out = zlib.gunzipSync(buf);
-  }
+  if (enc.includes("gzip")) out = zlib.gunzipSync(buf);
 
   const text = out.toString("utf8");
 
-  // Guard: GoalServe sometimes returns HTML error pages
   if (text.trim().startsWith("<html") || text.toLowerCase().includes("index was out of range")) {
-    return { ok: false, error: "Upstream returned HTML/error instead of XML.", rawHead: text.slice(0, 200) };
+    return { ok: false, error: "Upstream returned HTML/error instead of XML.", rawHead: text.slice(0, 220) };
   }
 
   return { ok: true, xml: text };
@@ -136,18 +137,16 @@ export default async function handler(req, res) {
   const debug = String(req.query?.debug || "") === "1";
   const tzOffsetMinutes = getTzOffsetMinutes(req);
 
-  // Use your existing GoalServe key from env
   const key = process.env.GOALSERVE_KEY;
   if (!key) {
     return res.status(500).json({ ok: false, error: "Missing GOALSERVE_KEY env var." });
   }
 
-  // Canon endpoint (home)
   const url = `https://www.goalserve.com/getfeed/${key}/tennis_scores/home`;
 
   const nowUtcMs = Date.now();
   const nowLocalMs = nowUtcMs + tzOffsetMinutes * 60_000;
-  const todayKey = dayKeyFromMs(nowLocalMs);
+  const todayKey = dayKeyFromLocalMs(nowLocalMs);
 
   try {
     const f = await fetchGoalServeXml(url);
@@ -157,6 +156,7 @@ export default async function handler(req, res) {
         mode: "EMPTY",
         matches: [],
         meta: {
+          build: BUILD_TAG,
           now: new Date(nowUtcMs).toISOString(),
           tzOffsetMinutes,
           todayKey,
@@ -198,7 +198,7 @@ export default async function handler(req, res) {
 
         const startUtcMs = parseGoalServeDateTimeToUtcMs(date, time);
         const startLocalMs = startUtcMs !== null ? startUtcMs + tzOffsetMinutes * 60_000 : null;
-        const dayKeyLocal = startLocalMs !== null ? dayKeyFromMs(startLocalMs) : null;
+        const dayKeyLocal = startLocalMs !== null ? dayKeyFromLocalMs(startLocalMs) : null;
         const startsInMs = startUtcMs !== null ? startUtcMs - nowUtcMs : null;
 
         const isLive = _scoresPresent || _liveByStatus;
@@ -212,25 +212,22 @@ export default async function handler(req, res) {
           categoryId,
           categoryName,
           players,
-
           isLive,
           setNum: null,
           s1: null, s2: null, s3: null, s4: null, s5: null,
-
           _scoresPresent,
           _liveByStatus,
-
           startUtcMs,
           startLocalMs,
           startsInMs,
           dayKeyLocal,
-
           _nowLocalMs: nowLocalMs,
         });
       }
     }
 
     const live = all.filter((m) => m.isLive);
+
     const today = all.filter((m) => !m.isLive && m.dayKeyLocal === todayKey);
 
     const next24h = all.filter((m) => {
@@ -257,21 +254,17 @@ export default async function handler(req, res) {
 
     let mode = "EMPTY";
     let matches = [];
-    if (live.length) {
-      mode = "LIVE"; matches = live;
-    } else if (today.length) {
-      mode = "TODAY"; matches = today;
-    } else if (next24h.length) {
-      mode = "NEXT_24H"; matches = next24h;
-    } else if (upcoming7d.length) {
-      mode = "UPCOMING_7D"; matches = upcoming7d;
-    }
+    if (live.length) { mode = "LIVE"; matches = live; }
+    else if (today.length) { mode = "TODAY"; matches = today; }
+    else if (next24h.length) { mode = "NEXT_24H"; matches = next24h; }
+    else if (upcoming7d.length) { mode = "UPCOMING_7D"; matches = upcoming7d; }
 
     return res.status(200).json({
       ok: true,
       mode,
       matches,
       meta: {
+        build: BUILD_TAG,
         now: new Date(nowUtcMs).toISOString(),
         tzOffsetMinutes,
         todayKey,
