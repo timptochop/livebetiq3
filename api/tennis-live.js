@@ -2,8 +2,8 @@
 import zlib from "zlib";
 import { parseStringPromise } from "xml2js";
 
-const BUILD_TAG = "v10.1.4-gs-direct-handler-signature";
-const DEFAULT_TZ_OFFSET_MINUTES = 120;
+const BUILD_TAG = "v10.1.5-gs-direct-handler-url-tz";
+const DEFAULT_TZ_OFFSET_MINUTES = 120; // Cyprus winter (UTC+2)
 
 const FINISHED = new Set([
   "finished",
@@ -23,13 +23,32 @@ function clampInt(n, lo, hi) {
   return Math.max(lo, Math.min(hi, Math.trunc(x)));
 }
 
-function getTzOffsetMinutes(req) {
-  const fromQuery = clampInt(req?.query?.tz, -840, 840);
-  if (fromQuery !== null) return fromQuery;
+function getQueryParam(req, key) {
+  try {
+    const rawUrl = req?.url || "";
+    const u = new URL(rawUrl, "http://localhost"); // base required
+    return u.searchParams.get(key);
+  } catch {
+    return null;
+  }
+}
 
+function getTzOffsetMinutes(req) {
+  // 1) URL query (most reliable on Vercel)
+  const tzFromUrl = getQueryParam(req, "tz");
+  const fromUrl = clampInt(tzFromUrl, -840, 840);
+  if (fromUrl !== null) return fromUrl;
+
+  // 2) req.query (fallback)
+  const tzFromQueryObj = req?.query?.tz;
+  const fromQueryObj = clampInt(tzFromQueryObj, -840, 840);
+  if (fromQueryObj !== null) return fromQueryObj;
+
+  // 3) env (fallback)
   const fromEnv = clampInt(process.env.TZ_OFFSET_MINUTES, -840, 840);
   if (fromEnv !== null) return fromEnv;
 
+  // 4) default
   return DEFAULT_TZ_OFFSET_MINUTES;
 }
 
@@ -131,7 +150,7 @@ async function fetchGoalServeXml(url) {
 }
 
 export default async function handler(req, res) {
-  const debug = String(req.query?.debug || "") === "1";
+  const debug = String(getQueryParam(req, "debug") || req?.query?.debug || "") === "1";
   const tzOffsetMinutes = getTzOffsetMinutes(req);
 
   const key = process.env.GOALSERVE_KEY;
@@ -162,7 +181,16 @@ export default async function handler(req, res) {
           counts: { live: 0, today: 0, next24h: 0, upcoming7d: 0, total: 0 },
         },
         upstream: f,
-        ...(debug ? { debug: { tzSeen: req.query?.tz ?? null } } : {}),
+        ...(debug
+          ? {
+              debug: {
+                rawUrl: req?.url || null,
+                tzSeenUrl: getQueryParam(req, "tz"),
+                tzSeenQueryObj: req?.query?.tz ?? null,
+                tzSeenEnv: process.env.TZ_OFFSET_MINUTES ?? null,
+              },
+            }
+          : {}),
       });
     }
 
@@ -294,7 +322,10 @@ export default async function handler(req, res) {
       ...(debug
         ? {
             debug: {
-              tzSeen: req.query?.tz ?? null,
+              rawUrl: req?.url || null,
+              tzSeenUrl: getQueryParam(req, "tz"),
+              tzSeenQueryObj: req?.query?.tz ?? null,
+              tzSeenEnv: process.env.TZ_OFFSET_MINUTES ?? null,
               sample: matches.slice(0, 5).map((x) => ({
                 id: x.id,
                 date: x.date,
@@ -307,7 +338,7 @@ export default async function handler(req, res) {
                 dayKeyLocal: x.dayKeyLocal,
               })),
               note:
-                "Live heuristic: scoresPresent OR status in known live tokens. Status '1' is NOT treated as live.",
+                "TZ is parsed from req.url first (URLSearchParams), then req.query, then env, then default. Status '1' is NOT treated as live.",
             },
           }
         : {}),
