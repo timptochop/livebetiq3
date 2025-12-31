@@ -2,7 +2,7 @@
 import zlib from "zlib";
 import { parseStringPromise } from "xml2js";
 
-const BUILD_TAG = "v10.1.3-gs-direct-handler";
+const BUILD_TAG = "v10.1.4-tenant-handler-single-source";
 const DEFAULT_TZ_OFFSET_MINUTES = 120; // Cyprus winter (UTC+2). Override: ?tz=120
 
 const FINISHED = new Set([
@@ -24,7 +24,8 @@ function clampInt(n, lo, hi) {
 }
 
 function getTzOffsetMinutes(req) {
-  const fromQuery = clampInt(req?.query?.tz, -840, 840);
+  const q = req?.query || {};
+  const fromQuery = clampInt(q.tz, -840, 840);
   if (fromQuery !== null) return fromQuery;
 
   const fromEnv = clampInt(process.env.TZ_OFFSET_MINUTES, -840, 840);
@@ -81,9 +82,7 @@ function normalizePlayers(matchNode) {
 function scoresPresent(players) {
   const p = Array.isArray(players) ? players : [];
   for (const pl of p) {
-    const s = [pl?.s1, pl?.s2, pl?.s3, pl?.s4, pl?.s5].map((v) =>
-      String(v ?? "").trim()
-    );
+    const s = [pl?.s1, pl?.s2, pl?.s3, pl?.s4, pl?.s5].map((v) => String(v ?? "").trim());
     if (s.some((v) => v !== "")) return true;
   }
   return false;
@@ -121,12 +120,12 @@ async function fetchGoalServeXml(url) {
 }
 
 export default async function handler(req, res) {
-  const debug = String(req.query?.debug || "") === "1";
+  const debug = String(req?.query?.debug || "") === "1";
   const tzOffsetMinutes = getTzOffsetMinutes(req);
 
   const key = process.env.GOALSERVE_KEY;
   if (!key) {
-    return res.status(500).json({ ok: false, error: "Missing GOALSERVE_KEY env var." });
+    return res.status(500).json({ ok: false, error: "Missing GOALSERVE_KEY env var.", meta: { build: BUILD_TAG } });
   }
 
   const url = `https://www.goalserve.com/getfeed/${key}/tennis_scores/home`;
@@ -219,6 +218,7 @@ export default async function handler(req, res) {
     }
 
     const live = all.filter((m) => m.isLive);
+
     const today = all.filter((m) => !m.isLive && m.dayKeyLocal === todayKey);
 
     const next24h = all.filter((m) => {
@@ -294,6 +294,7 @@ export default async function handler(req, res) {
       ok: false,
       error: "Unhandled exception in tennis-live handler.",
       message: String(e?.message || e),
+      meta: { build: BUILD_TAG },
     });
   }
 }
