@@ -2,7 +2,7 @@
 import zlib from "zlib";
 import { parseStringPromise } from "xml2js";
 
-const BUILD_TAG = "v10.1.7-tennis-live-build-tz";
+const BUILD_TAG = "v10.1.8-tennis-live-decode-safe";
 const DEFAULT_TZ_OFFSET_MINUTES = 120; // Cyprus (UTC+2 winter)
 
 const FINISHED = new Set([
@@ -34,16 +34,13 @@ function getQueryParam(req, key) {
 }
 
 function getTzOffsetMinutes(req) {
-  // Priority #1: parse from req.url (this is the one that MUST work on Vercel)
   const tzFromUrl = getQueryParam(req, "tz");
   const fromUrl = clampInt(tzFromUrl, -840, 840);
   if (fromUrl !== null) return fromUrl;
 
-  // Priority #2: legacy req.query
   const fromQueryObj = clampInt(req?.query?.tz, -840, 840);
   if (fromQueryObj !== null) return fromQueryObj;
 
-  // Priority #3: env fallback
   const fromEnv = clampInt(process.env.TZ_OFFSET_MINUTES, -840, 840);
   if (fromEnv !== null) return fromEnv;
 
@@ -115,11 +112,57 @@ function isLiveByStatus(statusRaw) {
   );
 }
 
+function looksLikeGzip(buf) {
+  return buf && buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b;
+}
+
+function decodeUpstreamBody(buf, contentEncoding) {
+  const enc = String(contentEncoding || "").toLowerCase();
+
+  // 1) If buffer has gzip magic bytes, gunzip regardless of header truthiness.
+  if (looksLikeGzip(buf)) {
+    try {
+      return zlib.gunzipSync(buf).toString("utf8");
+    } catch {
+      // fallthrough
+    }
+  }
+
+  // 2) If header says br/deflate/gzip, try matching decoder (but NEVER trust it blindly).
+  if (enc.includes("br")) {
+    try {
+      return zlib.brotliDecompressSync(buf).toString("utf8");
+    } catch {
+      // fallthrough
+    }
+  }
+
+  if (enc.includes("deflate")) {
+    try {
+      return zlib.inflateSync(buf).toString("utf8");
+    } catch {
+      // fallthrough
+    }
+  }
+
+  if (enc.includes("gzip")) {
+    try {
+      return zlib.gunzipSync(buf).toString("utf8");
+    } catch {
+      // fallthrough
+    }
+  }
+
+  // 3) Final fallback: treat as plain text (covers auto-decompressed fetch too).
+  return buf.toString("utf8");
+}
+
 async function fetchGoalServeXml(url) {
   const r = await fetch(url, {
     headers: {
       "user-agent": "livebetiq3/gs-tennis-live",
       accept: "application/xml,text/xml,*/*",
+      // Keep it, but we now support gzip/deflate/br safely.
       "accept-encoding": "gzip,deflate,br",
     },
   });
@@ -127,11 +170,7 @@ async function fetchGoalServeXml(url) {
   const ab = await r.arrayBuffer();
   const buf = Buffer.from(ab);
 
-  const enc = (r.headers.get("content-encoding") || "").toLowerCase();
-  let out = buf;
-  if (enc.includes("gzip")) out = zlib.gunzipSync(buf);
-
-  const text = out.toString("utf8");
+  const text = decodeUpstreamBody(buf, r.headers.get("content-encoding"));
 
   if (
     text.trim().startsWith("<html") ||
@@ -141,10 +180,17 @@ async function fetchGoalServeXml(url) {
       ok: false,
       error: "Upstream returned HTML/error instead of XML.",
       rawHead: text.slice(0, 220),
+      encoding: r.headers.get("content-encoding") || null,
+      status: r.status,
     };
   }
 
-  return { ok: true, xml: text };
+  return {
+    ok: true,
+    xml: text,
+    encoding: r.headers.get("content-encoding") || null,
+    status: r.status,
+  };
 }
 
 export default async function handler(req, res) {
@@ -323,6 +369,8 @@ export default async function handler(req, res) {
               tzSeenUrl: getQueryParam(req, "tz"),
               tzSeenQueryObj: req?.query?.tz ?? null,
               tzSeenEnv: process.env.TZ_OFFSET_MINUTES ?? null,
+              upstreamEncoding: f.encoding ?? null,
+              upstreamStatus: f.status ?? null,
               sample: matches.slice(0, 5).map((x) => ({
                 id: x.id,
                 date: x.date,
@@ -334,8 +382,6 @@ export default async function handler(req, res) {
                 startsInMs: x.startsInMs,
                 dayKeyLocal: x.dayKeyLocal,
               })),
-              note:
-                "If meta.build is missing, you're NOT executing this handler. Fix the re-export route mapping.",
             },
           }
         : {}),
