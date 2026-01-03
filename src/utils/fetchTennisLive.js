@@ -1,6 +1,8 @@
 // src/utils/fetchTennisLive.js
 import { buildOddsIndex } from "./oddsParser";
 
+const DEFAULT_TZ_OFFSET_MINUTES = 120; // Cyprus (UTC+2 winter)
+
 function safeJsonParse(text) {
   try {
     return JSON.parse(text);
@@ -17,11 +19,18 @@ async function safeReadJson(res) {
 }
 
 export default async function fetchTennisLive(opts = {}) {
-  const { signal, tzOffsetMinutes = 0, debug = 0 } = opts;
+  const { signal, tzOffsetMinutes, debug = 0 } = opts;
+
+  // IMPORTANT:
+  // If caller doesn't pass tzOffsetMinutes, we enforce Cyprus default (120).
+  // This prevents silent tz=0 bugs and keeps buckets stable.
+  const tz = Number.isFinite(Number(tzOffsetMinutes))
+    ? Number(tzOffsetMinutes)
+    : DEFAULT_TZ_OFFSET_MINUTES;
 
   const params = new URLSearchParams();
   params.set("ts", String(Date.now()));
-  params.set("tzOffsetMinutes", String(tzOffsetMinutes));
+  params.set("tz", String(tz)); // NEW canonical param used by the backend handler
   if (debug) params.set("debug", "1");
 
   const url = `/api/gs/tennis-live?${params.toString()}`;
