@@ -112,6 +112,17 @@ async function tryTg(text) {
   }
 }
 
+// ---- NEW: Never let background logging block UI
+function withTimeout(promise, ms, label = "timeout") {
+  let t;
+  const timeout = new Promise((_, reject) => {
+    t = setTimeout(() => reject(new Error(label)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+}
+
+const BG_LOG_TIMEOUT_MS = 2500;
+
 const labelPriority = {
   SAFE: 1,
   RISKY: 2,
@@ -134,11 +145,11 @@ export default function LiveTennis({
 
   async function load() {
     setLoading(true);
+
+    let baseArr = [];
     try {
-      // Stability Freeze:
-      // Use ONLY the existing fetchTennisLive() transport (no tz forcing).
       const base = await fetchTennisLive();
-      const baseArr = Array.isArray(base) ? base : [];
+      baseArr = Array.isArray(base) ? base : [];
 
       const keep = baseArr.filter((m) => !isFinishedLike(m.status || m["@status"]));
 
@@ -157,7 +168,9 @@ export default function LiveTennis({
       }
 
       const oddsIndex =
-        oddsRaw && typeof oddsRaw === "object" ? buildOddsIndex({ raw: oddsRaw }) || {} : {};
+        oddsRaw && typeof oddsRaw === "object"
+          ? buildOddsIndex({ raw: oddsRaw }) || {}
+          : {};
 
       const now = Date.now();
 
@@ -246,10 +259,29 @@ export default function LiveTennis({
       });
 
       setRows(enriched);
-      ingestBatch(enriched);
 
-      await Promise.allSettled(baseArr.map((m) => maybeLogResult(m)));
-      trySettleFinished(baseArr);
+      // Keep tuner ingestion sync (should be fast)
+      try {
+        ingestBatch(enriched);
+      } catch {
+        // ignore
+      }
+
+      // ---- CRITICAL FIX: background tasks MUST NOT block UI
+      // Fire-and-forget with timeout so "Loading..." can never get stuck.
+      (async () => {
+        try {
+          const tasks = baseArr.map((m) => withTimeout(Promise.resolve(maybeLogResult(m)), BG_LOG_TIMEOUT_MS, "bg_log_timeout"));
+          await Promise.allSettled(tasks);
+        } catch {
+          // ignore
+        }
+        try {
+          trySettleFinished(baseArr);
+        } catch {
+          // ignore
+        }
+      })();
     } catch {
       setRows([]);
     } finally {
