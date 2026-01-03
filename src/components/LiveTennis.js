@@ -11,6 +11,8 @@ import { logPrediction, addPending, trySettleFinished } from "../utils/predictio
 import { maybeLogResult } from "../ai/autoLogger";
 import { ingestBatch } from "../ai/adaptTuner";
 
+const TZ_OFFSET_MINUTES = 120; // Cyprus (UTC+2 winter). Hard-set for stability.
+
 const FINISHED = new Set([
   "finished",
   "cancelled",
@@ -26,7 +28,14 @@ const isFinishedLike = (s) => FINISHED.has(toLower(s));
 
 const isUpcomingLike = (s) => {
   const x = toLower(s);
-  return x === "not started" || x === "scheduled" || x === "upcoming" || x === "ns" || x === "0" || x === "pending";
+  return (
+    x === "not started" ||
+    x === "scheduled" ||
+    x === "upcoming" ||
+    x === "ns" ||
+    x === "0" ||
+    x === "pending"
+  );
 };
 
 const toInt = (v) => {
@@ -76,7 +85,10 @@ function parseStart(dateStr, timeStr) {
     const mm = parseInt(m[2], 10);
     const yyyy = parseInt(m[3], 10);
     if (Number.isFinite(dd) && Number.isFinite(mm) && Number.isFinite(yyyy)) {
-      const iso = `${String(yyyy).padStart(4, "0")}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}T${t}`;
+      const iso = `${String(yyyy).padStart(4, "0")}-${String(mm).padStart(
+        2,
+        "0"
+      )}-${String(dd).padStart(2, "0")}T${t}`;
       const dt = new Date(iso);
       if (Number.isFinite(dt.getTime())) return dt;
     }
@@ -118,6 +130,43 @@ const labelPriority = {
   UPCOMING: 8,
 };
 
+async function safeReadJson(res) {
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+async function fetchLiveDirect({ tz = TZ_OFFSET_MINUTES, debug = 0, signal } = {}) {
+  const params = new URLSearchParams();
+  params.set("ts", String(Date.now()));
+  params.set("tz", String(tz));
+  if (debug) params.set("debug", "1");
+
+  const url = `/api/gs/tennis-live?${params.toString()}`;
+
+  const res = await fetch(url, {
+    method: "GET",
+    credentials: "same-origin",
+    cache: "no-store",
+    signal,
+    headers: { Accept: "application/json,text/plain,*/*" },
+  });
+
+  if (!res.ok) return [];
+
+  const json = await safeReadJson(res);
+
+  // Normalize shapes: {matches:[]}, {ok:true,matches:[]}, or raw []
+  if (Array.isArray(json)) return json;
+  if (json && Array.isArray(json.matches)) return json.matches;
+
+  return [];
+}
+
 export default function LiveTennis({
   onLiveCount = () => {},
   notificationsOn = true,
@@ -130,8 +179,25 @@ export default function LiveTennis({
   async function load() {
     setLoading(true);
     try {
-      const base = await fetchTennisLive();
-      const baseArr = Array.isArray(base) ? base : [];
+      // Stability Freeze:
+      // Always include tz=120 at the transport level so backend bucketization is deterministic.
+      // We do NOT rely on whether fetchTennisLive.js is bundled/deployed correctly.
+      let baseArr = [];
+      try {
+        baseArr = await fetchLiveDirect({ tz: TZ_OFFSET_MINUTES, debug: 0 });
+      } catch {
+        baseArr = [];
+      }
+
+      // Fallback: if direct fetch fails for any reason, try legacy utility (keeps resilience)
+      if (!Array.isArray(baseArr) || baseArr.length === 0) {
+        try {
+          const base = await fetchTennisLive();
+          baseArr = Array.isArray(base) ? base : [];
+        } catch {
+          baseArr = [];
+        }
+      }
 
       const keep = baseArr.filter((m) => !isFinishedLike(m.status || m["@status"]));
 
