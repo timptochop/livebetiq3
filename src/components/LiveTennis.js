@@ -11,8 +11,6 @@ import { logPrediction, addPending, trySettleFinished } from "../utils/predictio
 import { maybeLogResult } from "../ai/autoLogger";
 import { ingestBatch } from "../ai/adaptTuner";
 
-const TZ_OFFSET_MINUTES = 120; // Cyprus (UTC+2 winter). Hard-set for stability.
-
 const FINISHED = new Set([
   "finished",
   "cancelled",
@@ -23,7 +21,6 @@ const FINISHED = new Set([
 ]);
 
 const toLower = (v) => String(v ?? "").trim().toLowerCase();
-
 const isFinishedLike = (s) => FINISHED.has(toLower(s));
 
 const isUpcomingLike = (s) => {
@@ -71,14 +68,11 @@ function parseStart(dateStr, timeStr) {
   const tRaw = String(timeStr || "").trim();
   if (!dRaw || !tRaw) return null;
 
-  // Normalize time to HH:MM[:SS]
   const t = tRaw.length === 5 ? `${tRaw}:00` : tRaw;
 
-  // 1) Try ISO-like directly
   const dtIso = new Date(`${dRaw}T${t}`);
   if (Number.isFinite(dtIso.getTime())) return dtIso;
 
-  // 2) Try "DD.MM.YYYY" or "DD/MM/YYYY"
   const m = dRaw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
   if (m) {
     const dd = parseInt(m[1], 10);
@@ -94,7 +88,6 @@ function parseStart(dateStr, timeStr) {
     }
   }
 
-  // 3) Last fallback: space join
   const dtSpace = new Date(`${dRaw} ${tRaw}`);
   return Number.isFinite(dtSpace.getTime()) ? dtSpace : null;
 }
@@ -130,43 +123,6 @@ const labelPriority = {
   UPCOMING: 8,
 };
 
-async function safeReadJson(res) {
-  const text = await res.text();
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
-
-async function fetchLiveDirect({ tz = TZ_OFFSET_MINUTES, debug = 0, signal } = {}) {
-  const params = new URLSearchParams();
-  params.set("ts", String(Date.now()));
-  params.set("tz", String(tz));
-  if (debug) params.set("debug", "1");
-
-  const url = `/api/gs/tennis-live?${params.toString()}`;
-
-  const res = await fetch(url, {
-    method: "GET",
-    credentials: "same-origin",
-    cache: "no-store",
-    signal,
-    headers: { Accept: "application/json,text/plain,*/*" },
-  });
-
-  if (!res.ok) return [];
-
-  const json = await safeReadJson(res);
-
-  // Normalize shapes: {matches:[]}, {ok:true,matches:[]}, or raw []
-  if (Array.isArray(json)) return json;
-  if (json && Array.isArray(json.matches)) return json.matches;
-
-  return [];
-}
-
 export default function LiveTennis({
   onLiveCount = () => {},
   notificationsOn = true,
@@ -180,28 +136,12 @@ export default function LiveTennis({
     setLoading(true);
     try {
       // Stability Freeze:
-      // Always include tz=120 at the transport level so backend bucketization is deterministic.
-      // We do NOT rely on whether fetchTennisLive.js is bundled/deployed correctly.
-      let baseArr = [];
-      try {
-        baseArr = await fetchLiveDirect({ tz: TZ_OFFSET_MINUTES, debug: 0 });
-      } catch {
-        baseArr = [];
-      }
-
-      // Fallback: if direct fetch fails for any reason, try legacy utility (keeps resilience)
-      if (!Array.isArray(baseArr) || baseArr.length === 0) {
-        try {
-          const base = await fetchTennisLive();
-          baseArr = Array.isArray(base) ? base : [];
-        } catch {
-          baseArr = [];
-        }
-      }
+      // Use ONLY the existing fetchTennisLive() transport (no tz forcing).
+      const base = await fetchTennisLive();
+      const baseArr = Array.isArray(base) ? base : [];
 
       const keep = baseArr.filter((m) => !isFinishedLike(m.status || m["@status"]));
 
-      // We only fetch odds if we truly have at least one "live-ish" match (non-upcoming/non-finished)
       const hasLive = keep.some((m) => {
         const raw = m.status || m["@status"] || "";
         return !!raw && !isUpcomingLike(raw) && !isFinishedLike(raw);
@@ -331,7 +271,6 @@ export default function LiveTennis({
 
       let label = m.ai?.label || null;
 
-      // Force deterministic UI label rules (no PENDING)
       if (!live && isUpcomingLike(rawStatus)) {
         label = "UPCOMING";
       } else if (live) {
@@ -359,7 +298,6 @@ export default function LiveTennis({
     return items.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
 
-      // Keep SET 3/2/1 order stable
       if (a.order >= 5 && a.order <= 7 && b.order >= 5 && b.order <= 7) {
         return a.order - b.order;
       }
