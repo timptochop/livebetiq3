@@ -1,44 +1,27 @@
 // api/gs/tennis-odds.js
-// Stability Freeze patch: throttle + cache + retry + safe JSON (never breaks UI)
-// Upstream: /getodds/soccer?cat=tennis_10  (GoalServe tennis odds category)
+// LIVEBET IQ — LOCKDOWN+ Stability Patch
+// Purpose: Stabilize GoalServe tennis odds endpoint with cache + retry + stale fallback.
+// Constraints: Server-side only. No UI changes. Never hard-fail (always returns safe JSON 200).
+//
+// Expected upstream (historical): /getfeed/<KEY>/getodds/soccer?cat=tennis_10
+// Env: GOALSERVE_TOKEN (preferred) or GOALSERVE_KEY (legacy)
 
 const CACHE = {
   ts: 0,
-  data: null, // { ok:true, raw:{...}, meta:{...} }
+  data: null, // { ok, source, url, raw, fetchedAtMs, ... }
   urlOk: null,
   urlTried: [],
 };
 
-const TTL_MS = 55 * 1000; // fetch upstream at most once per ~55s
+const TTL_MS = 55 * 1000; // throttle upstream to at most 1 fetch per ~55s
 const HARD_TIMEOUT_MS = 9000;
+const RETRIES = 2; // conservative for stability freeze
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function fetchWithTimeout(url, timeoutMs = HARD_TIMEOUT_MS) {
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        Accept: "application/json,text/plain,*/*",
-        "User-Agent": "livebetiq3/tennis-odds",
-      },
-      cache: "no-store",
-      signal: controller.signal,
-    });
-
-    const text = await res.text();
-    return { ok: res.ok, status: res.status, text, headers: Object.fromEntries(res.headers.entries()) };
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-function safeJson(text) {
+function safeJsonParse(text) {
   try {
     return JSON.parse(text);
   } catch {
@@ -46,27 +29,50 @@ function safeJson(text) {
   }
 }
 
-function buildOddsUrls() {
-  const token = String(process.env.GOALSERVE_TOKEN || "").trim(); // recommended
-  const key = String(process.env.GOALSERVE_KEY || "").trim(); // legacy
-  const cat = "tennis_10";
+async function fetchWithTimeout(url, timeoutMs = HARD_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json,text/plain,*/*",
+        "User-Agent": "livebetiq3/tennis-odds-stabilizer",
+        "Cache-Control": "no-store",
+      },
+      cache: "no-store",
+      signal: controller.signal,
+    });
 
-  const urls = [];
-
-  // Preferred: token/key in path style
-  const cred = token || key;
-
-  if (cred) {
-    // Canonical host first
-    urls.push(`https://goalserve.com/getfeed/${encodeURIComponent(cred)}/getodds/soccer?cat=${cat}`);
-    // Common alternate host
-    urls.push(`https://www.goalserve.com/getfeed/${encodeURIComponent(cred)}/getodds/soccer?cat=${cat}`);
-    // Legacy mirrors (sometimes region-blocked; keep as fallback)
-    urls.push(`http://feed1.goalserve.com/getfeed/${encodeURIComponent(cred)}/getodds/soccer?cat=${cat}`);
-    urls.push(`http://feed2.goalserve.com/getfeed/${encodeURIComponent(cred)}/getodds/soccer?cat=${cat}`);
+    const text = await res.text();
+    return {
+      ok: res.ok,
+      status: res.status,
+      text,
+      headers: Object.fromEntries(res.headers.entries()),
+    };
+  } finally {
+    clearTimeout(t);
   }
+}
 
-  return urls;
+function buildOddsUrls() {
+  const token = String(process.env.GOALSERVE_TOKEN || "").trim();
+  const key = String(process.env.GOALSERVE_KEY || "").trim();
+  const cred = token || key;
+  if (!cred) return [];
+
+  const cat = "tennis_10";
+  const encCred = encodeURIComponent(cred);
+
+  // Order matters: start with canonical host
+  return [
+    `https://www.goalserve.com/getfeed/${encCred}/getodds/soccer?cat=${cat}&json=1`,
+    `https://goalserve.com/getfeed/${encCred}/getodds/soccer?cat=${cat}&json=1`,
+    // Mirrors (sometimes behave differently / sometimes blocked)
+    `https://feed1.goalserve.com/getfeed/${encCred}/getodds/soccer?cat=${cat}&json=1`,
+    `https://feed2.goalserve.com/getfeed/${encCred}/getodds/soccer?cat=${cat}&json=1`,
+  ];
 }
 
 async function fetchOddsUpstream() {
@@ -82,25 +88,22 @@ async function fetchOddsUpstream() {
 
   for (const url of urls) {
     tried.push(url);
-
     try {
       const { ok, status, text } = await fetchWithTimeout(url);
       const trimmed = String(text || "").trim();
 
-      // If upstream is non-200, continue to next host
       if (!ok) {
         const e = new Error(`upstream_http_${status}`);
-        e.payload = trimmed.slice(0, 400);
+        e.payload = trimmed.slice(0, 500);
         lastErr = e;
         await sleep(180);
         continue;
       }
 
-      // Must be JSON
-      const json = safeJson(trimmed);
+      const json = safeJsonParse(trimmed);
       if (!json || typeof json !== "object") {
         const e = new Error("upstream_non_json");
-        e.payload = trimmed.slice(0, 400);
+        e.payload = trimmed.slice(0, 500);
         lastErr = e;
         await sleep(180);
         continue;
@@ -124,36 +127,35 @@ export default async function handler(req, res) {
   const now = Date.now();
   const debug = String(req.query?.debug || "") === "1";
 
-  // 1) Serve fresh cache if within TTL
+  res.setHeader("Cache-Control", "no-store");
+
+  // 1) Serve fresh cache inside TTL
   if (CACHE.data && now - CACHE.ts < TTL_MS) {
     res.status(200).json({
       ...CACHE.data,
       cached: true,
+      stale: false,
       cacheAgeMs: now - CACHE.ts,
       build: "v10.1.9-odds-stable-cache-retry",
-      ...(debug
-        ? { debug: { urlOk: CACHE.urlOk, urlTried: CACHE.urlTried, ttlMs: TTL_MS } }
-        : {}),
+      ...(debug ? { debug: { urlOk: CACHE.urlOk, urlTried: CACHE.urlTried, ttlMs: TTL_MS } } : {}),
     });
     return;
   }
 
-  // 2) Fetch upstream with limited retries
-  const attempts = 2; // conservative: Stability Freeze
+  // 2) Attempt upstream fetch with limited retries
   let lastError = null;
 
-  for (let i = 0; i < attempts; i++) {
+  for (let attempt = 1; attempt <= RETRIES; attempt++) {
     try {
       const { json, urlOk, urlTried } = await fetchOddsUpstream();
 
-      // We keep "raw" exactly as upstream gives it (frontend expects json.raw sometimes,
-      // but your fetchTennisOdds returns json.raw; here we provide it in raw for consistency)
       const payload = {
         ok: true,
         source: "goalserve-tennis-odds",
         cached: false,
+        stale: false,
         url: urlOk,
-        raw: json,
+        raw: json, // keep raw payload intact for downstream parsing
         fetchedAtMs: now,
       };
 
@@ -165,7 +167,7 @@ export default async function handler(req, res) {
       res.status(200).json({
         ...payload,
         build: "v10.1.9-odds-stable-cache-retry",
-        ...(debug ? { debug: { urlOk, urlTried, attempt: i + 1, ttlMs: TTL_MS } } : {}),
+        ...(debug ? { debug: { attempt, urlOk, urlTried, ttlMs: TTL_MS } } : {}),
       });
       return;
     } catch (e) {
@@ -174,7 +176,7 @@ export default async function handler(req, res) {
     }
   }
 
-  // 3) Fail-soft: if we have stale cache, serve it (prevents UI from “randomly losing odds”)
+  // 3) Fail-soft: serve stale cache if exists (prevents “randomly losing odds”)
   if (CACHE.data) {
     res.status(200).json({
       ...CACHE.data,
@@ -191,6 +193,7 @@ export default async function handler(req, res) {
               urlOk: CACHE.urlOk,
               urlTried: CACHE.urlTried,
               lastError: String(lastError?.message || ""),
+              cause: String(lastError?.cause?.message || ""),
               ttlMs: TTL_MS,
             },
           }
@@ -199,21 +202,17 @@ export default async function handler(req, res) {
     return;
   }
 
-  // 4) No cache available: still return 200 safe JSON (frontend must not crash)
+  // 4) No cache available yet: still return safe JSON 200
   res.status(200).json({
     ok: false,
     source: "none",
     cached: false,
+    stale: false,
     raw: null,
     build: "v10.1.9-odds-stable-cache-retry",
     error: String(lastError?.message || "odds_upstream_failed"),
     ...(debug
-      ? {
-          debug: {
-            urlTried: lastError?.urlTried || [],
-            cause: String(lastError?.cause?.message || ""),
-          },
-        }
+      ? { debug: { urlTried: lastError?.urlTried || [], cause: String(lastError?.cause?.message || "") } }
       : {}),
   });
 }
