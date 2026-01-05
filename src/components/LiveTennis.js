@@ -21,6 +21,7 @@ const FINISHED = new Set([
 ]);
 
 const toLower = (v) => String(v ?? "").trim().toLowerCase();
+
 const isFinishedLike = (s) => FINISHED.has(toLower(s));
 
 const isUpcomingLike = (s) => {
@@ -68,26 +69,27 @@ function parseStart(dateStr, timeStr) {
   const tRaw = String(timeStr || "").trim();
   if (!dRaw || !tRaw) return null;
 
+  // Normalize time to HH:MM[:SS]
   const t = tRaw.length === 5 ? `${tRaw}:00` : tRaw;
 
+  // 1) Try ISO-like directly
   const dtIso = new Date(`${dRaw}T${t}`);
   if (Number.isFinite(dtIso.getTime())) return dtIso;
 
+  // 2) Try "DD.MM.YYYY" or "DD/MM/YYYY"
   const m = dRaw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
   if (m) {
     const dd = parseInt(m[1], 10);
     const mm = parseInt(m[2], 10);
     const yyyy = parseInt(m[3], 10);
     if (Number.isFinite(dd) && Number.isFinite(mm) && Number.isFinite(yyyy)) {
-      const iso = `${String(yyyy).padStart(4, "0")}-${String(mm).padStart(
-        2,
-        "0"
-      )}-${String(dd).padStart(2, "0")}T${t}`;
+      const iso = `${String(yyyy).padStart(4, "0")}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}T${t}`;
       const dt = new Date(iso);
       if (Number.isFinite(dt.getTime())) return dt;
     }
   }
 
+  // 3) Last fallback: space join
   const dtSpace = new Date(`${dRaw} ${tRaw}`);
   return Number.isFinite(dtSpace.getTime()) ? dtSpace : null;
 }
@@ -112,17 +114,6 @@ async function tryTg(text) {
   }
 }
 
-// ---- NEW: Never let background logging block UI
-function withTimeout(promise, ms, label = "timeout") {
-  let t;
-  const timeout = new Promise((_, reject) => {
-    t = setTimeout(() => reject(new Error(label)), ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
-}
-
-const BG_LOG_TIMEOUT_MS = 2500;
-
 const labelPriority = {
   SAFE: 1,
   RISKY: 2,
@@ -143,16 +134,78 @@ export default function LiveTennis({
   const [loading, setLoading] = useState(false);
   const lastLabelRef = useRef(new Map());
 
+  // READ-ONLY PROBE (shows what GoalServe handler is returning, without affecting logic)
+  const [probe, setProbe] = useState({
+    ok: null,
+    mode: null,
+    build: null,
+    tzOffsetMinutes: null,
+    counts: null,
+    now: null,
+    upstreamStatus: null,
+    upstreamEncoding: null,
+    err: null,
+  });
+
+  async function fetchProbe() {
+    try {
+      const url = `/api/gs/tennis-live?debug=1&ts=${Date.now()}`;
+      const r = await fetch(url, {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { Accept: "application/json,text/plain,*/*" },
+      });
+      const text = await r.text();
+      const json = (() => {
+        try {
+          return JSON.parse(text);
+        } catch {
+          return null;
+        }
+      })();
+
+      if (!json || typeof json !== "object") {
+        setProbe((p) => ({
+          ...p,
+          ok: false,
+          err: "probe_invalid_json",
+        }));
+        return;
+      }
+
+      setProbe({
+        ok: json.ok === true,
+        mode: json.mode || null,
+        build: json?.meta?.build || null,
+        tzOffsetMinutes: json?.meta?.tzOffsetMinutes ?? null,
+        counts: json?.meta?.counts || null,
+        now: json?.meta?.now || null,
+        upstreamStatus: json?.debug?.upstreamStatus ?? null,
+        upstreamEncoding: json?.debug?.upstreamEncoding ?? null,
+        err: json.ok === true ? null : (json.error || "probe_not_ok"),
+      });
+    } catch (e) {
+      setProbe((p) => ({
+        ...p,
+        ok: false,
+        err: String(e?.message || e),
+      }));
+    }
+  }
+
   async function load() {
     setLoading(true);
-
-    let baseArr = [];
     try {
+      // Always refresh probe in parallel (read-only)
+      fetchProbe();
+
       const base = await fetchTennisLive();
-      baseArr = Array.isArray(base) ? base : [];
+      const baseArr = Array.isArray(base) ? base : [];
 
       const keep = baseArr.filter((m) => !isFinishedLike(m.status || m["@status"]));
 
+      // We only fetch odds if we truly have at least one "live-ish" match (non-upcoming/non-finished)
       const hasLive = keep.some((m) => {
         const raw = m.status || m["@status"] || "";
         return !!raw && !isUpcomingLike(raw) && !isFinishedLike(raw);
@@ -168,9 +221,7 @@ export default function LiveTennis({
       }
 
       const oddsIndex =
-        oddsRaw && typeof oddsRaw === "object"
-          ? buildOddsIndex({ raw: oddsRaw }) || {}
-          : {};
+        oddsRaw && typeof oddsRaw === "object" ? buildOddsIndex({ raw: oddsRaw }) || {} : {};
 
       const now = Date.now();
 
@@ -259,29 +310,10 @@ export default function LiveTennis({
       });
 
       setRows(enriched);
+      ingestBatch(enriched);
 
-      // Keep tuner ingestion sync (should be fast)
-      try {
-        ingestBatch(enriched);
-      } catch {
-        // ignore
-      }
-
-      // ---- CRITICAL FIX: background tasks MUST NOT block UI
-      // Fire-and-forget with timeout so "Loading..." can never get stuck.
-      (async () => {
-        try {
-          const tasks = baseArr.map((m) => withTimeout(Promise.resolve(maybeLogResult(m)), BG_LOG_TIMEOUT_MS, "bg_log_timeout"));
-          await Promise.allSettled(tasks);
-        } catch {
-          // ignore
-        }
-        try {
-          trySettleFinished(baseArr);
-        } catch {
-          // ignore
-        }
-      })();
+      await Promise.allSettled(baseArr.map((m) => maybeLogResult(m)));
+      trySettleFinished(baseArr);
     } catch {
       setRows([]);
     } finally {
@@ -303,6 +335,7 @@ export default function LiveTennis({
 
       let label = m.ai?.label || null;
 
+      // Force deterministic UI label rules (no PENDING)
       if (!live && isUpcomingLike(rawStatus)) {
         label = "UPCOMING";
       } else if (live) {
@@ -330,6 +363,7 @@ export default function LiveTennis({
     return items.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
 
+      // Keep SET 3/2/1 order stable
       if (a.order >= 5 && a.order <= 7 && b.order >= 5 && b.order <= 7) {
         return a.order - b.order;
       }
@@ -468,8 +502,42 @@ export default function LiveTennis({
     />
   );
 
+  const probeText = (() => {
+    const c = probe.counts || {};
+    const live = Number.isFinite(c.live) ? c.live : "?";
+    const total = Number.isFinite(c.total) ? c.total : "?";
+    const mode = probe.mode || "?";
+    const build = probe.build || "?";
+    const tz = probe.tzOffsetMinutes ?? "?";
+    const us = probe.upstreamStatus ?? "?";
+    const enc = probe.upstreamEncoding ?? "?";
+    const ok = probe.ok === true ? "OK" : probe.ok === false ? "ERR" : "…";
+    return `GoalServe Probe: ${ok} · mode=${mode} · live=${live}/${total} · tz=${tz} · upstream=${us}/${enc} · build=${build}`;
+  })();
+
   return (
     <div style={{ color: "#fff" }}>
+      {/* READ-ONLY PROBE LINE */}
+      <div
+        style={{
+          marginBottom: 10,
+          padding: "10px 12px",
+          borderRadius: 12,
+          background: "#121416",
+          border: "1px solid #22272c",
+          color: probe.ok === false ? "#ffb4b4" : "#c7d1dc",
+          fontSize: 12,
+          fontWeight: 800,
+          letterSpacing: 0.2,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+        title={probeText}
+      >
+        {probeText}
+      </div>
+
       {loading && list.length === 0 ? (
         <div style={{ color: "#cfd3d7", padding: "8px 2px" }}>Loading...</div>
       ) : null}
