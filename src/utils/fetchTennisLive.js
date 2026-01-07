@@ -14,23 +14,61 @@ function safeJsonParse(text) {
 async function safeReadJson(res) {
   const text = await res.text();
   if (!text) return null;
-  // Some runtimes send JSON but with wrong headers; parse ourselves.
   return safeJsonParse(text);
+}
+
+/**
+ * Normalize GoalServe-ish status values.
+ * We have seen numeric-like statuses ("1") in some responses.
+ * For UI logic, we want canonical strings like "Not Started" or "In Progress".
+ */
+function normalizeStatus(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+
+  // numeric-like codes observed in the wild
+  if (s === "0" || s === "1") return "Not Started";
+  if (s === "2") return "In Progress";
+  if (s === "3") return "Finished";
+
+  // keep original for normal cases ("Not Started", "Live", etc.)
+  return s;
+}
+
+function normalizePlayers(m) {
+  // Backend usually provides players[], but some feeds use player[]
+  const p = Array.isArray(m?.players)
+    ? m.players
+    : Array.isArray(m?.player)
+    ? m.player
+    : [];
+
+  if (!p.length) return m;
+
+  return {
+    ...m,
+    players: p.map((x) => ({
+      id: x?.id ?? x?.["@id"] ?? x?.$?.id ?? null,
+      name: x?.name ?? x?.["@name"] ?? x?.$?.name ?? "",
+      s1: x?.s1 ?? "",
+      s2: x?.s2 ?? "",
+      s3: x?.s3 ?? "",
+      s4: x?.s4 ?? "",
+      s5: x?.s5 ?? "",
+    })),
+  };
 }
 
 export default async function fetchTennisLive(opts = {}) {
   const { signal, tzOffsetMinutes, debug = 0 } = opts;
 
-  // IMPORTANT:
-  // If caller doesn't pass tzOffsetMinutes, we enforce Cyprus default (120).
-  // This prevents silent tz=0 bugs and keeps buckets stable.
   const tz = Number.isFinite(Number(tzOffsetMinutes))
     ? Number(tzOffsetMinutes)
     : DEFAULT_TZ_OFFSET_MINUTES;
 
   const params = new URLSearchParams();
   params.set("ts", String(Date.now()));
-  params.set("tz", String(tz)); // NEW canonical param used by the backend handler
+  params.set("tz", String(tz));
   if (debug) params.set("debug", "1");
 
   const url = `/api/gs/tennis-live?${params.toString()}`;
@@ -46,14 +84,12 @@ export default async function fetchTennisLive(opts = {}) {
     });
 
     if (!res.ok) {
-      // Fail-closed: return [] instead of throwing to UI
       console.warn(`[fetchTennisLive] tennis-live http ${res.status}`);
       return [];
     }
 
     const json = await safeReadJson(res);
 
-    // Normalize shapes: {matches:[]}, {ok:true,matches:[]}, or raw []
     if (Array.isArray(json)) matches = json;
     else if (json && Array.isArray(json.matches)) matches = json.matches;
     else matches = [];
@@ -62,8 +98,22 @@ export default async function fetchTennisLive(opts = {}) {
     return [];
   }
 
-  // If no matches, don't waste time on odds
   if (!matches.length) return [];
+
+  // ✅ Normalize match shapes (status + players)
+  const normalized = matches.map((m) => {
+    const base = normalizePlayers(m || {});
+    const statusRaw =
+      base?.statusRaw ?? base?.status ?? base?.["@status"] ?? base?.$?.status ?? "";
+
+    const status = normalizeStatus(statusRaw);
+
+    return {
+      ...base,
+      status,
+      statusRaw: String(statusRaw ?? status),
+    };
+  });
 
   // Odds enrichment is optional; NEVER fail the whole function.
   try {
@@ -74,16 +124,15 @@ export default async function fetchTennisLive(opts = {}) {
       headers: { Accept: "application/json,text/plain,*/*" },
     });
 
-    if (!oddsRes.ok) return matches;
+    if (!oddsRes.ok) return normalized;
 
     const oddsJson = await safeReadJson(oddsRes);
-    if (!oddsJson || oddsJson.ok !== true) return matches;
+    if (!oddsJson || oddsJson.ok !== true) return normalized;
 
-    // Some versions use oddsJson.raw, others already provide normalized fields
     const oddsIndex = buildOddsIndex ? buildOddsIndex(oddsJson) : null;
-    if (!oddsIndex || typeof oddsIndex !== "object") return matches;
+    if (!oddsIndex || typeof oddsIndex !== "object") return normalized;
 
-    return matches.map((m) => {
+    return normalized.map((m) => {
       const rawId = m?.id ?? m?.matchId ?? m?.matchid ?? m?.["@id"] ?? null;
       const matchId = rawId != null ? String(rawId).trim() : "";
       if (!matchId) return m;
@@ -102,6 +151,6 @@ export default async function fetchTennisLive(opts = {}) {
     });
   } catch (err) {
     console.warn("[fetchTennisLive] odds enrichment skipped", err);
-    return matches;
+    return normalized;
   }
 }
