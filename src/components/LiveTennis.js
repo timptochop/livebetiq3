@@ -21,6 +21,7 @@ const FINISHED = new Set([
 ]);
 
 const toLower = (v) => String(v ?? "").trim().toLowerCase();
+
 const isFinishedLike = (s) => FINISHED.has(toLower(s));
 
 const isUpcomingLike = (s) => {
@@ -68,14 +69,11 @@ function parseStart(dateStr, timeStr) {
   const tRaw = String(timeStr || "").trim();
   if (!dRaw || !tRaw) return null;
 
-  // Normalize time to HH:MM[:SS]
   const t = tRaw.length === 5 ? `${tRaw}:00` : tRaw;
 
-  // 1) Try ISO-like directly
   const dtIso = new Date(`${dRaw}T${t}`);
   if (Number.isFinite(dtIso.getTime())) return dtIso;
 
-  // 2) Try "DD.MM.YYYY" or "DD/MM/YYYY"
   const m = dRaw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
   if (m) {
     const dd = parseInt(m[1], 10);
@@ -88,7 +86,6 @@ function parseStart(dateStr, timeStr) {
     }
   }
 
-  // 3) Last fallback: space join
   const dtSpace = new Date(`${dRaw} ${tRaw}`);
   return Number.isFinite(dtSpace.getTime()) ? dtSpace : null;
 }
@@ -196,7 +193,6 @@ export default function LiveTennis({
   async function load() {
     setLoading(true);
     try {
-      // Always refresh probe in parallel (read-only)
       fetchProbe();
 
       const base = await fetchTennisLive();
@@ -204,7 +200,6 @@ export default function LiveTennis({
 
       const keep = baseArr.filter((m) => !isFinishedLike(m.status || m["@status"]));
 
-      // We only fetch odds if we truly have at least one "live-ish" match (non-upcoming/non-finished)
       const hasLive = keep.some((m) => {
         const raw = m.status || m["@status"] || "";
         return !!raw && !isUpcomingLike(raw) && !isFinishedLike(raw);
@@ -219,18 +214,8 @@ export default function LiveTennis({
         }
       }
 
-      // === PATCH: unwrap API wrapper -> feed raw ===
-      // /api/gs/tennis-odds returns { ok, ..., raw: { scores: { category: { matches... }}}}
-      // buildOddsIndex expects the GoalServe raw object (NOT the wrapper).
-      const oddsFeed =
-        oddsRaw && typeof oddsRaw === "object" && oddsRaw.raw && typeof oddsRaw.raw === "object"
-          ? oddsRaw.raw
-          : oddsRaw;
-
       const oddsIndex =
-        oddsFeed && typeof oddsFeed === "object"
-          ? buildOddsIndex({ raw: oddsFeed }) || {}
-          : {};
+        oddsRaw && typeof oddsRaw === "object" ? buildOddsIndex({ raw: oddsRaw }) || {} : {};
 
       const now = Date.now();
 
@@ -247,6 +232,7 @@ export default function LiveTennis({
         const date = m.date || m["@date"] || "";
         const time = m.time || m["@time"] || "";
         const status = m.status || m["@status"] || "";
+
         const setNum = currentSetFromScores(players);
 
         const matchId = m.id || m["@id"] || `${date}-${time}-${name1}-${name2}-${idx}`;
@@ -285,7 +271,11 @@ export default function LiveTennis({
           favName: odds && odds.favName ? odds.favName : null,
         };
 
-        const ai = analyzeMatch({ ...m, odds }, extraFeatures) || {};
+        // ✅ AI GATE: run AI ONLY when match is LIVE and SET >= 3
+        const liveNow = !!status && !isUpcomingLike(status) && !isFinishedLike(status);
+        const shouldRunAI = liveNow && (setNum || 0) >= 3;
+
+        const ai = shouldRunAI ? (analyzeMatch({ ...m, odds }, extraFeatures) || {}) : {};
 
         let startAt = null;
         let startInMs = null;
@@ -372,7 +362,6 @@ export default function LiveTennis({
     return items.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
 
-      // Keep SET 3/2/1 order stable
       if (a.order >= 5 && a.order <= 7 && b.order >= 5 && b.order <= 7) {
         return a.order - b.order;
       }
@@ -526,7 +515,6 @@ export default function LiveTennis({
 
   return (
     <div style={{ color: "#fff" }}>
-      {/* READ-ONLY PROBE LINE */}
       <div
         style={{
           marginBottom: 10,
