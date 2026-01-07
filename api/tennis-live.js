@@ -2,7 +2,7 @@
 import zlib from "zlib";
 import { parseStringPromise } from "xml2js";
 
-const BUILD_TAG = "v10.1.8-tennis-live-decode-safe";
+const BUILD_TAG = "v10.2.4-tennis-live-guidkey-normalize";
 const DEFAULT_TZ_OFFSET_MINUTES = 120; // Cyprus (UTC+2 winter)
 
 const FINISHED = new Set([
@@ -104,12 +104,7 @@ function scoresPresent(players) {
 
 function isLiveByStatus(statusRaw) {
   const s = toLower(statusRaw);
-  return (
-    s === "live" ||
-    s === "in progress" ||
-    s === "playing" ||
-    s === "started"
-  );
+  return s === "live" || s === "in progress" || s === "playing" || s === "started";
 }
 
 function looksLikeGzip(buf) {
@@ -119,42 +114,51 @@ function looksLikeGzip(buf) {
 function decodeUpstreamBody(buf, contentEncoding) {
   const enc = String(contentEncoding || "").toLowerCase();
 
-  // 1) If buffer has gzip magic bytes, gunzip regardless of header truthiness.
   if (looksLikeGzip(buf)) {
     try {
       return zlib.gunzipSync(buf).toString("utf8");
-    } catch {
-      // fallthrough
-    }
+    } catch {}
   }
 
-  // 2) If header says br/deflate/gzip, try matching decoder (but NEVER trust it blindly).
   if (enc.includes("br")) {
     try {
       return zlib.brotliDecompressSync(buf).toString("utf8");
-    } catch {
-      // fallthrough
-    }
+    } catch {}
   }
 
   if (enc.includes("deflate")) {
     try {
       return zlib.inflateSync(buf).toString("utf8");
-    } catch {
-      // fallthrough
-    }
+    } catch {}
   }
 
   if (enc.includes("gzip")) {
     try {
       return zlib.gunzipSync(buf).toString("utf8");
-    } catch {
-      // fallthrough
-    }
+    } catch {}
   }
 
-  // 3) Final fallback: treat as plain text (covers auto-decompressed fetch too).
   return buf.toString("utf8");
+}
+
+/**
+ * Normalize GoalServe key:
+ * - If it's already GUID-like (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx), keep it.
+ * - If it's 32 hex chars without dashes, convert to GUID format with dashes.
+ */
+function normalizeGoalServeKey(raw) {
+  const k = String(raw || "").trim();
+  if (!k) return "";
+
+  const guidLike = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+  if (guidLike.test(k)) return k;
+
+  const hex32 = /^[0-9a-fA-F]{32}$/;
+  if (hex32.test(k)) {
+    return `${k.slice(0, 8)}-${k.slice(8, 12)}-${k.slice(12, 16)}-${k.slice(16, 20)}-${k.slice(20)}`;
+  }
+
+  return k;
 }
 
 async function fetchGoalServeXml(url) {
@@ -162,7 +166,6 @@ async function fetchGoalServeXml(url) {
     headers: {
       "user-agent": "livebetiq3/gs-tennis-live",
       accept: "application/xml,text/xml,*/*",
-      // Keep it, but we now support gzip/deflate/br safely.
       "accept-encoding": "gzip,deflate,br",
     },
   });
@@ -172,16 +175,14 @@ async function fetchGoalServeXml(url) {
 
   const text = decodeUpstreamBody(buf, r.headers.get("content-encoding"));
 
-  if (
-    text.trim().startsWith("<html") ||
-    text.toLowerCase().includes("index was out of range")
-  ) {
+  if (text.trim().toLowerCase().startsWith("<html") || text.toLowerCase().includes("server error")) {
     return {
       ok: false,
       error: "Upstream returned HTML/error instead of XML.",
-      rawHead: text.slice(0, 220),
+      rawHead: text.slice(0, 260),
       encoding: r.headers.get("content-encoding") || null,
       status: r.status,
+      contentType: r.headers.get("content-type") || null,
     };
   }
 
@@ -190,20 +191,19 @@ async function fetchGoalServeXml(url) {
     xml: text,
     encoding: r.headers.get("content-encoding") || null,
     status: r.status,
+    contentType: r.headers.get("content-type") || null,
   };
 }
 
 export default async function handler(req, res) {
-  const debug =
-    String(getQueryParam(req, "debug") || req?.query?.debug || "") === "1";
-
+  const debug = String(getQueryParam(req, "debug") || req?.query?.debug || "") === "1";
   const tzOffsetMinutes = getTzOffsetMinutes(req);
 
-  const key = process.env.GOALSERVE_KEY;
+  const rawKey = process.env.GOALSERVE_KEY;
+  const key = normalizeGoalServeKey(rawKey);
+
   if (!key) {
-    return res
-      .status(500)
-      .json({ ok: false, error: "Missing GOALSERVE_KEY env var." });
+    return res.status(500).json({ ok: false, error: "Missing GOALSERVE_KEY env var." });
   }
 
   const url = `https://www.goalserve.com/getfeed/${key}/tennis_scores/home`;
@@ -214,6 +214,8 @@ export default async function handler(req, res) {
 
   try {
     const f = await fetchGoalServeXml(url);
+
+    // Fail-closed but with full debug signal for UI/probe
     if (!f.ok) {
       return res.status(200).json({
         ok: true,
@@ -234,22 +236,21 @@ export default async function handler(req, res) {
                 tzSeenUrl: getQueryParam(req, "tz"),
                 tzSeenQueryObj: req?.query?.tz ?? null,
                 tzSeenEnv: process.env.TZ_OFFSET_MINUTES ?? null,
+                keyFormat: {
+                  rawLen: String(rawKey || "").trim().length,
+                  normalized: key,
+                },
               },
             }
           : {}),
       });
     }
 
-    const parsed = await parseStringPromise(f.xml, {
-      explicitArray: false,
-      mergeAttrs: false,
-    });
+    const parsed = await parseStringPromise(f.xml, { explicitArray: false, mergeAttrs: false });
     const root = parsed?.scores || parsed;
 
     const categoriesNode = root?.category || [];
-    const categories = Array.isArray(categoriesNode)
-      ? categoriesNode
-      : [categoriesNode];
+    const categories = Array.isArray(categoriesNode) ? categoriesNode : [categoriesNode];
 
     const all = [];
 
@@ -277,10 +278,8 @@ export default async function handler(req, res) {
         const _liveByStatus = isLiveByStatus(statusRaw);
 
         const startUtcMs = parseGoalServeDateTimeToUtcMs(date, time);
-        const startLocalMs =
-          startUtcMs !== null ? startUtcMs + tzOffsetMinutes * 60_000 : null;
-        const dayKeyLocal =
-          startLocalMs !== null ? dayKeyFromLocalMs(startLocalMs) : null;
+        const startLocalMs = startUtcMs !== null ? startUtcMs + tzOffsetMinutes * 60_000 : null;
+        const dayKeyLocal = startLocalMs !== null ? dayKeyFromLocalMs(startLocalMs) : null;
         const startsInMs = startUtcMs !== null ? startUtcMs - nowUtcMs : null;
 
         const isLive = _scoresPresent || _liveByStatus;
@@ -371,6 +370,11 @@ export default async function handler(req, res) {
               tzSeenEnv: process.env.TZ_OFFSET_MINUTES ?? null,
               upstreamEncoding: f.encoding ?? null,
               upstreamStatus: f.status ?? null,
+              upstreamContentType: f.contentType ?? null,
+              keyFormat: {
+                rawLen: String(rawKey || "").trim().length,
+                normalized: key,
+              },
               sample: matches.slice(0, 5).map((x) => ({
                 id: x.id,
                 date: x.date,
