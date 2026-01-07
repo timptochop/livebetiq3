@@ -18,7 +18,6 @@ async function fetchText(url) {
       method: "GET",
       headers: {
         Accept: "application/json,text/plain,*/*",
-        // Note: user-agent header may be ignored in some runtimes, harmless.
         "Accept-Encoding": "gzip, deflate",
         "User-Agent": "livebetiq/1.0",
         Connection: "close",
@@ -86,15 +85,12 @@ export async function fetchLiveTennisRaw() {
   const candidates = [];
 
   if (token) {
-    // Highest priority: canonical host (you confirmed it returns data)
     candidates.push(`https://goalserve.com/getfeed/${token}/tennis_scores/d1?json=1`);
     candidates.push(`https://goalserve.com/getfeed/${token}/tennis_scores/home?json=1`);
 
-    // Additional fallbacks (keep them, but lower priority)
     candidates.push(`https://www.goalserve.com/getfeed/${token}/tennis_scores/d1?json=1`);
     candidates.push(`https://www.goalserve.com/getfeed/${token}/tennis_scores/home?json=1`);
 
-    // Legacy mirrors
     candidates.push(`http://feed1.goalserve.com/getfeed/${token}/tennis_scores/d1?json=1`);
     candidates.push(`http://feed1.goalserve.com/getfeed/${token}/tennis_scores/home?json=1`);
     candidates.push(`http://feed2.goalserve.com/getfeed/${token}/tennis_scores/d1?json=1`);
@@ -102,7 +98,6 @@ export async function fetchLiveTennisRaw() {
   }
 
   if (!token && key) {
-    // Old key-in-query format (only if token missing)
     candidates.push(`https://goalserve.com/getfeed/tennis_scores/d1/?json=1&key=${encodeURIComponent(key)}`);
     candidates.push(`https://goalserve.com/getfeed/tennis_scores/home/?json=1&key=${encodeURIComponent(key)}`);
     candidates.push(`https://www.goalserve.com/getfeed/tennis_scores/d1/?json=1&key=${encodeURIComponent(key)}`);
@@ -111,9 +106,7 @@ export async function fetchLiveTennisRaw() {
 
   if (candidates.length === 0) {
     const err = new Error("missing_goalserve_credentials");
-    err.meta = {
-      need: "Set GOALSERVE_TOKEN (recommended) or GOALSERVE_KEY in Vercel env.",
-    };
+    err.meta = { need: "Set GOALSERVE_TOKEN (recommended) or GOALSERVE_KEY in Vercel env." };
     throw err;
   }
 
@@ -146,14 +139,9 @@ export async function fetchLiveTennisRaw() {
         continue;
       }
 
-      // Try parse JSON
       const json = JSON.parse(trimmed);
 
-      return {
-        json,
-        urlOk: url,
-        urlTried: tried,
-      };
+      return { json, urlOk: url, urlTried: tried };
     } catch (e) {
       lastErr = e;
       await sleep(200);
@@ -173,10 +161,42 @@ export async function fetchLiveTennis() {
 
   return {
     matches,
+    meta: { urlOk, urlTried, count: matches.length },
+  };
+}
+
+/**
+ * NEW: Predictions provider for /api/gs/tennis-predictions
+ * Minimal-safe implementation:
+ * - Pull live matches (normalized)
+ * - Pull odds payload from our own endpoint (/api/gs/tennis-odds)
+ * - Return both, plus basic mapping hints (no UI changes)
+ */
+export async function fetchPredictions() {
+  const base =
+    (process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`) ||
+    process.env.PUBLIC_BASE_URL ||
+    "https://livebetiq3.vercel.app";
+
+  const [live, odds] = await Promise.all([
+    fetchLiveTennis(),
+    fetch(`${base}/api/gs/tennis-odds?debug=0`, { cache: "no-store" }).then((r) => r.json()),
+  ]);
+
+  const matches = Array.isArray(live?.matches) ? live.matches : [];
+  const oddsRaw = odds?.raw || null;
+
+  // We do not enforce matching here (LOCKDOWN+ safe); downstream can map by team/player names.
+  return {
+    ok: true,
+    matches,
+    oddsOk: Boolean(odds?.ok),
+    oddsSource: odds?.source || "unknown",
+    oddsRaw,
     meta: {
-      urlOk,
-      urlTried,
-      count: matches.length,
+      matchesCount: matches.length,
+      oddsHasRaw: Boolean(oddsRaw),
+      liveMeta: live?.meta || {},
     },
   };
 }

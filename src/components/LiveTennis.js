@@ -21,7 +21,6 @@ const FINISHED = new Set([
 ]);
 
 const toLower = (v) => String(v ?? "").trim().toLowerCase();
-
 const isFinishedLike = (s) => FINISHED.has(toLower(s));
 
 const isUpcomingLike = (s) => {
@@ -220,8 +219,18 @@ export default function LiveTennis({
         }
       }
 
+      // === PATCH: unwrap API wrapper -> feed raw ===
+      // /api/gs/tennis-odds returns { ok, ..., raw: { scores: { category: { matches... }}}}
+      // buildOddsIndex expects the GoalServe raw object (NOT the wrapper).
+      const oddsFeed =
+        oddsRaw && typeof oddsRaw === "object" && oddsRaw.raw && typeof oddsRaw.raw === "object"
+          ? oddsRaw.raw
+          : oddsRaw;
+
       const oddsIndex =
-        oddsRaw && typeof oddsRaw === "object" ? buildOddsIndex({ raw: oddsRaw }) || {} : {};
+        oddsFeed && typeof oddsFeed === "object"
+          ? buildOddsIndex({ raw: oddsFeed }) || {}
+          : {};
 
       const now = Date.now();
 
