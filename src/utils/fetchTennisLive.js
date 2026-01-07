@@ -19,35 +19,32 @@ async function safeReadJson(res) {
 
 /**
  * Normalize GoalServe-ish status values.
- * We have seen numeric-like statuses ("1") in some responses.
- * For UI logic, we want canonical strings like "Not Started" or "In Progress".
+ * Observed: numeric-like codes ("0","1","2","3") + text.
  */
 function normalizeStatus(raw) {
   const s = String(raw ?? "").trim();
   if (!s) return "";
 
-  // numeric-like codes observed in the wild
+  // numeric-like codes observed
   if (s === "0" || s === "1") return "Not Started";
   if (s === "2") return "In Progress";
   if (s === "3") return "Finished";
 
-  // keep original for normal cases ("Not Started", "Live", etc.)
   return s;
 }
 
 function normalizePlayers(m) {
-  // Backend usually provides players[], but some feeds use player[]
   const p = Array.isArray(m?.players)
     ? m.players
     : Array.isArray(m?.player)
     ? m.player
     : [];
 
-  if (!p.length) return m;
+  if (!p.length) return { ...m, players: [] };
 
   return {
     ...m,
-    players: p.map((x) => ({
+    players: p.slice(0, 2).map((x) => ({
       id: x?.id ?? x?.["@id"] ?? x?.$?.id ?? null,
       name: x?.name ?? x?.["@name"] ?? x?.$?.name ?? "",
       s1: x?.s1 ?? "",
@@ -57,6 +54,39 @@ function normalizePlayers(m) {
       s5: x?.s5 ?? "",
     })),
   };
+}
+
+function hasScores(players) {
+  const p = Array.isArray(players) ? players : [];
+  for (const pl of p) {
+    const vals = [pl?.s1, pl?.s2, pl?.s3, pl?.s4, pl?.s5].map((v) =>
+      String(v ?? "").trim()
+    );
+    if (vals.some((v) => v !== "")) return true;
+  }
+  return false;
+}
+
+function statusLooksLive(status) {
+  const x = String(status ?? "").trim().toLowerCase();
+  return (
+    x === "in progress" ||
+    x === "live" ||
+    x === "playing" ||
+    x === "started"
+  );
+}
+
+function statusLooksFinished(status) {
+  const x = String(status ?? "").trim().toLowerCase();
+  return (
+    x === "finished" ||
+    x === "cancelled" ||
+    x === "retired" ||
+    x === "abandoned" ||
+    x === "postponed" ||
+    x === "walk over"
+  );
 }
 
 export default async function fetchTennisLive(opts = {}) {
@@ -100,20 +130,48 @@ export default async function fetchTennisLive(opts = {}) {
 
   if (!matches.length) return [];
 
-  // ✅ Normalize match shapes (status + players)
-  const normalized = matches.map((m) => {
-    const base = normalizePlayers(m || {});
-    const statusRaw =
-      base?.statusRaw ?? base?.status ?? base?.["@status"] ?? base?.$?.status ?? "";
+  // ✅ Normalize match shapes: status + players + isLive detection
+  const normalized = matches
+    .map((m) => {
+      const base0 = m || {};
+      const base = normalizePlayers(base0);
 
-    const status = normalizeStatus(statusRaw);
+      const statusRaw =
+        base?.statusRaw ??
+        base?.status ??
+        base?.["@status"] ??
+        base?.$?.status ??
+        "";
 
-    return {
-      ...base,
-      status,
-      statusRaw: String(statusRaw ?? status),
-    };
-  });
+      const status = normalizeStatus(statusRaw);
+      const scoresPresent = hasScores(base.players);
+
+      // If backend already computed isLive, trust it; otherwise compute deterministically.
+      const fromBackend = base0?.isLive;
+      const backendIsLive =
+        typeof fromBackend === "boolean" ? fromBackend : null;
+
+      const computedIsLive =
+        statusLooksLive(status) ||
+        scoresPresent ||
+        (String(statusRaw).trim() === "2"); // numeric fallback
+
+      const isLive = backendIsLive !== null ? backendIsLive : computedIsLive;
+
+      return {
+        ...base,
+        status,
+        statusRaw: String(statusRaw ?? status),
+        isLive,
+        _scoresPresent: scoresPresent,
+        _liveByStatus: statusLooksLive(status),
+      };
+    })
+    // Safety: never send finished-like to UI if any slip through
+    .filter((m) => !statusLooksFinished(m.status));
+
+  // If no matches, don't waste time on odds
+  if (!normalized.length) return [];
 
   // Odds enrichment is optional; NEVER fail the whole function.
   try {
