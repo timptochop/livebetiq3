@@ -1,42 +1,40 @@
 // api/gs/tennis-live.js
+// LiveBet IQ — GoalServe tennis live proxy (LOCKDOWN+ safe)
+// Behavior:
+// - debug=1  -> returns full internal payload from fetchLiveTennis()
+// - no debug -> returns minimal { matches: [] } shape for UI stability
+// - ALWAYS returns 200 (UI must not die)
+
 import { fetchLiveTennis } from "../_lib/goalServeLiveAPI.js";
 
-function withOddsKey(matches) {
-  const arr = Array.isArray(matches) ? matches : [];
-  return arr.map((m) => {
-    const id = m?.id ?? m?.["@id"] ?? m?.matchid ?? m?.["@matchid"] ?? null;
-    return {
-      ...m,
-      _oddsKey: String(id || ""),
-    };
-  });
-}
-
 export default async function handler(req, res) {
+  const q = req?.query || {};
+  const debug = String(q.debug || "") === "1";
+
   try {
-    const debug = String(req.query?.debug || "") === "1";
     const data = await fetchLiveTennis({ debug });
 
-    const patchedMatches = withOddsKey(data?.matches);
-
-    // Debug keeps the full shape, just with patched matches
+    // Debug mode: return everything exactly as backend produced it
     if (debug) {
-      return res.status(200).json({
-        ...data,
-        matches: patchedMatches,
-      });
+      return res.status(200).json(
+        data && typeof data === "object"
+          ? data
+          : { ok: false, mode: "DEBUG_INVALID", matches: [], meta: { error: "invalid_debug_payload" } }
+      );
     }
 
-    // Non-debug: always safe shape for UI
-    return res.status(200).json({
-      matches: patchedMatches,
-    });
+    // Non-debug: UI-safe minimal payload
+    const matches = Array.isArray(data?.matches) ? data.matches : Array.isArray(data) ? data : [];
+
+    return res.status(200).json({ matches });
   } catch (err) {
     return res.status(200).json({
       ok: false,
       mode: "ERROR",
       matches: [],
-      meta: { error: err?.message || "unknown_error" },
+      meta: {
+        error: err?.message || "unknown_error",
+      },
     });
   }
 }
