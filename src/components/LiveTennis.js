@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import fetchTennisLive from "../utils/fetchTennisLive";
 import fetchTennisOdds from "../utils/fetchTennisOdds";
+import buildOddsIndex from "../utils/oddsParser";
 import { trackOdds, getDrift } from "../utils/oddsTracker";
 import analyzeMatch from "../utils/analyzeMatch";
 import { showToast } from "../utils/toast";
@@ -20,6 +21,7 @@ const FINISHED = new Set([
 ]);
 
 const toLower = (v) => String(v ?? "").trim().toLowerCase();
+
 const isFinishedLike = (s) => FINISHED.has(toLower(s));
 
 const isUpcomingLike = (s) => {
@@ -78,10 +80,10 @@ function parseStart(dateStr, timeStr) {
     const mm = parseInt(m[2], 10);
     const yyyy = parseInt(m[3], 10);
     if (Number.isFinite(dd) && Number.isFinite(mm) && Number.isFinite(yyyy)) {
-      const iso = `${String(yyyy).padStart(4, "0")}-${String(mm).padStart(
+      const iso = `${String(yyyy).padStart(4, "0")}-${String(mm).padStart(2, "0")}-${String(dd).padStart(
         2,
         "0"
-      )}-${String(dd).padStart(2, "0")}T${t}`;
+      )}T${t}`;
       const dt = new Date(iso);
       if (Number.isFinite(dt.getTime())) return dt;
     }
@@ -122,46 +124,7 @@ const labelPriority = {
   UPCOMING: 8,
 };
 
-function normName(s) {
-  return String(s || "").trim().toLowerCase();
-}
-
-function playerKey(a, b) {
-  const x = normName(a);
-  const y = normName(b);
-  if (!x || !y) return "";
-  return `${x}__vs__${y}`;
-}
-
-// Convert normalized odds row -> legacy odds shape expected by existing pipeline
-function toLegacyOdds(row, name1, name2) {
-  if (!row?.odds) return null;
-
-  const homeOdds = Number(row.odds.home);
-  const awayOdds = Number(row.odds.away);
-  if (!(homeOdds > 1) || !(awayOdds > 1)) return null;
-
-  const favIsHome = homeOdds <= awayOdds;
-  const favOdds = favIsHome ? homeOdds : awayOdds;
-
-  const homeName = row.home || name1 || "";
-  const awayName = row.away || name2 || "";
-  const favName = favIsHome ? homeName : awayName;
-
-  return {
-    homeOdds,
-    awayOdds,
-    favOdds,
-    favName,
-    bookmaker: row.bookmaker || "",
-  };
-}
-
-export default function LiveTennis({
-  onLiveCount = () => {},
-  notificationsOn = true,
-  audioOn = true,
-}) {
+export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = true, audioOn = true }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const lastLabelRef = useRef(new Map());
@@ -215,7 +178,7 @@ export default function LiveTennis({
         now: json?.meta?.now || null,
         upstreamStatus: json?.debug?.upstreamStatus ?? null,
         upstreamEncoding: json?.debug?.upstreamEncoding ?? null,
-        err: json.ok === true ? null : (json.error || "probe_not_ok"),
+        err: json.ok === true ? null : json.error || "probe_not_ok",
       });
     } catch (e) {
       setProbe((p) => ({
@@ -236,31 +199,40 @@ export default function LiveTennis({
 
       const keep = baseArr.filter((m) => !isFinishedLike(m.status || m["@status"]));
 
+      // DEBUG: verify live match IDs coming from tennis-live
+      try {
+        // eslint-disable-next-line no-console
+        console.log(
+          "[LIVE MATCH IDS]",
+          keep
+            .slice(0, 12)
+            .map((m) => String(m.id || m["@id"] || m.matchid || m["@matchid"] || ""))
+            .filter(Boolean)
+        );
+      } catch {
+        // ignore
+      }
+
       const hasLive = keep.some((m) => {
         const raw = m.status || m["@status"] || "";
         return !!raw && !isUpcomingLike(raw) && !isFinishedLike(raw);
       });
 
-      let oddsIndex = null;
+      let oddsRaw = null;
       if (hasLive) {
         try {
-          oddsIndex = await fetchTennisOdds();
+          oddsRaw = await fetchTennisOdds();
         } catch {
-          oddsIndex = null;
+          oddsRaw = null;
         }
       }
 
-      const byMatchId = oddsIndex?.byMatchId || {};
-      const byPlayers = oddsIndex?.byPlayers || {};
+      const oddsIndex = oddsRaw && typeof oddsRaw === "object" ? buildOddsIndex({ raw: oddsRaw }) || {} : {};
 
       const now = Date.now();
 
       const enriched = keep.map((m, idx) => {
-        const players = Array.isArray(m.players)
-          ? m.players
-          : Array.isArray(m.player)
-          ? m.player
-          : [];
+        const players = Array.isArray(m.players) ? m.players : Array.isArray(m.player) ? m.player : [];
         const p1 = players[0] || {};
         const p2 = players[1] || {};
         const name1 = p1.name || p1["@name"] || "";
@@ -273,17 +245,7 @@ export default function LiveTennis({
 
         const matchId = m.id || m["@id"] || `${date}-${time}-${name1}-${name2}-${idx}`;
 
-        // 1) Try matchId
-        let oddsRow = matchId ? byMatchId[String(matchId)] : null;
-
-        // 2) Fallback byPlayers (both directions)
-        if (!oddsRow) {
-          const k1 = playerKey(name1, name2);
-          const k2 = playerKey(name2, name1);
-          oddsRow = (k1 && byPlayers[k1]) || (k2 && byPlayers[k2]) || null;
-        }
-
-        const odds = toLegacyOdds(oddsRow, name1, name2);
+        const odds = oddsIndex && matchId ? oddsIndex[matchId] : null;
 
         let favOdds = null;
         let favImplied = null;
@@ -321,7 +283,7 @@ export default function LiveTennis({
         const liveNow = !!status && !isUpcomingLike(status) && !isFinishedLike(status);
         const shouldRunAI = liveNow && (setNum || 0) >= 3;
 
-        const ai = shouldRunAI ? (analyzeMatch({ ...m, odds }, extraFeatures) || {}) : {};
+        const ai = shouldRunAI ? analyzeMatch({ ...m, odds }, extraFeatures) || {} : {};
 
         let startAt = null;
         let startInMs = null;
@@ -384,13 +346,7 @@ export default function LiveTennis({
       if (!live && isUpcomingLike(rawStatus)) {
         label = "UPCOMING";
       } else if (live) {
-        if (
-          !label ||
-          label === "PENDING" ||
-          label === "UPCOMING" ||
-          label === "SOON" ||
-          label === "STARTS SOON"
-        ) {
+        if (!label || label === "PENDING" || label === "UPCOMING" || label === "SOON" || label === "STARTS SOON") {
           label = (m.setNum || 0) > 0 ? `SET ${m.setNum}` : "LIVE";
         }
       } else {
@@ -462,9 +418,7 @@ export default function LiveTennis({
 
         if (cur === "SAFE" || cur === "RISKY" || cur === "AVOID") {
           const fav =
-            m.ai?.features?.favName && String(m.ai.features.favName).trim()
-              ? m.ai.features.favName
-              : m.name1;
+            m.ai?.features?.favName && String(m.ai.features.favName).trim() ? m.ai.features.favName : m.name1;
 
           const aiTip = (m.ai?.tip && String(m.ai.tip).trim()) || "";
           const genericTip = /player\s*[ab]/i.test(aiTip);
@@ -587,9 +541,7 @@ export default function LiveTennis({
         {probeText}
       </div>
 
-      {loading && list.length === 0 ? (
-        <div style={{ color: "#cfd3d7", padding: "8px 2px" }}>Loading...</div>
-      ) : null}
+      {loading && list.length === 0 ? <div style={{ color: "#cfd3d7", padding: "8px 2px" }}>Loading...</div> : null}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {list.map((m) => (
@@ -625,16 +577,12 @@ export default function LiveTennis({
               <div style={{ marginTop: 6, color: "#c2c7cc", fontSize: 14 }}>
                 {m.date} {m.time} · {m.categoryName}
                 {m.uiLabel === "UPCOMING" && (
-                  <span style={{ marginLeft: 8, color: "#9fb0c3" }}>
-                    — starts in {m.startInText || "n/a"}
-                  </span>
+                  <span style={{ marginLeft: 8, color: "#9fb0c3" }}>— starts in {m.startInText || "n/a"}</span>
                 )}
               </div>
 
               {(m.ai?.label === "SAFE" || m.ai?.label === "RISKY") && m.ai?.tip && (
-                <div style={{ marginTop: 6, fontSize: 13, fontWeight: 800, color: "#1fdd73" }}>
-                  TIP: {m.ai.tip}
-                </div>
+                <div style={{ marginTop: 6, fontSize: 13, fontWeight: 800, color: "#1fdd73" }}>TIP: {m.ai.tip}</div>
               )}
             </div>
 
