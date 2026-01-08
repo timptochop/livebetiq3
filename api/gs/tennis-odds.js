@@ -1,144 +1,141 @@
 // api/gs/tennis-odds.js
-// FINAL – GoalServe Tennis Odds (XML) → JSON
-// LOCKDOWN+ | Production safe | Cache + Retry + Stale fallback
+// Vercel Serverless Function: GoalServe tennis odds feed proxy (cat=tennis_10)
+// Returns { ok:true, data, meta } envelope
 
+import zlib from "zlib";
 import { parseStringPromise } from "xml2js";
 
 const READ_TIMEOUT_MS = 12000;
-const CACHE_TTL_MS = 60 * 1000; // 60s
-const MAX_RETRIES = 3;
 
-let CACHE = {
-  ts: 0,
-  data: null,
-};
-
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+function withTimeout(ms) {
+  const ctl = new AbortController();
+  const to = setTimeout(() => ctl.abort(), ms);
+  return { ctl, to };
 }
 
-function now() {
-  return Date.now();
-}
-
-function isFresh(ts) {
-  return ts && now() - ts < CACHE_TTL_MS;
-}
-
-async function fetchWithTimeout(url) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), READ_TIMEOUT_MS);
-
+async function fetchBuffer(url) {
+  const { ctl, to } = withTimeout(READ_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
+      method: "GET",
+      signal: ctl.signal,
       headers: {
-        "User-Agent": "livebetiq/odds",
-        Accept: "*/*",
+        Accept: "application/xml,text/xml,application/json,text/plain,*/*",
+        "Accept-Encoding": "gzip,deflate",
       },
-      signal: controller.signal,
     });
 
-    const text = await res.text();
-    return { ok: res.ok, status: res.status, text };
+    const ab = await res.arrayBuffer();
+    const buf = Buffer.from(ab);
+
+    return {
+      ok: res.ok,
+      status: res.status,
+      headers: {
+        encoding: res.headers.get("content-encoding") || "",
+        contentType: res.headers.get("content-type") || "",
+      },
+      buf,
+    };
   } finally {
-    clearTimeout(id);
+    clearTimeout(to);
   }
 }
 
-function buildGoalServeOddsUrl() {
-  const key =
-    process.env.GOALSERVE_KEY ||
-    process.env.GOALSERVE_API_KEY ||
-    "";
-
-  if (!key) {
-    throw new Error("Missing GOALSERVE_KEY");
-  }
-
-  // OFFICIAL GoalServe Tennis Odds (XML)
-  return `https://www.goalserve.com/getfeed/${key}/getodds/soccer?cat=tennis_10`;
-}
-
-async function fetchOddsXML() {
-  const url = buildGoalServeOddsUrl();
-  let lastErr = null;
-
-  for (let i = 0; i < MAX_RETRIES; i++) {
+function maybeGunzip(buf, encoding) {
+  const enc = String(encoding || "").toLowerCase();
+  if (enc.includes("gzip")) {
     try {
-      const res = await fetchWithTimeout(url);
-
-      if (!res.ok || !res.text.trim()) {
-        throw new Error("Upstream empty or non-200");
-      }
-
-      if (res.text.startsWith("<")) {
-        const parsed = await parseStringPromise(res.text, {
-          explicitArray: false,
-          mergeAttrs: true,
-        });
-        return parsed;
-      }
-
-      throw new Error("Unexpected non-XML response");
-    } catch (e) {
-      lastErr = e;
-      await sleep(300 + i * 400);
+      return zlib.gunzipSync(buf);
+    } catch {
+      // If decompression fails, fall back to raw buffer
+      return buf;
     }
   }
+  return buf;
+}
 
-  throw lastErr;
+async function parseMaybeXmlOrJson(text) {
+  // Try JSON first
+  try {
+    const j = JSON.parse(text);
+    if (j && typeof j === "object") return j;
+  } catch {
+    // ignore
+  }
+
+  // Then XML
+  try {
+    const obj = await parseStringPromise(text, {
+      explicitArray: false,
+      mergeAttrs: true,
+      trim: true,
+    });
+    return obj && typeof obj === "object" ? obj : null;
+  } catch {
+    return null;
+  }
 }
 
 export default async function handler(req, res) {
-  const debug = req.query.debug === "1";
-
-  // Serve fresh cache
-  if (CACHE.data && isFresh(CACHE.ts)) {
-    return res.status(200).json({
-      ok: true,
-      cached: true,
-      stale: false,
-      ts: CACHE.ts,
-      data: CACHE.data,
-    });
-  }
+  const build = "odds-v1";
+  const tzOffsetMinutes = new Date().getTimezoneOffset();
 
   try {
-    const xmlData = await fetchOddsXML();
+    const key = process.env.GOALSERVE_KEY;
+    if (!key) {
+      res.status(500).json({ ok: false, error: "missing_GOALSERVE_KEY" });
+      return;
+    }
 
-    CACHE = {
-      ts: now(),
-      data: xmlData,
-    };
+    // Official GoalServe odds feed for tennis
+    // Source: GoalServe file (“Odds comparison … getodds/soccer?cat=tennis_10”).  [oai_citation:1‡15.12 API feeds_urls 7.txt](sediment://file_00000000ba90722f801140067bffc4b8)
+    const url = `https://www.goalserve.com/getfeed/${key}/getodds/soccer?cat=tennis_10`;
 
-    return res.status(200).json({
+    const r = await fetchBuffer(url);
+    const buf = maybeGunzip(r.buf, r.headers.encoding);
+    const text = buf.toString("utf8");
+
+    const data = await parseMaybeXmlOrJson(text);
+
+    if (!r.ok || !data) {
+      res.status(200).json({
+        ok: false,
+        error: !r.ok ? "upstream_not_ok" : "parse_failed",
+        meta: {
+          build,
+          tzOffsetMinutes,
+          upstreamStatus: r.status,
+          upstreamEncoding: r.headers.encoding,
+          upstreamContentType: r.headers.contentType,
+          now: Date.now(),
+        },
+        debug: req.query?.debug ? { sample: text.slice(0, 400) } : undefined,
+      });
+      return;
+    }
+
+    res.status(200).json({
       ok: true,
       cached: false,
       stale: false,
-      ts: CACHE.ts,
-      data: xmlData,
+      ts: Date.now(),
+      data,
+      meta: {
+        build,
+        tzOffsetMinutes,
+        upstreamStatus: r.status,
+        upstreamEncoding: r.headers.encoding,
+        upstreamContentType: r.headers.contentType,
+        now: Date.now(),
+      },
     });
   } catch (err) {
-    if (CACHE.data) {
-      return res.status(200).json({
-        ok: true,
-        cached: true,
-        stale: true,
-        ts: CACHE.ts,
-        data: CACHE.data,
-        ...(debug && {
-          debug: { error: err.message },
-        }),
-      });
-    }
-
-    return res.status(200).json({
+    res.status(200).json({
       ok: false,
-      cached: false,
-      stale: false,
-      ts: 0,
-      data: null,
-      error: err.message,
+      error: "odds_handler_failed",
+      message: err?.message || "unknown_error",
+      meta: { build, tzOffsetMinutes, now: Date.now() },
     });
   }
 }

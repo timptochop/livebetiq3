@@ -1,56 +1,35 @@
 // src/utils/fetchTennisOdds.js
-// Fetch + normalize + index tennis odds for AI
-// LOCKDOWN+ safe | No UI changes required
-
-import normalizeTennisOdds from "./normalizeTennisOdds";
-
-function makePlayerKey(home, away) {
-  const a = String(home || "").trim().toLowerCase();
-  const b = String(away || "").trim().toLowerCase();
-  if (!a || !b) return "";
-  return `${a}__vs__${b}`;
-}
+// Fetch tennis odds from our Vercel API route (serverless)
+// Returns the raw payload (we normalize downstream)
 
 export default async function fetchTennisOdds() {
-  const url = "/api/gs/tennis-odds";
+  const url = `/api/gs/tennis-odds?ts=${Date.now()}`;
 
   const res = await fetch(url, {
     method: "GET",
-    headers: { Accept: "application/json" },
+    credentials: "same-origin",
     cache: "no-store",
+    headers: { Accept: "application/json,text/plain,*/*" },
   });
 
-  const json = await res.json().catch(() => null);
+  const text = await res.text();
 
-  // Expecting { ok, cached, stale, ts, data }
-  const ok = !!json?.ok;
-  const stale = !!json?.stale;
-  const ts = Number(json?.ts || 0);
-
-  const rows = normalizeTennisOdds(json);
-
-  // Build indexes
-  const byMatchId = Object.create(null);
-  const byPlayers = Object.create(null);
-
-  for (const r of rows) {
-    if (r?.matchId) byMatchId[String(r.matchId)] = r;
-
-    const key = makePlayerKey(r?.home, r?.away);
-    if (key) byPlayers[key] = r;
-
-    // Also store reverse key (sometimes home/away swap between feeds)
-    const revKey = makePlayerKey(r?.away, r?.home);
-    if (revKey && !byPlayers[revKey]) byPlayers[revKey] = r;
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = null;
   }
 
-  return {
-    ok,
-    stale,
-    ts,
-    rows,
-    byMatchId,
-    byPlayers,
-    count: rows.length,
-  };
+  if (!res.ok) {
+    const msg =
+      (json && (json.message || json.error)) ||
+      `fetchTennisOdds_failed_${res.status}`;
+    throw new Error(msg);
+  }
+
+  // Support both envelopes:
+  // A) { ok:true, data:{...} }
+  // B) raw payload directly
+  return (json && typeof json === "object" && json.data) ? json.data : json;
 }
