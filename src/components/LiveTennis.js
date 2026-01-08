@@ -2,7 +2,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import fetchTennisLive from "../utils/fetchTennisLive";
 import fetchTennisOdds from "../utils/fetchTennisOdds";
-import buildOddsIndex from "../utils/oddsParser";
 import { trackOdds, getDrift } from "../utils/oddsTracker";
 import analyzeMatch from "../utils/analyzeMatch";
 import { showToast } from "../utils/toast";
@@ -21,7 +20,6 @@ const FINISHED = new Set([
 ]);
 
 const toLower = (v) => String(v ?? "").trim().toLowerCase();
-
 const isFinishedLike = (s) => FINISHED.has(toLower(s));
 
 const isUpcomingLike = (s) => {
@@ -80,7 +78,10 @@ function parseStart(dateStr, timeStr) {
     const mm = parseInt(m[2], 10);
     const yyyy = parseInt(m[3], 10);
     if (Number.isFinite(dd) && Number.isFinite(mm) && Number.isFinite(yyyy)) {
-      const iso = `${String(yyyy).padStart(4, "0")}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}T${t}`;
+      const iso = `${String(yyyy).padStart(4, "0")}-${String(mm).padStart(
+        2,
+        "0"
+      )}-${String(dd).padStart(2, "0")}T${t}`;
       const dt = new Date(iso);
       if (Number.isFinite(dt.getTime())) return dt;
     }
@@ -120,6 +121,41 @@ const labelPriority = {
   "SET 1": 7,
   UPCOMING: 8,
 };
+
+function normName(s) {
+  return String(s || "").trim().toLowerCase();
+}
+
+function playerKey(a, b) {
+  const x = normName(a);
+  const y = normName(b);
+  if (!x || !y) return "";
+  return `${x}__vs__${y}`;
+}
+
+// Convert normalized odds row -> legacy odds shape expected by existing pipeline
+function toLegacyOdds(row, name1, name2) {
+  if (!row?.odds) return null;
+
+  const homeOdds = Number(row.odds.home);
+  const awayOdds = Number(row.odds.away);
+  if (!(homeOdds > 1) || !(awayOdds > 1)) return null;
+
+  const favIsHome = homeOdds <= awayOdds;
+  const favOdds = favIsHome ? homeOdds : awayOdds;
+
+  const homeName = row.home || name1 || "";
+  const awayName = row.away || name2 || "";
+  const favName = favIsHome ? homeName : awayName;
+
+  return {
+    homeOdds,
+    awayOdds,
+    favOdds,
+    favName,
+    bookmaker: row.bookmaker || "",
+  };
+}
 
 export default function LiveTennis({
   onLiveCount = () => {},
@@ -205,17 +241,17 @@ export default function LiveTennis({
         return !!raw && !isUpcomingLike(raw) && !isFinishedLike(raw);
       });
 
-      let oddsRaw = null;
+      let oddsIndex = null;
       if (hasLive) {
         try {
-          oddsRaw = await fetchTennisOdds();
+          oddsIndex = await fetchTennisOdds();
         } catch {
-          oddsRaw = null;
+          oddsIndex = null;
         }
       }
 
-      const oddsIndex =
-        oddsRaw && typeof oddsRaw === "object" ? buildOddsIndex({ raw: oddsRaw }) || {} : {};
+      const byMatchId = oddsIndex?.byMatchId || {};
+      const byPlayers = oddsIndex?.byPlayers || {};
 
       const now = Date.now();
 
@@ -237,7 +273,17 @@ export default function LiveTennis({
 
         const matchId = m.id || m["@id"] || `${date}-${time}-${name1}-${name2}-${idx}`;
 
-        const odds = oddsIndex && matchId ? oddsIndex[matchId] : null;
+        // 1) Try matchId
+        let oddsRow = matchId ? byMatchId[String(matchId)] : null;
+
+        // 2) Fallback byPlayers (both directions)
+        if (!oddsRow) {
+          const k1 = playerKey(name1, name2);
+          const k2 = playerKey(name2, name1);
+          oddsRow = (k1 && byPlayers[k1]) || (k2 && byPlayers[k2]) || null;
+        }
+
+        const odds = toLegacyOdds(oddsRow, name1, name2);
 
         let favOdds = null;
         let favImplied = null;
@@ -338,7 +384,13 @@ export default function LiveTennis({
       if (!live && isUpcomingLike(rawStatus)) {
         label = "UPCOMING";
       } else if (live) {
-        if (!label || label === "PENDING" || label === "UPCOMING" || label === "SOON" || label === "STARTS SOON") {
+        if (
+          !label ||
+          label === "PENDING" ||
+          label === "UPCOMING" ||
+          label === "SOON" ||
+          label === "STARTS SOON"
+        ) {
           label = (m.setNum || 0) > 0 ? `SET ${m.setNum}` : "LIVE";
         }
       } else {
