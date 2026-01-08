@@ -40,18 +40,18 @@ function normalizePlayers(m) {
     ? m.player
     : [];
 
-  if (!p.length) return { ...m, players: [] };
+  if (!p.length) return { ...(m || {}), players: [] };
 
   return {
-    ...m,
+    ...(m || {}),
     players: p.slice(0, 2).map((x) => ({
       id: x?.id ?? x?.["@id"] ?? x?.$?.id ?? null,
       name: x?.name ?? x?.["@name"] ?? x?.$?.name ?? "",
-      s1: x?.s1 ?? "",
-      s2: x?.s2 ?? "",
-      s3: x?.s3 ?? "",
-      s4: x?.s4 ?? "",
-      s5: x?.s5 ?? "",
+      s1: x?.s1 ?? x?.["@s1"] ?? "",
+      s2: x?.s2 ?? x?.["@s2"] ?? "",
+      s3: x?.s3 ?? x?.["@s3"] ?? "",
+      s4: x?.s4 ?? x?.["@s4"] ?? "",
+      s5: x?.s5 ?? x?.["@s5"] ?? "",
     })),
   };
 }
@@ -69,12 +69,7 @@ function hasScores(players) {
 
 function statusLooksLive(status) {
   const x = String(status ?? "").trim().toLowerCase();
-  return (
-    x === "in progress" ||
-    x === "live" ||
-    x === "playing" ||
-    x === "started"
-  );
+  return x === "in progress" || x === "live" || x === "playing" || x === "started";
 }
 
 function statusLooksFinished(status) {
@@ -87,6 +82,20 @@ function statusLooksFinished(status) {
     x === "postponed" ||
     x === "walk over"
   );
+}
+
+function unwrapOddsPayload(oddsJson) {
+  if (!oddsJson || typeof oddsJson !== "object") return null;
+
+  // common shapes:
+  // { ok:true, data:{...} }
+  // { ok:true, raw:{...} }
+  // { scores:{...} } (already unwrapped)
+  if (oddsJson.data && typeof oddsJson.data === "object") return oddsJson.data;
+  if (oddsJson.raw && typeof oddsJson.raw === "object") return oddsJson.raw;
+
+  // sometimes the API already returns the feed root
+  return oddsJson;
 }
 
 export default async function fetchTennisLive(opts = {}) {
@@ -113,6 +122,8 @@ export default async function fetchTennisLive(opts = {}) {
       headers: { Accept: "application/json,text/plain,*/*" },
     });
 
+    // NOTE: backend is designed to return 200 even on upstream errors.
+    // So res.ok is not a reliable signal. We still keep the guard for truly broken responses.
     if (!res.ok) {
       console.warn(`[fetchTennisLive] tennis-live http ${res.status}`);
       return [];
@@ -148,13 +159,12 @@ export default async function fetchTennisLive(opts = {}) {
 
       // If backend already computed isLive, trust it; otherwise compute deterministically.
       const fromBackend = base0?.isLive;
-      const backendIsLive =
-        typeof fromBackend === "boolean" ? fromBackend : null;
+      const backendIsLive = typeof fromBackend === "boolean" ? fromBackend : null;
 
       const computedIsLive =
         statusLooksLive(status) ||
         scoresPresent ||
-        (String(statusRaw).trim() === "2"); // numeric fallback
+        String(statusRaw ?? "").trim() === "2"; // numeric fallback
 
       const isLive = backendIsLive !== null ? backendIsLive : computedIsLive;
 
@@ -170,7 +180,6 @@ export default async function fetchTennisLive(opts = {}) {
     // Safety: never send finished-like to UI if any slip through
     .filter((m) => !statusLooksFinished(m.status));
 
-  // If no matches, don't waste time on odds
   if (!normalized.length) return [];
 
   // Odds enrichment is optional; NEVER fail the whole function.
@@ -185,9 +194,16 @@ export default async function fetchTennisLive(opts = {}) {
     if (!oddsRes.ok) return normalized;
 
     const oddsJson = await safeReadJson(oddsRes);
-    if (!oddsJson || oddsJson.ok !== true) return normalized;
+    if (!oddsJson) return normalized;
 
-    const oddsIndex = buildOddsIndex ? buildOddsIndex(oddsJson) : null;
+    // If endpoint uses {ok:true}, honor it. If not present, still try to parse.
+    if (oddsJson.ok === false) return normalized;
+
+    const payload = unwrapOddsPayload(oddsJson);
+    if (!payload || typeof payload !== "object") return normalized;
+
+    // IMPORTANT: oddsParser expects { raw } or raw feed. We pass { raw: payload }.
+    const oddsIndex = buildOddsIndex ? buildOddsIndex({ raw: payload }) : null;
     if (!oddsIndex || typeof oddsIndex !== "object") return normalized;
 
     return normalized.map((m) => {
