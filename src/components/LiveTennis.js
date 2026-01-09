@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import fetchTennisLive from "../utils/fetchTennisLive";
 import fetchTennisOdds from "../utils/fetchTennisOdds";
-import buildOddsIndex from "../utils/oddsParser";
+import buildOddsIndex, { buildOddsList } from "../utils/oddsParser";
 import { trackOdds, getDrift } from "../utils/oddsTracker";
 import analyzeMatch from "../utils/analyzeMatch";
 import { showToast } from "../utils/toast";
@@ -227,7 +227,11 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
         }
       }
 
-      const oddsIndex = oddsRaw && typeof oddsRaw === "object" ? buildOddsIndex({ raw: oddsRaw }) || {} : {};
+      const oddsIndex =
+        oddsRaw && typeof oddsRaw === "object" ? buildOddsIndex({ raw: oddsRaw }) || {} : {};
+
+      const oddsList =
+        oddsRaw && typeof oddsRaw === "object" ? buildOddsList({ raw: oddsRaw }) || [] : [];
 
       const now = Date.now();
 
@@ -243,9 +247,15 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
 
         const setNum = currentSetFromScores(players);
 
-        const matchId = m.id || m["@id"] || `${date}-${time}-${name1}-${name2}-${idx}`;
+        // IMPORTANT:
+        // rawId is the canonical GoalServe id (what oddsIndex is keyed by).
+        const rawId = m.id || m["@id"] || m.matchid || m["@matchid"] || null;
 
-        const odds = oddsIndex && matchId ? oddsIndex[matchId] : null;
+        // UI id fallback (stable key for React) – keep previous behavior
+        const uiId = rawId || `${date}-${time}-${name1}-${name2}-${idx}`;
+
+        // We lookup odds by canonical id ONLY.
+        const odds = rawId && oddsIndex ? oddsIndex[String(rawId)] : null;
 
         let favOdds = null;
         let favImplied = null;
@@ -266,8 +276,8 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
           }
 
           if (Number.isFinite(favImplied) && favImplied > 0 && favImplied < 1) {
-            trackOdds(matchId, favImplied);
-            drift = getDrift(matchId);
+            trackOdds(String(rawId || uiId), favImplied);
+            drift = getDrift(String(rawId || uiId));
           }
 
           favOdds = fav;
@@ -283,7 +293,26 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
         const liveNow = !!status && !isUpcomingLike(status) && !isFinishedLike(status);
         const shouldRunAI = liveNow && (setNum || 0) >= 3;
 
-        const ai = shouldRunAI ? analyzeMatch({ ...m, odds }, extraFeatures) || {} : {};
+        // Key change (LOCKDOWN-safe):
+        // Pass oddsIndex + oddsList into analyzeMatch context so predictor fallback can resolve missing odds.
+        const aiCtx = {
+          ...m,
+          id: rawId || m.id || m["@id"] || uiId,
+          matchId: rawId || m.id || m["@id"] || uiId,
+          odds,
+          oddsIndex,
+          oddsList,
+          liveMatch: m,
+          _oddsIndex: oddsIndex,
+          _oddsList: oddsList,
+          _debugOddsResolve: true,
+          oddsResolveOpts: {
+            // keep conservative; matcher will still work even if these are ignored
+            maxMinutesDiff: 180,
+          },
+        };
+
+        const ai = shouldRunAI ? analyzeMatch(aiCtx, extraFeatures) || {} : {};
 
         let startAt = null;
         let startInMs = null;
@@ -299,7 +328,8 @@ export default function LiveTennis({ onLiveCount = () => {}, notificationsOn = t
         }
 
         return {
-          id: matchId,
+          id: String(uiId),
+          matchId: rawId ? String(rawId) : null,
           name1,
           name2,
           date,
