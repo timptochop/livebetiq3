@@ -1,5 +1,7 @@
 // src/utils/oddsParser.js
 
+import { findBestOddsForLiveMatch } from "./oddsMatcher";
+
 function toNumberOrNull(v) {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -25,16 +27,14 @@ function safeGet(obj, path, def = null) {
   }
 }
 
-export function buildOddsIndex(feed) {
+function extractOddsEntries(feed) {
   const raw = feed && feed.raw ? feed.raw : feed;
-  const out = Object.create(null);
-
-  if (!raw || typeof raw !== "object") {
-    return out;
-  }
+  if (!raw || typeof raw !== "object") return [];
 
   const scores = raw.scores || raw;
   const categories = normalizeArray(scores.category);
+
+  const entries = [];
 
   categories.forEach((cat) => {
     if (!cat) return;
@@ -122,31 +122,134 @@ export function buildOddsIndex(feed) {
         dogOdds = homeOdds;
       }
 
-      out[String(mid)] = {
+      entries.push({
         matchId: String(mid),
+
+        // names for matching
+        player1: homeName,
+        player2: awayName,
         homeName,
         awayName,
+
+        // odds
         homeOdds,
         awayOdds,
         favName,
         favOdds,
         dogName,
         dogOdds,
+
         bookmaker,
         ts,
-      };
+
+        // optional hints
+        tournament: cat.name || cat["@name"] || cat.id || cat["@id"] || "",
+        league: cat.name || cat["@name"] || "",
+      });
     });
   });
 
-  // DEBUG: verify odds index keys
+  return entries;
+}
+
+/**
+ * Backward-compatible: builds { [matchId]: oddsObj }
+ */
+export function buildOddsIndex(feed) {
+  const out = Object.create(null);
+  const entries = extractOddsEntries(feed);
+
+  entries.forEach((e) => {
+    if (!e || !e.matchId) return;
+    out[String(e.matchId)] = {
+      matchId: String(e.matchId),
+      homeName: e.homeName,
+      awayName: e.awayName,
+      homeOdds: e.homeOdds,
+      awayOdds: e.awayOdds,
+      favName: e.favName,
+      favOdds: e.favOdds,
+      dogName: e.dogName,
+      dogOdds: e.dogOdds,
+      bookmaker: e.bookmaker,
+      ts: e.ts,
+    };
+  });
+
   try {
     // eslint-disable-next-line no-console
     console.log("[ODDS INDEX KEYS]", Object.keys(out).slice(0, 12));
-  } catch {
-    // ignore
-  }
+  } catch {}
 
   return out;
+}
+
+/**
+ * New: builds a list array (matcher-ready).
+ */
+export function buildOddsList(feed) {
+  return extractOddsEntries(feed);
+}
+
+/**
+ * New: deterministic odds resolution for a live match:
+ * 1) try direct matchId lookup in oddsIndex
+ * 2) fallback to matcher (players/league/time) using oddsList
+ */
+export function resolveOddsForLiveMatch(liveMatch, oddsIndex, oddsList, opts = {}) {
+  const id =
+    liveMatch?.matchId ||
+    liveMatch?.id ||
+    liveMatch?.matchid ||
+    liveMatch?.["@id"] ||
+    liveMatch?.["@matchid"] ||
+    null;
+
+  const key = id ? String(id) : null;
+
+  if (key && oddsIndex && oddsIndex[key]) {
+    return {
+      ok: true,
+      odds: oddsIndex[key],
+      via: "matchId",
+      score: 100,
+      meta: { reason: "direct_index_hit", matchId: key },
+    };
+  }
+
+  const list = Array.isArray(oddsList) ? oddsList : [];
+  const r = findBestOddsForLiveMatch(liveMatch, list, opts);
+
+  if (r.ok && r.best) {
+    const o = r.best;
+    return {
+      ok: true,
+      odds: {
+        matchId: String(o.matchId || o.id || ""),
+        homeName: o.homeName || o.player1 || "",
+        awayName: o.awayName || o.player2 || "",
+        homeOdds: o.homeOdds,
+        awayOdds: o.awayOdds,
+        favName: o.favName,
+        favOdds: o.favOdds,
+        dogName: o.dogName,
+        dogOdds: o.dogOdds,
+        bookmaker: o.bookmaker || "",
+        ts: o.ts || 0,
+      },
+      via: "matcher",
+      score: r.score,
+      meta: r.meta,
+    };
+  }
+
+  return {
+    ok: false,
+    odds: null,
+    via: "none",
+    score: r?.score || 0,
+    meta: r?.meta || { reason: "no_match" },
+  };
 }
 
 export default buildOddsIndex;
