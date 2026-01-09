@@ -1,0 +1,19 @@
+{
+  "url": "https://www.goalserve.com/getfeed/PUT_YOUR_GOALSERVE_KEY_HERE/tennis_scores/home",
+  "status": 500,
+  "ok": false,
+  "contentType": "text/html; charset=utf-8",
+  "contentEncoding": null,
+  "contentLength": "1767",
+  "headers": {
+    "access-control-allow-origin": "*",
+    "cache-control": "private",
+    "content-length": "1767",
+    "content-type": "text/html; charset=utf-8",
+    "date": "Wed, 07 Jan 2026 15:03:34 GMT",
+    "server": "Microsoft-IIS/10.0",
+    "x-aspnet-version": "2.0.50727",
+    "x-powered-by": "ASP.NET, ARR/3.0, ASP.NET"
+  },
+  "bytes": 1767
+}
