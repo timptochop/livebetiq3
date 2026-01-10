@@ -1,10 +1,9 @@
 // api/_lib/goalServeLiveAPI.js
-// GoalServe Tennis fetcher (JSON-first) with deterministic fallback:
-// home -> d1 -> d2 -> d3
-// IMPORTANT: GoalServe "getfeed/<KEY>/tennis_scores/..." uses RAW 32-hex key (NO GUID dashes).
-// Adds ?json=1 as GoalServe recommends.
+// GoalServe Tennis fetcher (GUID key format) + JSON feeds with deterministic fallback.
+// Fix: GoalServe expects GUID with dashes in the /getfeed/<KEY>/... path.
+// Feeds: home -> d1 -> d2 -> d3 (all with ?json=1)
 
-const READ_TIMEOUT_MS = 14000;
+const READ_TIMEOUT_MS = 15000;
 
 function nowIso() {
   return new Date().toISOString();
@@ -24,7 +23,6 @@ function asArray(v) {
 }
 
 function pickEnvKey() {
-  // Support both names (you have both in Vercel)
   const k =
     process.env.GOALSERVE_KEY ||
     process.env.GOALSERVE_TOKEN ||
@@ -33,9 +31,38 @@ function pickEnvKey() {
   return String(k || "").trim();
 }
 
+function normalizeToGuid(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return null;
+
+  // Already GUID?
+  if (/^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$/.test(s)) {
+    return s.toLowerCase();
+  }
+
+  // Raw 32 hex -> GUID
+  const hex = s.replace(/[^a-fA-F0-9]/g, "");
+  if (hex.length !== 32) return null;
+
+  const guid =
+    hex.slice(0, 8) + "-" +
+    hex.slice(8, 12) + "-" +
+    hex.slice(12, 16) + "-" +
+    hex.slice(16, 20) + "-" +
+    hex.slice(20);
+
+  return guid.toLowerCase();
+}
+
 function isLikelyHtml(s) {
   const t = String(s || "").trim().toLowerCase();
-  return t.startsWith("<!doctype") || t.startsWith("<html") || t.includes("<head") || t.includes("<title");
+  return (
+    t.startsWith("<!doctype") ||
+    t.startsWith("<html") ||
+    t.includes("<head") ||
+    t.includes("<title") ||
+    t.includes("guid should contain")
+  );
 }
 
 async function fetchText(url) {
@@ -47,7 +74,6 @@ async function fetchText(url) {
   try {
     res = await fetch(url, {
       method: "GET",
-      // Avoid fancy headers; GoalServe can be picky. Keep it simple.
       headers: {
         "User-Agent": "livebetiq3-vercel/tennis-live",
         "Accept": "application/json,text/plain,*/*",
@@ -69,23 +95,17 @@ async function fetchText(url) {
   };
 }
 
-function buildFeedUrls(rawKey) {
-  // Based on the GoalServe document you uploaded  [oai_citation:1‡15.12 API feeds_urls 7.txt](sediment://file_000000007c0471fd86404bbb383209fd)
-  const base = `https://www.goalserve.com/getfeed/${rawKey}/tennis_scores`;
+function buildFeedUrls(guidKey) {
+  const base = `https://www.goalserve.com/getfeed/${guidKey}/tennis_scores`;
   return [
-    { name: "home", url: `${base}/home?json=1` }, // live score
-    { name: "d1", url: `${base}/d1?json=1` },     // tomorrow
-    { name: "d2", url: `${base}/d2?json=1` },     // +2 days
-    { name: "d3", url: `${base}/d3?json=1` },     // +3 days
+    { name: "home", url: `${base}/home?json=1` },
+    { name: "d1", url: `${base}/d1?json=1` },
+    { name: "d2", url: `${base}/d2?json=1` },
+    { name: "d3", url: `${base}/d3?json=1` },
   ];
 }
 
-/**
- * Tries to extract a flat list of matches from GoalServe tennis_scores JSON.
- * We keep normalization minimal and resilient.
- */
 function extractMatchesFromGoalServeJson(data) {
-  // Known common layout: { scores: { category: [...] } }
   const scores = data?.scores || data?.data?.scores || data;
   const categories = asArray(scores?.category || scores?.categories);
 
@@ -93,16 +113,14 @@ function extractMatchesFromGoalServeJson(data) {
 
   for (const cat of categories) {
     const catName = cat?.name || cat?.["@_name"] || cat?.["@name"] || cat?.id || "Unknown";
-    const tournaments = asArray(cat?.tournament || cat?.tournaments || cat);
 
-    // Sometimes tournament is nested, sometimes matches are directly under category
+    const tournaments = asArray(cat?.tournament || cat?.tournaments);
     const directMatches = asArray(cat?.match || cat?.matches);
 
     const pushMatch = (m, tournamentName = "") => {
       if (!m) return;
       const id = m?.id || m?.["@_id"] || m?.["@id"] || m?.match_id || m?.gid || null;
 
-      // Players can appear in different shapes
       const p1 =
         m?.player1?.name ||
         m?.player1 ||
@@ -111,6 +129,7 @@ function extractMatchesFromGoalServeJson(data) {
         m?.team1 ||
         m?.["player1_name"] ||
         "";
+
       const p2 =
         m?.player2?.name ||
         m?.player2 ||
@@ -132,6 +151,7 @@ function extractMatchesFromGoalServeJson(data) {
         m?.["@_date"] ||
         m?.["@date"] ||
         "";
+
       const time =
         m?.time ||
         m?.["@_time"] ||
@@ -140,30 +160,24 @@ function extractMatchesFromGoalServeJson(data) {
 
       out.push({
         id: id ? String(id) : null,
-        players: {
-          p1: String(p1 || "").trim(),
-          p2: String(p2 || "").trim(),
-        },
+        players: { p1: String(p1 || "").trim(), p2: String(p2 || "").trim() },
         status: String(status || "").trim(),
         start: { date: String(date || "").trim(), time: String(time || "").trim() },
         category: String(catName || "").trim(),
         tournament: String(tournamentName || "").trim(),
-        raw: m, // keep for debugging / AI parsing if needed
+        raw: m,
       });
     };
 
-    // Tournament-level matches
     for (const t of tournaments) {
       const tName = t?.name || t?.["@_name"] || t?.["@name"] || "";
       const matches = asArray(t?.match || t?.matches);
       for (const m of matches) pushMatch(m, tName);
     }
 
-    // Category-level direct matches
     for (const m of directMatches) pushMatch(m, "");
   }
 
-  // Fallback: if JSON is already an array of matches
   if (!out.length && Array.isArray(data)) {
     for (const m of data) {
       out.push({
@@ -178,7 +192,6 @@ function extractMatchesFromGoalServeJson(data) {
     }
   }
 
-  // Remove empties
   return out.filter((m) => (m.players?.p1 && m.players?.p2) || m.id);
 }
 
@@ -195,17 +208,17 @@ function computeCounts(matches) {
   return { live, upcoming, total: matches.length };
 }
 
-/**
- * Main public function used by /api/gs/tennis-live
- */
 export async function fetchLiveTennis({ debug = false } = {}) {
   const rawKey = pickEnvKey();
+  const guidKey = normalizeToGuid(rawKey);
 
   const meta = {
-    build: "v10.3.0-tennis-live-rawkey-json-fallback",
+    build: "v10.4.0-tennis-live-guidkey-json-fallback",
     now: nowIso(),
     keyPresent: !!rawKey,
     keyLen: rawKey ? rawKey.length : 0,
+    keyFormat: guidKey ? "guid" : "invalid",
+    normalizedKey: guidKey ? guidKey : null,
   };
 
   if (!rawKey) {
@@ -217,7 +230,16 @@ export async function fetchLiveTennis({ debug = false } = {}) {
     };
   }
 
-  const urls = buildFeedUrls(rawKey);
+  if (!guidKey) {
+    return {
+      ok: false,
+      mode: "ERROR",
+      matches: [],
+      meta: { ...meta, error: "invalid_key_format_expected_32hex_or_guid" },
+    };
+  }
+
+  const urls = buildFeedUrls(guidKey);
 
   const tried = [];
   for (const u of urls) {
@@ -228,10 +250,9 @@ export async function fetchLiveTennis({ debug = false } = {}) {
       status: r.status,
       ok: r.ok,
       contentType: r.contentType,
-      head: String(r.text || "").slice(0, 220),
+      head: String(r.text || "").slice(0, 260),
     });
 
-    // If upstream returned HTML, this is a hard fail: wrong endpoint or blocked
     if (isLikelyHtml(r.text) || String(r.contentType).toLowerCase().includes("text/html")) {
       return {
         ok: true,
@@ -245,7 +266,7 @@ export async function fetchLiveTennis({ debug = false } = {}) {
             status: r.status,
             contentType: r.contentType,
             urlTried: u.url,
-            rawHead: String(r.text || "").slice(0, 700),
+            rawHead: String(r.text || "").slice(0, 900),
           },
           tried,
         },
@@ -254,40 +275,22 @@ export async function fetchLiveTennis({ debug = false } = {}) {
     }
 
     const json = safeJsonParse(r.text);
-    if (!json) {
-      // Not JSON, keep trying next url
-      continue;
-    }
+    if (!json) continue;
 
     const matches = extractMatchesFromGoalServeJson(json);
     const counts = computeCounts(matches);
 
-    // If home has nothing, we fallback to d1/d2/d3
-    if (matches.length === 0) {
-      continue;
-    }
+    if (matches.length === 0) continue;
 
     return {
       ok: true,
       mode: u.name === "home" ? "LIVE" : "FALLBACK",
       matches,
-      meta: {
-        ...meta,
-        source: u.name,
-        counts,
-        tried,
-      },
-      debug: debug
-        ? {
-            sourceUrl: u.url,
-            counts,
-            tried,
-          }
-        : undefined,
+      meta: { ...meta, source: u.name, counts, tried },
+      debug: debug ? { sourceUrl: u.url, counts, tried } : undefined,
     };
   }
 
-  // If we reach here: all feeds returned JSON but no matches (can happen off-hours)
   return {
     ok: true,
     mode: "EMPTY",
@@ -296,8 +299,7 @@ export async function fetchLiveTennis({ debug = false } = {}) {
       ...meta,
       counts: { live: 0, upcoming: 0, total: 0 },
       tried,
-      note:
-        "All feeds returned JSON but yielded 0 matches. This can be normal when there are no events in the chosen windows.",
+      note: "All feeds returned JSON but yielded 0 matches (can be normal off-hours).",
     },
     debug: debug ? { tried } : undefined,
   };
