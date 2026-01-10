@@ -1,25 +1,16 @@
 // src/utils/oddsMatcher.js
 // Canonical deterministic fuzzy matcher: Odds <-> Matches
-// Rule priority:
-// (1) Player names normalized (required)
-// (2) Tournament/category similarity (required-ish via scoring)
-// (3) Time window ±X minutes (required if we have timestamps)
-// (4) Surface (optional bonus)
-// (5) Fail-closed if below thresholds
+// Provides:
+// - default export: matchOddsToMatches(matches, oddsList, opts)
+// - named export: findBestOddsForLiveMatch(match, oddsList, opts)  <-- for legacy imports
 
 const DEFAULT_OPTS = Object.freeze({
   maxTimeWindowMinutes: 90,
-  minNameScore: 0.86, // strict: must be high
-  minTotalScore: 0.78, // strict overall
+  minNameScore: 0.86,
+  minTotalScore: 0.78,
   allowSwapPlayers: true,
   enableDiagnostics: true,
-  // Aliases to reduce false negatives on GoalServe naming quirks.
-  // Add more as you discover recurring patterns.
-  aliases: {
-    // examples:
-    // "ALEXANDER ZVEREV": "A ZVEREV",
-    // "N. DJOKOVIC": "NOVAK DJOKOVIC",
-  },
+  aliases: {},
 });
 
 function isFiniteNumber(x) {
@@ -31,7 +22,6 @@ function safeStr(x) {
 }
 
 function stripDiacritics(s) {
-  // Normalize unicode and remove combining diacritics
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
@@ -45,27 +35,20 @@ function normalizeName(raw, aliases) {
 
   s = stripDiacritics(s);
   s = s.toUpperCase();
-
-  // Remove punctuation except spaces
   s = s.replace(/[^A-Z0-9\s]/g, " ");
   s = normalizeWhitespace(s);
 
-  // Common patterns: "LAST, FIRST" -> "FIRST LAST"
   if (s.includes(",")) {
     const parts = s.split(",").map((p) => normalizeWhitespace(p));
     if (parts.length >= 2) s = normalizeWhitespace(`${parts[1]} ${parts[0]}`);
   }
 
-  // Collapse initials spacing: "N DJOKOVIC" stays as is
-  // Remove single-letter middle names if present
   s = s
     .split(" ")
     .filter((tok) => tok && tok.length > 0)
     .join(" ");
 
-  // Apply alias mapping if exists
   if (aliases && aliases[s]) return aliases[s];
-
   return s;
 }
 
@@ -76,7 +59,6 @@ function normalizeTournament(raw) {
   s = s.replace(/[^A-Z0-9\s]/g, " ");
   s = normalizeWhitespace(s);
 
-  // Remove low-signal tokens
   const drop = new Set(["ATP", "WTA", "ITF", "CHALLENGER", "MEN", "WOMEN", "SINGLES", "DOUBLES"]);
   const tokens = s.split(" ").filter((t) => t && !drop.has(t));
   return tokens.join(" ");
@@ -107,7 +89,6 @@ function jaccardSimilarity(aTokens, bTokens) {
   return union <= 0 ? 0 : inter / union;
 }
 
-// Levenshtein distance (iterative DP, optimized for small strings)
 function levenshtein(a, b) {
   const s = safeStr(a);
   const t = safeStr(b);
@@ -146,7 +127,6 @@ function stringSimilarity(a, b) {
   if (!s && !t) return 1;
   if (!s || !t) return 0;
 
-  // Combine token similarity + edit similarity for robustness
   const sa = tokenize(s);
   const sb = tokenize(t);
   const jac = jaccardSimilarity(sa, sb);
@@ -155,21 +135,14 @@ function stringSimilarity(a, b) {
   const maxLen = Math.max(s.length, t.length);
   const editSim = maxLen <= 0 ? 1 : 1 - dist / maxLen;
 
-  // Weighted blend
   return 0.6 * jac + 0.4 * editSim;
 }
 
 function parseTimeToEpochMs(value) {
-  // Accept:
-  // - number (ms)
-  // - ISO date string
-  // - unix seconds
-  // - missing -> NaN
   if (value === null || value === undefined) return NaN;
 
   if (typeof value === "number") {
     if (!isFiniteNumber(value)) return NaN;
-    // Heuristic: if it's seconds, convert to ms
     return value < 1e12 ? value * 1000 : value;
   }
 
@@ -186,7 +159,6 @@ function minutesDiffAbs(aMs, bMs) {
 }
 
 function extractMatchFields(match) {
-  // Defensive: adapt to slightly different schemas
   const p1 = match?.player1 ?? match?.home ?? match?.team1 ?? match?.p1 ?? match?.player_1 ?? "";
   const p2 = match?.player2 ?? match?.away ?? match?.team2 ?? match?.p2 ?? match?.player_2 ?? "";
 
@@ -243,7 +215,6 @@ function extractOddsFields(odds) {
     odds?.timestamp ??
     "";
 
-  // Preserve original reference id if exists
   const id = odds?.id ?? odds?.oddsId ?? odds?.matchId ?? odds?.match_id ?? odds?.key ?? "";
 
   return { id, p1, p2, tournament, surface, start };
@@ -266,9 +237,8 @@ function computeNameScore(matchP1, matchP2, oddsP1, oddsP2, allowSwap) {
 
 function timeScore(matchStartMs, oddsStartMs, maxWindowMin) {
   const diffMin = minutesDiffAbs(matchStartMs, oddsStartMs);
-  if (!Number.isFinite(diffMin)) return { ok: true, score: 0.5, diffMin: NaN }; // unknown time => neutral
+  if (!Number.isFinite(diffMin)) return { ok: true, score: 0.5, diffMin: NaN };
   if (diffMin > maxWindowMin) return { ok: false, score: 0, diffMin };
-  // Map diff within window to [1..0.6] roughly
   const x = Math.max(0, Math.min(1, diffMin / maxWindowMin));
   const score = 1 - 0.4 * x;
   return { ok: true, score, diffMin };
@@ -277,8 +247,8 @@ function timeScore(matchStartMs, oddsStartMs, maxWindowMin) {
 function surfaceScore(matchSurface, oddsSurface) {
   const a = normalizeSurface(matchSurface);
   const b = normalizeSurface(oddsSurface);
-  if (!a || !b) return 0.5; // unknown => neutral
-  return a === b ? 1 : 0; // strict mismatch penalty
+  if (!a || !b) return 0.5;
+  return a === b ? 1 : 0;
 }
 
 function tournamentScore(matchTour, oddsTour) {
@@ -288,36 +258,24 @@ function tournamentScore(matchTour, oddsTour) {
   return stringSimilarity(a, b);
 }
 
+function round4(x) {
+  return Math.round((x + Number.EPSILON) * 10000) / 10000;
+}
+
 /**
- * Match odds objects to matches deterministically.
- *
- * @param {Array<Object>} matches
- * @param {Array<Object>} oddsList
- * @param {Object} [opts]
- * @returns {{
- *   byMatchId: Record<string, Object>,
- *   pairs: Array<{ matchId: string, oddsId: string, score: number, nameScore: number, tourScore: number, timeDiffMin: number, swapped: boolean }>,
- *   rejected: Array<{ matchId?: string, oddsId?: string, reason: string, score?: number, nameScore?: number }>
- * }}
+ * Default: match all matches to odds list (greedy, collision-safe, fail-closed).
  */
 export default function matchOddsToMatches(matches = [], oddsList = [], opts = {}) {
   const o = { ...DEFAULT_OPTS, ...(opts || {}) };
   const aliases = o.aliases || {};
 
-  const out = {
-    byMatchId: {},
-    pairs: [],
-    rejected: [],
-  };
+  const out = { byMatchId: {}, pairs: [], rejected: [] };
 
   if (!Array.isArray(matches) || !Array.isArray(oddsList) || !matches.length || !oddsList.length) {
-    if (o.enableDiagnostics) {
-      out.rejected.push({ reason: "empty_input", score: 0 });
-    }
+    if (o.enableDiagnostics) out.rejected.push({ reason: "empty_input", score: 0 });
     return out;
   }
 
-  // Pre-normalize matches
   const normMatches = matches
     .map((m) => {
       const f = extractMatchFields(m);
@@ -336,7 +294,6 @@ export default function matchOddsToMatches(matches = [], oddsList = [], opts = {
     })
     .filter((m) => m.id && m.p1 && m.p2);
 
-  // Pre-normalize odds
   const normOdds = oddsList
     .map((od) => {
       const f = extractOddsFields(od);
@@ -345,7 +302,7 @@ export default function matchOddsToMatches(matches = [], oddsList = [], opts = {
       const startMs = parseTimeToEpochMs(f.start);
       return {
         raw: od,
-        id: safeStr(f.id) || "", // odds may not have id
+        id: safeStr(f.id) || "",
         p1: no1,
         p2: no2,
         tour: safeStr(f.tournament),
@@ -356,15 +313,10 @@ export default function matchOddsToMatches(matches = [], oddsList = [], opts = {
     .filter((x) => x.p1 && x.p2);
 
   if (!normMatches.length || !normOdds.length) {
-    if (o.enableDiagnostics) {
-      out.rejected.push({ reason: "no_normalizable_rows", score: 0 });
-    }
+    if (o.enableDiagnostics) out.rejected.push({ reason: "no_normalizable_rows", score: 0 });
     return out;
   }
 
-  // Greedy best match per matchId with uniqueness on odds side:
-  // - For each match, compute best odds candidate score
-  // - Then resolve collisions by picking higher score first
   const candidates = [];
 
   for (const m of normMatches) {
@@ -372,8 +324,6 @@ export default function matchOddsToMatches(matches = [], oddsList = [], opts = {
 
     for (const od of normOdds) {
       const { score: nameScore, swapped } = computeNameScore(m.p1, m.p2, od.p1, od.p2, o.allowSwapPlayers);
-
-      // Hard gate: name must be strong
       if (nameScore < o.minNameScore) continue;
 
       const ts = timeScore(m.startMs, od.startMs, o.maxTimeWindowMinutes);
@@ -382,13 +332,7 @@ export default function matchOddsToMatches(matches = [], oddsList = [], opts = {
       const tourScore = tournamentScore(m.tour, od.tour);
       const sScore = surfaceScore(m.surface, od.surface);
 
-      // Total score blend: names dominate, then time/tour, then surface
-      const total =
-        0.62 * nameScore +
-        0.18 * ts.score +
-        0.14 * tourScore +
-        0.06 * sScore;
-
+      const total = 0.62 * nameScore + 0.18 * ts.score + 0.14 * tourScore + 0.06 * sScore;
       if (total < o.minTotalScore) continue;
 
       const row = {
@@ -399,32 +343,32 @@ export default function matchOddsToMatches(matches = [], oddsList = [], opts = {
         tourScore,
         timeDiffMin: Number.isFinite(ts.diffMin) ? ts.diffMin : NaN,
         swapped,
-        _match: m,
         _odds: od,
       };
 
       if (!best || row.score > best.score) best = row;
     }
 
-    if (best) {
-      candidates.push(best);
-    } else if (o.enableDiagnostics) {
-      out.rejected.push({ matchId: m.id, reason: "no_candidate_above_threshold", score: 0 });
-    }
+    if (best) candidates.push(best);
+    else if (o.enableDiagnostics) out.rejected.push({ matchId: m.id, reason: "no_candidate_above_threshold", score: 0 });
   }
 
   if (!candidates.length) return out;
 
-  // Resolve odds collisions: sort desc by score, first-come locks odds
   candidates.sort((a, b) => b.score - a.score);
 
   const usedOdds = new Set();
   for (const c of candidates) {
-    // If oddsId is missing, treat as unique by object identity fallback
     const oddsKey = c._odds.id ? `id:${c._odds.id}` : `obj:${String(normOdds.indexOf(c._odds))}`;
     if (usedOdds.has(oddsKey)) {
       if (o.enableDiagnostics) {
-        out.rejected.push({ matchId: c.matchId, oddsId: c.oddsId, reason: "odds_collision_lost", score: c.score, nameScore: c.nameScore });
+        out.rejected.push({
+          matchId: c.matchId,
+          oddsId: c.oddsId,
+          reason: "odds_collision_lost",
+          score: c.score,
+          nameScore: c.nameScore,
+        });
       }
       continue;
     }
@@ -445,6 +389,22 @@ export default function matchOddsToMatches(matches = [], oddsList = [], opts = {
   return out;
 }
 
-function round4(x) {
-  return Math.round((x + Number.EPSILON) * 10000) / 10000;
+/**
+ * Named export expected by existing code:
+ * Returns the single best odds object for ONE live match (or null if no safe match).
+ *
+ * @param {Object} liveMatch
+ * @param {Array<Object>} oddsList
+ * @param {Object} [opts]
+ * @returns {Object|null}
+ */
+export function findBestOddsForLiveMatch(liveMatch, oddsList = [], opts = {}) {
+  const match = liveMatch || null;
+  if (!match) return null;
+
+  const matchId = safeStr(match?.id ?? match?.matchId ?? match?.match_id ?? match?.eventId ?? match?.key ?? "");
+  if (!matchId) return null;
+
+  const res = matchOddsToMatches([match], Array.isArray(oddsList) ? oddsList : [], { ...opts, enableDiagnostics: false });
+  return res?.byMatchId?.[matchId] ?? null;
 }
