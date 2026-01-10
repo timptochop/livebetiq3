@@ -2,7 +2,9 @@
 // Canonical deterministic fuzzy matcher: Odds <-> Matches
 // Provides:
 // - default export: matchOddsToMatches(matches, oddsList, opts)
-// - named export: findBestOddsForLiveMatch(match, oddsList, opts)  <-- for legacy imports
+// - named export: findBestOddsForLiveMatch(match, oddsList, opts)
+// Diagnostics (LOCKDOWN+):
+// - Set REACT_APP_ODDS_DEBUG=1 to emit 2 snapshots max (per runtime).
 
 const DEFAULT_OPTS = Object.freeze({
   maxTimeWindowMinutes: 90,
@@ -12,6 +14,62 @@ const DEFAULT_OPTS = Object.freeze({
   enableDiagnostics: true,
   aliases: {},
 });
+
+/** ---- DIAGNOSTICS (throttled) ---- */
+const __ODDS_DEBUG =
+  typeof process !== "undefined" &&
+  process?.env &&
+  String(process.env.REACT_APP_ODDS_DEBUG || "").trim() === "1";
+
+let __diagCalls = 0;
+const __MAX_DIAG_CALLS = 2;
+
+function diagSnapshot(tag, payload) {
+  try {
+    if (!__ODDS_DEBUG) return;
+    if (__diagCalls >= __MAX_DIAG_CALLS) return;
+    __diagCalls += 1;
+
+    const { matchCount, oddsCount, matchedCount, topRejects, samplePairs } = payload || {};
+
+    // eslint-disable-next-line no-console
+    console.groupCollapsed(
+      `%c[ODDS MATCH DIAG #${__diagCalls}] ${tag} | matches=${matchCount} odds=${oddsCount} matched=${matchedCount}`,
+      "color:#9ddcff;font-weight:600"
+    );
+
+    if (Array.isArray(samplePairs) && samplePairs.length) {
+      // eslint-disable-next-line no-console
+      console.table(
+        samplePairs.map((p) => ({
+          matchId: p.matchId,
+          oddsId: p.oddsId,
+          score: p.score,
+          nameScore: p.nameScore,
+          tourScore: p.tourScore,
+          timeDiffMin: Number.isFinite(p.timeDiffMin) ? p.timeDiffMin : "NA",
+          swapped: p.swapped,
+        }))
+      );
+    } else {
+      // eslint-disable-next-line no-console
+      console.log("[ODDS MATCH DIAG] No pairs matched.");
+    }
+
+    if (Array.isArray(topRejects) && topRejects.length) {
+      // eslint-disable-next-line no-console
+      console.table(topRejects);
+    } else {
+      // eslint-disable-next-line no-console
+      console.log("[ODDS MATCH DIAG] No reject reasons captured (or diagnostics disabled).");
+    }
+
+    // eslint-disable-next-line no-console
+    console.groupEnd();
+  } catch {
+    // silent
+  }
+}
 
 function isFiniteNumber(x) {
   return Number.isFinite(x);
@@ -262,6 +320,17 @@ function round4(x) {
   return Math.round((x + Number.EPSILON) * 10000) / 10000;
 }
 
+function summarizeRejects(rejected = []) {
+  const map = new Map();
+  for (const r of rejected) {
+    const k = safeStr(r?.reason || "unknown");
+    map.set(k, (map.get(k) || 0) + 1);
+  }
+  const arr = Array.from(map.entries()).map(([reason, count]) => ({ reason, count }));
+  arr.sort((a, b) => b.count - a.count);
+  return arr.slice(0, 8);
+}
+
 /**
  * Default: match all matches to odds list (greedy, collision-safe, fail-closed).
  */
@@ -273,6 +342,16 @@ export default function matchOddsToMatches(matches = [], oddsList = [], opts = {
 
   if (!Array.isArray(matches) || !Array.isArray(oddsList) || !matches.length || !oddsList.length) {
     if (o.enableDiagnostics) out.rejected.push({ reason: "empty_input", score: 0 });
+    // Snapshot even here (useful to see odds=0 cases)
+    if (__ODDS_DEBUG) {
+      diagSnapshot("matchOddsToMatches(empty_input)", {
+        matchCount: Array.isArray(matches) ? matches.length : 0,
+        oddsCount: Array.isArray(oddsList) ? oddsList.length : 0,
+        matchedCount: 0,
+        topRejects: summarizeRejects(out.rejected),
+        samplePairs: [],
+      });
+    }
     return out;
   }
 
@@ -314,6 +393,13 @@ export default function matchOddsToMatches(matches = [], oddsList = [], opts = {
 
   if (!normMatches.length || !normOdds.length) {
     if (o.enableDiagnostics) out.rejected.push({ reason: "no_normalizable_rows", score: 0 });
+    diagSnapshot("matchOddsToMatches(no_normalizable_rows)", {
+      matchCount: normMatches.length,
+      oddsCount: normOdds.length,
+      matchedCount: 0,
+      topRejects: summarizeRejects(out.rejected),
+      samplePairs: [],
+    });
     return out;
   }
 
@@ -353,7 +439,16 @@ export default function matchOddsToMatches(matches = [], oddsList = [], opts = {
     else if (o.enableDiagnostics) out.rejected.push({ matchId: m.id, reason: "no_candidate_above_threshold", score: 0 });
   }
 
-  if (!candidates.length) return out;
+  if (!candidates.length) {
+    diagSnapshot("matchOddsToMatches(no_candidates)", {
+      matchCount: normMatches.length,
+      oddsCount: normOdds.length,
+      matchedCount: 0,
+      topRejects: summarizeRejects(out.rejected),
+      samplePairs: [],
+    });
+    return out;
+  }
 
   candidates.sort((a, b) => b.score - a.score);
 
@@ -386,17 +481,21 @@ export default function matchOddsToMatches(matches = [], oddsList = [], opts = {
     });
   }
 
+  // Snapshot (only first 2 times total per runtime)
+  diagSnapshot("matchOddsToMatches(snapshot)", {
+    matchCount: normMatches.length,
+    oddsCount: normOdds.length,
+    matchedCount: out.pairs.length,
+    topRejects: summarizeRejects(out.rejected),
+    samplePairs: out.pairs.slice(0, 8),
+  });
+
   return out;
 }
 
 /**
- * Named export expected by existing code:
+ * Named export expected by existing code.
  * Returns the single best odds object for ONE live match (or null if no safe match).
- *
- * @param {Object} liveMatch
- * @param {Array<Object>} oddsList
- * @param {Object} [opts]
- * @returns {Object|null}
  */
 export function findBestOddsForLiveMatch(liveMatch, oddsList = [], opts = {}) {
   const match = liveMatch || null;
