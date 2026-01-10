@@ -1,105 +1,124 @@
 // tools/goalserve_probe.js
-// Direct GoalServe upstream probe (CommonJS): prints status/headers and saves RAW body to file.
-// Usage:
-//   node tools/goalserve_probe.js "YOUR_GOALSERVE_KEY"
-//
-// Output:
-//   - tools/_out_goalserve_headers.json
-//   - tools/_out_goalserve_raw.bin
-//   - tools/_out_goalserve_text_preview.txt (first 4000 chars)
+// Run: node tools/goalserve_probe.js
+// Writes:
+//   tools/_out_goalserve_headers.json
+//   tools/_out_goalserve_text_preview.txt
 
-const fs = require("fs");
-const zlib = require("zlib");
+import fs from "fs";
+import zlib from "zlib";
 
-const key = process.argv[2];
-if (!key) {
-  console.error('Missing key. Usage: node tools/goalserve_probe.js "YOUR_GOALSERVE_KEY"');
+const KEY = process.env.GOALSERVE_KEY || process.env.GOALSERVE_TOKEN || "";
+if (!KEY) {
+  console.error("Missing GOALSERVE_KEY or GOALSERVE_TOKEN in environment.");
   process.exit(1);
 }
 
-const url = `https://www.goalserve.com/getfeed/${key}/tennis_scores/home`;
-
-function looksLikeGzip(buf) {
-  return buf && buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b;
+function toGuid32(raw32) {
+  const s = String(raw32 || "").trim();
+  if (s.length !== 32) return null;
+  return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20)}`;
 }
 
-function safeDecode(buf, encHeader) {
-  const enc = String(encHeader || "").toLowerCase();
+const RAW = String(KEY).trim();
+const GUID = toGuid32(RAW);
 
-  // If body is gzipped (magic bytes), gunzip regardless of headers.
-  if (looksLikeGzip(buf)) {
-    try {
-      return zlib.gunzipSync(buf).toString("utf8");
-    } catch {}
-  }
+const KEYS = [
+  { key: RAW, label: RAW.length === 32 ? "raw32" : `raw${RAW.length}` },
+  ...(GUID ? [{ key: GUID, label: "guid32" }] : []),
+];
 
-  // Respect header if present (best effort).
-  if (enc.includes("br")) {
-    try {
-      return zlib.brotliDecompressSync(buf).toString("utf8");
-    } catch {}
-  }
-  if (enc.includes("deflate")) {
-    try {
-      return zlib.inflateSync(buf).toString("utf8");
-    } catch {}
-  }
-  if (enc.includes("gzip")) {
-    try {
-      return zlib.gunzipSync(buf).toString("utf8");
-    } catch {}
-  }
+const FEEDS = [
+  { mode: "home", path: "tennis_scores/home?json=1" },
+  { mode: "itf", path: "tennis_scores/itf?json=1" },
+  { mode: "d1", path: "tennis_scores/d1?json=1" },
+  { mode: "d2", path: "tennis_scores/d2?json=1" },
+  { mode: "d-1", path: "tennis_scores/d-1?json=1" },
+];
 
-  // Fallback: plain text
-  return buf.toString("utf8");
-}
-
-async function run() {
-  console.log("[probe] GET", url);
-
-  const r = await fetch(url, {
+async function fetchOne(url) {
+  const res = await fetch(url, {
     method: "GET",
     headers: {
-      "user-agent": "livebetiq3/direct-goalserve-probe",
-      accept: "application/xml,text/xml,*/*",
-      "accept-encoding": "gzip,deflate,br",
+      Accept: "application/json,application/xml,text/xml,text/plain,*/*",
+      "Accept-Encoding": "gzip,deflate",
+      "User-Agent": "livebetiq3/probe",
     },
   });
 
-  const ab = await r.arrayBuffer();
+  const ab = await res.arrayBuffer();
   const buf = Buffer.from(ab);
 
-  const headersObj = {};
-  for (const [k, v] of r.headers.entries()) headersObj[k] = v;
+  const enc = (res.headers.get("content-encoding") || "").toLowerCase();
+  let outBuf = buf;
+  if (enc.includes("gzip")) {
+    try {
+      outBuf = zlib.gunzipSync(buf);
+    } catch {
+      outBuf = buf;
+    }
+  }
 
-  const outHeaders = {
-    url,
-    status: r.status,
-    ok: r.ok,
-    contentType: r.headers.get("content-type") || null,
-    contentEncoding: r.headers.get("content-encoding") || null,
-    contentLength: r.headers.get("content-length") || null,
-    headers: headersObj,
-    bytes: buf.length,
+  const text = outBuf.toString("utf-8");
+  const isHtml = /<html/i.test(text) || /<!doctype html/i.test(text);
+
+  return {
+    ok: res.ok,
+    status: res.status,
+    contentType: res.headers.get("content-type") || "",
+    contentEncoding: res.headers.get("content-encoding") || "",
+    isHtml,
+    textPreview: text.slice(0, 2500),
   };
-
-  fs.mkdirSync("tools", { recursive: true });
-  fs.writeFileSync("tools/_out_goalserve_headers.json", JSON.stringify(outHeaders, null, 2));
-  fs.writeFileSync("tools/_out_goalserve_raw.bin", buf);
-
-  const text = safeDecode(buf, r.headers.get("content-encoding"));
-  const preview = text.slice(0, 4000);
-  fs.writeFileSync("tools/_out_goalserve_text_preview.txt", preview);
-
-  console.log("[probe] status:", outHeaders.status);
-  console.log("[probe] content-type:", outHeaders.contentType);
-  console.log("[probe] content-encoding:", outHeaders.contentEncoding);
-  console.log("[probe] bytes:", outHeaders.bytes);
-  console.log("[probe] preview (first 400 chars):");
-  console.log(preview.slice(0, 400));
 }
 
-run().catch((e) => {
-  console.error("[probe] FAILED:", e?.message || e);
-  process.exit(1);
-});
+(async () => {
+  const attempts = [];
+
+  for (const k of KEYS) {
+    for (const f of FEEDS) {
+      for (const base of ["https://www.goalserve.com/getfeed", "http://www.goalserve.com/getfeed"]) {
+        const url = `${base}/${k.key}/${f.path}`;
+        console.log(`[TRY] key=${k.label} feed=${f.mode} -> ${url}`);
+
+        try {
+          const r = await fetchOne(url);
+          attempts.push({ key: k.label, feed: f.mode, url, ...r });
+
+          console.log(`      status=${r.status} ok=${r.ok} html=${r.isHtml} ct=${r.contentType}`);
+          if (r.isHtml) console.log(`      HTML preview: ${r.textPreview.split("\n")[0]}`);
+        } catch (e) {
+          attempts.push({
+            key: k.label,
+            feed: f.mode,
+            url,
+            ok: false,
+            status: 0,
+            contentType: "",
+            contentEncoding: "",
+            isHtml: false,
+            textPreview: "",
+            error: e?.message || "unknown_error",
+          });
+          console.log(`      ERROR: ${e?.message || e}`);
+        }
+      }
+    }
+  }
+
+  fs.writeFileSync("tools/_out_goalserve_headers.json", JSON.stringify({ attempts }, null, 2));
+  fs.writeFileSync(
+    "tools/_out_goalserve_text_preview.txt",
+    attempts
+      .map((a) => {
+        return [
+          `=== ${a.key} | ${a.feed} | status=${a.status} ok=${a.ok} html=${a.isHtml} ===`,
+          a.url,
+          a.textPreview || "",
+          "",
+        ].join("\n");
+      })
+      .join("\n")
+  );
+
+  console.log("Wrote tools/_out_goalserve_headers.json and tools/_out_goalserve_text_preview.txt");
+})();

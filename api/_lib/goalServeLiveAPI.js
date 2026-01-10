@@ -1,49 +1,40 @@
 // api/_lib/goalServeLiveAPI.js
-// GoalServe fetcher with GUID key fallback (dashed <-> raw) + gzip + XML guard + debug transparency
+// Robust GoalServe Tennis fetcher:
+// - Tries BOTH key formats: raw 32-hex and dashed GUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+// - Always uses ?json=1 to avoid XML/gzip/xml2js headaches
+// - Fallback feeds: home -> d1 -> d2 -> d-1 -> d-2 ...
+// - Returns { matches, meta } where meta includes upstream diagnostics
 
-import { gunzipSync } from "zlib";
-import { parseStringPromise } from "xml2js";
+import zlib from "zlib";
 
-const READ_TIMEOUT_MS = 15000;
+const READ_TIMEOUT_MS = 12000;
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function isHex32(s) {
-  return /^[a-f0-9]{32}$/i.test(String(s || "").trim());
+function uniq(arr) {
+  return Array.from(new Set(arr.filter(Boolean)));
 }
 
-function isGuidDashed(s) {
-  return /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
-    String(s || "").trim()
-  );
+function normalizeGuid(key) {
+  if (!key) return null;
+  const k = String(key).trim().replace(/-/g, "");
+  if (k.length !== 32) return null;
+  return `${k.slice(0, 8)}-${k.slice(8, 12)}-${k.slice(12, 16)}-${k.slice(16, 20)}-${k.slice(20)}`;
 }
 
-function toDashedGuid(hex32) {
-  const s = String(hex32 || "").trim().toLowerCase().replace(/-/g, "");
-  if (!isHex32(s)) return null;
-  return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20)}`;
+function isProbablyHtml(s) {
+  const t = String(s || "").trim().toLowerCase();
+  return t.startsWith("<!doctype html") || t.startsWith("<html") || t.includes("<title>guid should contain");
 }
 
-function toRawHex32(guidDashed) {
-  const s = String(guidDashed || "").trim().toLowerCase();
-  if (!isGuidDashed(s)) return null;
-  return s.replace(/-/g, "");
-}
-
-function normalizeArray(x) {
-  if (Array.isArray(x)) return x;
-  if (x == null) return [];
-  return [x];
-}
-
-function safeText(x) {
-  if (x == null) return "";
-  if (typeof x === "string") return x;
-  if (typeof x === "number") return String(x);
-  if (typeof x === "object" && typeof x._ === "string") return x._;
-  return String(x);
+function safeJsonParse(text) {
+  try {
+    return { ok: true, data: JSON.parse(text) };
+  } catch (e) {
+    return { ok: false, error: e?.message || "json_parse_failed" };
+  }
 }
 
 async function fetchText(url) {
@@ -53,99 +44,114 @@ async function fetchText(url) {
   try {
     const res = await fetch(url, {
       method: "GET",
-      signal: ctl.signal,
       headers: {
-        Accept: "application/xml,text/xml;q=0.9,text/plain;q=0.8,*/*;q=0.1",
-        "Accept-Encoding": "gzip,deflate",
-        "User-Agent": "livebetiq3/tennis-live (vercel)",
+        "accept": "application/json,text/plain,*/*",
+        "user-agent": "livebetiq3/goalserve-fetch (vercel)",
       },
-      cache: "no-store",
+      signal: ctl.signal,
     });
 
-    const status = res.status;
-    const contentType = res.headers.get("content-type") || null;
-    const encoding = res.headers.get("content-encoding") || null;
-
     const buf = Buffer.from(await res.arrayBuffer());
-    let text = "";
+    const enc = (res.headers.get("content-encoding") || "").toLowerCase();
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
 
-    try {
-      if (encoding && String(encoding).toLowerCase().includes("gzip")) {
-        text = gunzipSync(buf).toString("utf8");
-      } else {
-        text = buf.toString("utf8");
-      }
-    } catch {
-      // fallback
+    let text = "";
+    if (enc.includes("gzip")) {
+      text = zlib.gunzipSync(buf).toString("utf8");
+    } else {
       text = buf.toString("utf8");
     }
 
-    return { ok: res.ok, status, contentType, encoding, text };
+    return {
+      ok: res.ok,
+      status: res.status,
+      contentType: ct,
+      encoding: enc || null,
+      headers: {
+        contentType: ct,
+        contentEncoding: enc || null,
+      },
+      text,
+    };
   } finally {
     clearTimeout(to);
   }
 }
 
-function looksLikeHtmlError(text) {
-  const t = String(text || "");
-  return /<html/i.test(t) || /<title>/i.test(t);
+function asArray(x) {
+  if (!x) return [];
+  return Array.isArray(x) ? x : [x];
 }
 
-function hasGuidFormatError(text) {
-  const t = String(text || "");
-  return /Guid should contain 32 digits with 4 dashes/i.test(t);
-}
+/**
+ * Very defensive normalization for GoalServe tennis_scores JSON.
+ * We keep only what UI typically needs; anything missing stays null.
+ */
+function normalizeGoalServeTennis(json) {
+  // Common shapes:
+  // { scores: { category: [...] } }
+  // { tennis_scores: { category: [...] } }
+  // sometimes category->match arrays
+  const root =
+    json?.scores ||
+    json?.tennis_scores ||
+    json?.data ||
+    json;
 
-function buildFeedUrl(key, path = "tennis_scores/home") {
-  const k = String(key || "").trim();
-  return `https://www.goalserve.com/getfeed/${k}/${path}`;
-}
-
-function normalizeMatchesFromParsed(parsed) {
-  // GoalServe tennis_scores/home is usually:
-  // scores -> category[] -> matches/match -> match[]
-  const raw = parsed || {};
-  const scores = raw.scores || raw;
-  const categories = normalizeArray(scores.category);
-
+  const categories = asArray(root?.category || root?.tournament || root?.leagues || []);
   const matches = [];
 
   for (const cat of categories) {
-    if (!cat) continue;
+    const comp = cat?.name || cat?.league || cat?.["@name"] || cat?.["@league"] || null;
+    const matchList = asArray(cat?.match || cat?.matches || cat?.event || cat?.game || []);
+    for (const m of matchList) {
+      const id =
+        m?.id ||
+        m?.["@id"] ||
+        m?.match_id ||
+        m?.event_id ||
+        m?.fixture_id ||
+        null;
 
-    const catName = safeText(cat.name || cat["@name"] || cat.id || cat["@id"]);
-    const matchesContainer = cat.matches || cat.match || {};
-    const arr = normalizeArray(matchesContainer.match || matchesContainer);
+      const status =
+        m?.status ||
+        m?.["@status"] ||
+        m?.time ||
+        m?.["@time"] ||
+        null;
 
-    for (const m of arr) {
-      if (!m) continue;
+      const p1 =
+        m?.player1?.name ||
+        m?.player1 ||
+        m?.home?.name ||
+        m?.home ||
+        m?.team1 ||
+        m?.["@player1"] ||
+        null;
 
-      const id = safeText(m.id || m.matchid || m["@id"] || m["@matchid"]);
-      const status = safeText(m.status || m["@status"]);
-      const date = safeText(m.date || m["@date"]);
-      const time = safeText(m.time || m["@time"]);
+      const p2 =
+        m?.player2?.name ||
+        m?.player2 ||
+        m?.away?.name ||
+        m?.away ||
+        m?.team2 ||
+        m?.["@player2"] ||
+        null;
 
-      const players = normalizeArray(m.player || m.players).map((p) => {
-        const obj = p || {};
-        return {
-          name: safeText(obj.name || obj["@name"] || obj._),
-          s1: safeText(obj.s1 || obj["@s1"] || obj.set1 || obj["@set1"]),
-          s2: safeText(obj.s2 || obj["@s2"] || obj.set2 || obj["@set2"]),
-          s3: safeText(obj.s3 || obj["@s3"] || obj.set3 || obj["@set3"]),
-          s4: safeText(obj.s4 || obj["@s4"] || obj.set4 || obj["@set4"]),
-          s5: safeText(obj.s5 || obj["@s5"] || obj.set5 || obj["@set5"]),
-        };
-      });
+      const score =
+        m?.score ||
+        m?.["@score"] ||
+        m?.result ||
+        null;
 
       matches.push({
-        id: id || null,
-        status,
-        date,
-        time,
-        categoryName: catName || "",
-        player: players, // keep legacy shape compatibility
-        players, // also provide normalized convenience
-        raw: m,
+        id: id ? String(id) : null,
+        comp: comp ? String(comp) : null,
+        status: status ? String(status) : null,
+        player1: p1 ? String(p1) : null,
+        player2: p2 ? String(p2) : null,
+        score: score ? String(score) : null,
+        raw: m, // keep raw for downstream odds matching/debug
       });
     }
   }
@@ -153,155 +159,119 @@ function normalizeMatchesFromParsed(parsed) {
   return matches;
 }
 
-/**
- * Main entry used by /api/gs/tennis-live
- * Returns:
- * { ok, mode, matches, meta, debug? }
- */
+function buildTennisUrl(key, path) {
+  // Always request JSON output from GoalServe (per their doc)
+  // Example: /tennis_scores/home?json=1
+  const base = `https://www.goalserve.com/getfeed/${key}/tennis_scores/${path}`;
+  return base.includes("?") ? `${base}&json=1` : `${base}?json=1`;
+}
+
 export async function fetchLiveTennis({ debug = false } = {}) {
-  const envKey =
-    process.env.GOALSERVE_KEY ||
-    process.env.GOALSERVE_API_KEY ||
-    process.env.GS_KEY ||
-    process.env.REACT_APP_GOALSERVE_KEY ||
-    "";
+  const RAW_KEY = process.env.GOALSERVE_KEY || process.env.GOALSERVE_TOKEN || "";
+  const dashed = normalizeGuid(RAW_KEY);
 
-  const rawKey = String(envKey || "").trim();
+  // We try both key shapes: raw and dashed.
+  // Even if GoalServe doc lists raw, your upstream error demands dashed sometimes.
+  const keyCandidates = uniq([String(RAW_KEY).trim(), dashed]);
 
-  // Build candidate keys in a deterministic order:
-  // If env is hex32 => try dashed first (because your upstream complains about dashed),
-  // then raw as fallback. If env is dashed => try dashed then raw.
-  // If env is something else => try as-is.
-  const dashed = isHex32(rawKey) ? toDashedGuid(rawKey) : isGuidDashed(rawKey) ? rawKey : null;
-  const raw32 = isGuidDashed(rawKey) ? toRawHex32(rawKey) : isHex32(rawKey) ? rawKey : null;
+  // Feed fallback order:
+  // home: live
+  // d1,d2: upcoming
+  // d-1,d-2: recent history (useful when live is empty)
+  const feedCandidates = ["home", "d1", "d2", "d-1", "d-2", "d3", "d-3"];
 
-  const candidates = [];
-  if (dashed) candidates.push({ key: dashed, format: "dashed" });
-  if (raw32) candidates.push({ key: raw32, format: "raw32" });
-  if (!candidates.length && rawKey) candidates.push({ key: rawKey, format: "as-is" });
+  const attempts = [];
+  let lastErr = null;
 
-  const meta = {
-    build: "v10.2.5-tennis-live-guid-fallback",
-    now: new Date().toISOString(),
-    tzOffsetMinutes: 0,
-    candidates: candidates.map((c) => ({ format: c.format, len: String(c.key || "").length })),
-  };
+  for (const key of keyCandidates) {
+    if (!key) continue;
 
-  const debugOut = {
-    attempts: [],
-    upstreamStatus: null,
-    upstreamEncoding: null,
-    contentType: null,
-    picked: null,
-    error: null,
-    rawHead: null,
-  };
-
-  if (!candidates.length) {
-    return {
-      ok: false,
-      mode: "EMPTY",
-      matches: [],
-      meta,
-      debug: debug ? { ...debugOut, error: "missing_api_key" } : undefined,
-      error: "missing_api_key",
-    };
-  }
-
-  // Endpoints to try (you can extend later; keep minimal now)
-  const pathsToTry = ["tennis_scores/home"];
-
-  // Try combinations: key candidate x path
-  for (const c of candidates) {
-    for (const path of pathsToTry) {
-      const url = buildFeedUrl(c.key, path);
-
-      let resp;
+    for (const feed of feedCandidates) {
+      const url = buildTennisUrl(key, feed);
       try {
-        resp = await fetchText(url);
-      } catch (e) {
-        debugOut.attempts.push({
+        const r = await fetchText(url);
+
+        const head = String(r.text || "").slice(0, 220);
+        attempts.push({
+          keyUsed: key,
+          keyIsDashed: key.includes("-"),
+          feed,
           url,
-          keyFormat: c.format,
-          ok: false,
-          status: null,
-          err: String(e?.message || e),
+          ok: r.ok,
+          status: r.status,
+          contentType: r.contentType,
+          encoding: r.encoding,
+          head,
+          isHtml: isProbablyHtml(r.text),
         });
-        continue;
-      }
 
-      debugOut.upstreamStatus = resp.status;
-      debugOut.upstreamEncoding = resp.encoding;
-      debugOut.contentType = resp.contentType;
-
-      const head = String(resp.text || "").slice(0, 220);
-      debugOut.rawHead = head;
-
-      debugOut.attempts.push({
-        url,
-        keyFormat: c.format,
-        ok: resp.ok,
-        status: resp.status,
-        encoding: resp.encoding,
-        contentType: resp.contentType,
-        head,
-      });
-
-      // If HTML error, continue trying other candidates
-      if (looksLikeHtmlError(resp.text)) {
-        // Special-case: if we got the GUID format error, it strongly implies wrong key format.
-        // Continue to next candidate.
-        if (hasGuidFormatError(resp.text)) {
-          await sleep(150);
+        // If GoalServe returned HTML, it's NOT a valid feed. Try next.
+        if (isProbablyHtml(r.text)) {
+          lastErr = new Error("upstream_html_instead_of_json");
           continue;
         }
-        await sleep(150);
-        continue;
-      }
 
-      // If not OK status, continue
-      if (!resp.ok) {
-        await sleep(150);
-        continue;
-      }
+        // Parse JSON
+        const parsed = safeJsonParse(r.text);
+        if (!parsed.ok) {
+          lastErr = new Error(parsed.error || "json_parse_failed");
+          continue;
+        }
 
-      // Parse XML
-      let parsed;
-      try {
-        parsed = await parseStringPromise(resp.text, {
-          explicitArray: false,
-          mergeAttrs: true,
-          trim: true,
-        });
+        // Normalize
+        const matches = normalizeGoalServeTennis(parsed.data);
+
+        // Success criteria:
+        // - We got valid JSON (no HTML)
+        // - Return matches (could be empty; still valid feed)
+        const meta = {
+          build: "v10.2.5-tennis-live-keydual-json",
+          now: new Date().toISOString(),
+          tried: attempts,
+          selected: { keyUsed: key, feed, url },
+          counts: {
+            matches: matches.length,
+          },
+          upstream: {
+            ok: true,
+            status: r.status,
+            contentType: r.contentType,
+            encoding: r.encoding,
+          },
+        };
+
+        return { ok: true, matches, meta: debug ? meta : { build: meta.build, now: meta.now, counts: meta.counts } };
       } catch (e) {
+        lastErr = e;
+        attempts.push({
+          keyUsed: key,
+          keyIsDashed: key.includes("-"),
+          feed,
+          url: buildTennisUrl(key, feed),
+          ok: false,
+          status: null,
+          error: e?.message || "fetch_failed",
+        });
         await sleep(150);
-        continue;
       }
-
-      const matches = normalizeMatchesFromParsed(parsed);
-
-      debugOut.picked = { url, keyFormat: c.format, path };
-
-      return {
-        ok: true,
-        mode: matches.length ? "LIVE" : "EMPTY",
-        matches,
-        meta: { ...meta, counts: { total: matches.length } },
-        debug: debug ? debugOut : undefined,
-      };
     }
   }
 
-  debugOut.error = "Upstream returned HTML/error instead of XML (or XML parse failed).";
-
-  return {
-    ok: false,
-    mode: "EMPTY",
-    matches: [],
-    meta: { ...meta, counts: { total: 0 } },
-    debug: debug ? debugOut : undefined,
-    error: "upstream_failed",
+  // Total failure
+  const meta = {
+    build: "v10.2.5-tennis-live-keydual-json",
+    now: new Date().toISOString(),
+    tried: attempts,
+    upstream: {
+      ok: false,
+      error: lastErr?.message || "unknown_error",
+    },
+    keyFormat: {
+      rawLen: RAW_KEY ? String(RAW_KEY).replace(/-/g, "").length : 0,
+      rawHasDashes: String(RAW_KEY || "").includes("-"),
+      normalized: dashed || null,
+    },
   };
-}
 
-export default fetchLiveTennis;
+  return { ok: false, matches: [], meta: debug ? meta : { build: meta.build, now: meta.now, upstream: meta.upstream } };
+}
